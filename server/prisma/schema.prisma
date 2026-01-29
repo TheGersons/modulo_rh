@@ -1,0 +1,294 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USUARIOS Y AUTENTICACIÓN
+// ============================================
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  dni       String  @unique
+  nombre    String
+  apellido  String
+  password  String
+  role      String   @default("empleado") // "admin", "jefe", "empleado", "rrhh"
+  areaId    String?
+  puesto    String?
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  area                  Area?         @relation("EmpleadosArea", fields: [areaId], references: [id])
+  areaJefe              Area?         @relation("JefeArea")
+  evaluacionesCreadas   Evaluacion[]  @relation("EvaluacionCreador")
+  evaluacionesRecibidas Evaluacion[]  @relation("EvaluacionEmpleado")
+  alertas               Alerta[]     @relation("AlertasEmpleado")
+  validaciones          Validacion[]
+  
+
+  @@index([areaId])
+  @@index([email])
+}
+
+// ============================================
+// ÁREAS Y ESTRUCTURA ORGANIZACIONAL
+// ============================================
+
+model Area {
+  id                String   @id @default(uuid())
+  nombre            String   @unique
+  descripcion       String?  @db.Text
+  jefeId            String   @unique
+  promedioGlobal    Float?   // Promedio de todos los KPIs del área
+  totalKpis         Int      @default(0)
+  kpisRojos         Int      @default(0)
+  porcentajeRojos   Float?   // % de KPIs en rojo
+  nivelRiesgo       String?  // "BAJO", "MEDIO", "ALTO"
+  ranking           Int?     // Posición entre todas las áreas
+  comentarioRRHH    String?  @db.Text
+  accionSugerida    String?  @db.Text
+  responsable       String?
+  activa            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relaciones
+  jefe      User   @relation("JefeArea", fields: [jefeId], references: [id])
+  empleados User[] @relation("EmpleadosArea")
+  kpis      KPI[]
+  alertas   Alerta[]
+
+  @@index([jefeId])
+}
+
+// ============================================
+// KPIs CON METAS Y TOLERANCIAS
+// ============================================
+
+model KPI {
+  id            String   @id @default(uuid())
+  key           String   @unique // Identificador único del KPI
+  area          String   // Nombre del área
+  areaId        String
+  puesto        String?  // Puesto específico (opcional)
+  indicador     String   // Nombre del KPI
+  descripcion   String?  @db.Text
+  formula       String?  @db.Text // Fórmula de cálculo
+  meta          Float    // Objetivo a alcanzar
+  tolerancia    Float    // Delta permitido (ej: -5, +10)
+  umbralAmarillo Float?  // Calculado: meta + tolerancia
+  periodicidad  String   // "mensual" o "trimestral"
+  sentido       String   // "Mayor es mejor" o "Menor es mejor"
+  unidad        String?  // "%", "días", "unidades", etc.
+  activo        Boolean  @default(true)
+  orden         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relaciones
+  areaRelacion       Area                 @relation(fields: [areaId], references: [id])
+  evaluacionDetalles EvaluacionDetalle[]
+
+  @@index([areaId])
+  @@index([activo])
+  @@index([key])
+}
+
+// ============================================
+// EVALUACIONES
+// ============================================
+
+model Evaluacion {
+  id                String   @id @default(uuid())
+  empleadoId        String
+  evaluadorId       String
+  periodo           String   // "Enero", "Febrero", "Q1", "Q2", etc.
+  tipoPeriodo       String   // "mensual" o "trimestral"
+  anio              Int
+  status            String   @default("borrador") // "borrador", "enviada", "validada", "en_revision"
+  promedioGeneral   Float?   // Promedio de todos los resultados %
+  kpisRojos         Int      @default(0) // Cantidad de KPIs en rojo
+  porcentajeRojos   Float?   // % de KPIs en rojo
+  comentarioGeneral String?  @db.Text
+  fechaEnvio        DateTime?
+  fechaValidacion   DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relaciones
+  empleado   User                @relation("EvaluacionEmpleado", fields: [empleadoId], references: [id])
+  evaluador  User                @relation("EvaluacionCreador", fields: [evaluadorId], references: [id])
+  alertas    Alerta[]
+  detalles   EvaluacionDetalle[]
+  validacion Validacion?
+
+  @@index([empleadoId])
+  @@index([evaluadorId])
+  @@index([periodo, anio])
+  @@index([status])
+}
+
+// ============================================
+// DETALLES DE EVALUACIÓN CON METAS Y BRECHAS
+// ============================================
+
+model EvaluacionDetalle {
+  id                String   @id @default(uuid())
+  evaluacionId      String
+  kpiId             String
+  resultadoNumerico Float    // Valor real obtenido (ej: 87 días, 95%)
+  meta              Float    // Meta del KPI (copiada para histórico)
+  tolerancia        Float    // Tolerancia del KPI (copiada)
+  umbralAmarillo    Float    // Umbral amarillo calculado
+  sentido           String   // "Mayor es mejor" o "Menor es mejor"
+  resultadoPorcentaje Float  // Cálculo: (resultado / meta) * 100 o similar
+  brechaVsMeta      Float    // Diferencia entre resultado y meta
+  estado            String   // "verde", "amarillo", "rojo"
+  comentarios       String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relaciones
+  evaluacion Evaluacion @relation(fields: [evaluacionId], references: [id], onDelete: Cascade)
+  kpi        KPI        @relation(fields: [kpiId], references: [id])
+
+  @@unique([evaluacionId, kpiId])
+  @@index([evaluacionId])
+  @@index([kpiId])
+  @@index([estado])
+}
+
+// ============================================
+// VALIDACIONES
+// ============================================
+
+model Validacion {
+  id              String   @id @default(uuid())
+  evaluacionId    String   @unique
+  empleadoId      String
+  status          String   // "aceptada", "revision_solicitada"
+  motivoRevision  String?  @db.Text
+  respuestaJefe   String?  @db.Text
+  fechaValidacion DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relaciones
+  evaluacion Evaluacion @relation(fields: [evaluacionId], references: [id], onDelete: Cascade)
+  empleado   User       @relation(fields: [empleadoId], references: [id])
+
+  @@index([evaluacionId])
+  @@index([empleadoId])
+  @@index([status])
+}
+
+// ============================================
+// ALERTAS Y RIESGOS
+// ============================================
+
+model Alerta {
+  id              String   @id @default(uuid())
+  areaId          String
+  empleadoId      String?
+  evaluacionId    String?
+  tipo            String   // "riesgo_alto", "kpi_critico", "tendencia_negativa"
+  nivel           String   // "BAJO", "MEDIO", "ALTO"
+  titulo          String
+  descripcion     String   @db.Text
+  accionSugerida  String?  @db.Text
+  responsable     String?
+  status          String   @default("activa") // "activa", "en_proceso", "resuelta"
+  fechaDeteccion  DateTime @default(now())
+  fechaResolucion DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relaciones
+  area       Area        @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  empleado   User?       @relation("AlertasEmpleado", fields: [empleadoId], references: [id], onDelete: SetNull)
+  evaluacion Evaluacion? @relation(fields: [evaluacionId], references: [id], onDelete: SetNull)
+
+  @@index([areaId])
+  @@index([empleadoId])
+  @@index([evaluacionId])
+  @@index([status])
+  @@index([nivel])
+}
+
+// ============================================
+// TENDENCIAS HISTÓRICAS
+// ============================================
+
+model TendenciaArea {
+  id              String   @id @default(uuid())
+  areaId          String
+  periodo         String
+  anio            Int
+  promedioGeneral Float
+  totalKpis       Int
+  kpisRojos       Int
+  porcentajeRojos Float
+  createdAt       DateTime @default(now())
+
+  @@unique([areaId, periodo, anio])
+  @@index([areaId])
+  @@index([periodo, anio])
+}
+
+// ============================================
+// LOG DE IMPORTACIONES
+// ============================================
+
+model LogImportacion {
+  id                    String   @id @default(uuid())
+  fechaHora             DateTime @default(now())
+  archivo               String
+  registrosImportados   Int
+  registrosOmitidos     Int
+  comentariosImportados Int
+  estado                String   // "exitoso", "parcial", "error"
+  observaciones         String?  @db.Text
+  createdAt             DateTime @default(now())
+
+  @@index([fechaHora])
+  @@index([estado])
+}
+
+// ============================================
+// NOTIFICACIONES
+// ============================================
+
+model Notificacion {
+  id        String   @id @default(uuid())
+  userId    String
+  tipo      String
+  titulo    String
+  mensaje   String   @db.Text
+  leida     Boolean  @default(false)
+  url       String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([leida])
+  @@index([createdAt])
+}
+
+// ============================================
+// CONFIGURACIÓN
+// ============================================
+
+model Configuracion {
+  id    String @id @default(uuid())
+  clave String @unique
+  valor String @db.Text
+
+  @@index([clave])
+}
