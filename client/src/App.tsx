@@ -10,6 +10,11 @@ import MisEvaluacionesPage from './pages/MisEvaluacionesPage';
 import ReportesPage from './pages/ReportesPage';
 import EmpleadosPage from './pages/EmpleadosPage';
 import ConfiguracionPage from './pages/ConfiguracionPage';
+import EditarPlanAccionPage from './pages/EditarPlanAccionPage';
+import DetallePlanAccionPage from './pages/DetallePlanAccionPage';
+import PlanesAccionPage from './pages/PlanesAccionPage';
+import Layout from './components/layout/Layout';
+import GestionKPIsPage from './pages/GestionKPIsPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -57,6 +62,39 @@ function AppRoutes() {
       <Route path="/kpis/mis-evaluaciones/:evaluacionId" element={
         <PrivateRoute>
           <DetalleEvaluacionPage />
+        </PrivateRoute>
+      } />
+      <Route path="/kpis/planes-accion" element={
+        <PrivateRoute>
+          <Layout>
+            <div className="p-8">
+              <PlanesAccionPage />
+            </div>
+          </Layout>
+        </PrivateRoute>} />
+      <Route path="/kpis/planes-accion/:id" element={
+        <PrivateRoute>
+          <Layout>
+            <div className="p-8">
+              <DetallePlanAccionPage />
+            </div>
+          </Layout>
+        </PrivateRoute>} />
+      <Route path="/kpis/planes-accion/:id/editar" element={
+        <PrivateRoute>
+          <Layout>
+            <div className="p-8">
+              <EditarPlanAccionPage />
+            </div>
+          </Layout>
+        </PrivateRoute>} />
+      <Route path="/configuracion/kpis" element={
+        <PrivateRoute>
+          <Layout>
+            <div className="p-8">
+              <GestionKPIsPage />
+            </div>
+          </Layout>
         </PrivateRoute>
       } />
       <Route path="/kpis/reportes" element={

@@ -52,4 +52,17 @@ export const API_ENDPOINTS = {
   alertasActivas: '/alertas/activas',
   alertasGenerarAutomaticas: '/alertas/generar-automaticas',
   alertaResolver: (id: string) => `/alertas/${id}/resolver`,
+
+  // Planes de Acción
+  planesAccion: '/planes-accion',
+  planAccionById: (id: string) => `/planes-accion/${id}`,
+  planesAccionByEmpleado: (empleadoId: string) => `/planes-accion/empleado/${empleadoId}`,
+  planesAccionByEvaluacion: (evaluacionId: string) => `/planes-accion/evaluacion/${evaluacionId}`,
+  planesAccionCrearAutomaticos: (evaluacionId: string) => `/planes-accion/crear-automaticos/${evaluacionId}`,
+  planesAccionPendientesEnvio: '/planes-accion/pendientes-envio',
+  planesAccionVencidos: '/planes-accion/vencidos',
+  planAccionEnviar: (id: string) => `/planes-accion/${id}/enviar`,
+  planAccionAprobar: (id: string) => `/planes-accion/${id}/aprobar`,
+  planAccionRechazar: (id: string) => `/planes-accion/${id}/rechazar`,
+  planAccionCompletar: (id: string) => `/planes-accion/${id}/completar`,
 };

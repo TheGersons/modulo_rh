@@ -1,8 +1,21 @@
 import apiClient from './api.service';
 import { API_ENDPOINTS } from '../config/api';
 
+interface DetalleRevision {
+  kpiId: string;
+  kpiNombre: string;
+  motivo: string;
+}
+
 export const validacionesService = {
-  create: async (data: { evaluacionId: string; empleadoId: string; status: string; motivoRevision?: string }) => {
+  create: async (data: {
+    evaluacionId: string;
+    empleadoId: string;
+    status: string;
+    motivoRevision?: string;
+    detallesRevision?: DetalleRevision[];
+    archivosAdjuntos?: string[];
+  }) => {
     const response = await apiClient.post(API_ENDPOINTS.validaciones, data);
     return response.data;
   },

@@ -9,6 +9,7 @@ import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
 import { ValidacionesModule } from './modules/validaciones/validaciones.module';
 import { EstadisticasModule } from './modules/estadisticas/estadisticas.module';
 import { AlertasModule } from './modules/alertas/alertas.module';
+import { PlanesAccionModule } from './modules/planes-accion/planes-accion.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { AlertasModule } from './modules/alertas/alertas.module';
     ValidacionesModule,
     EstadisticasModule,
     AlertasModule,
+    PlanesAccionModule,
   ],
   providers: [PrismaService],
 })

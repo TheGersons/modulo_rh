@@ -1,18 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import Layout from '../components/layout/Layout';
-import { 
-  Search, 
-  Users, 
-  UserPlus, 
-  Edit, 
-  Trash2, 
-  Mail, 
-  Briefcase, 
+import { empleadosService } from '../services/empleados.service';
+import * as XLSX from 'xlsx';
+import {
+  Search,
+  Users,
+  UserPlus,
+  Edit,
+  Trash2,
+  Mail,
+  Briefcase,
   Building,
   Filter,
   Download,
   Upload,
-  MoreVertical,
   Eye,
   CheckCircle,
   XCircle
@@ -30,6 +31,119 @@ interface Empleado {
   activo: boolean;
   createdAt: string;
 }
+interface EmployeeToolbarProps {
+  onRefresh?: () => void;
+}
+// Definimos la interfaz para las props (opcional pero recomendado en TS)
+interface EmployeeToolbarProps {
+  onRefresh?: () => void;
+}
+
+// ESTE COMPONENTE DEBE IR FUERA DE LA FUNCIÓN EmpleadosPage
+export const EmployeeToolbar = ({ onRefresh }: EmployeeToolbarProps) => { 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Función que simula el clic en el input oculto
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Función que procesa el archivo Excel
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+
+    const reader = new FileReader();
+
+    reader.onload = async (evt) => {
+      try {
+        const binaryStr = evt.target?.result;
+        const workbook = XLSX.read(binaryStr, { type: 'binary' });
+
+        // Leer la primera hoja
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+
+        // Convertir a JSON
+        const data = XLSX.utils.sheet_to_json(sheet);
+
+        // MAPEO DE DATOS
+        const empleadosFormateados = data.map((row: any) => ({
+          dni: String(row['DNI'] || row['dni'] || ''), 
+          nombre: row['Nombre'] || row['nombre'],
+          apellido: row['Apellido'] || row['apellido'],
+          email: row['Email'] || row['Correo'] || row['email'],
+          role: (row['Rol'] || row['role'] || 'empleado').toLowerCase(),
+          puesto: row['Puesto'] || row['puesto'],
+          // Si usas la lógica de AreasService, agrégala aquí como vimos antes
+          areaId: row['AreaId'] || row['areaId'] || null, 
+          password: String(row['Password'] || row['DNI'] || '123456'),
+          activo: true
+        }));
+
+        if (empleadosFormateados.length === 0) {
+          alert("El archivo parece estar vacío o no tiene el formato correcto.");
+          return;
+        }
+
+        // Enviar al Backend
+        const response = await empleadosService.createBulk(empleadosFormateados);
+
+        alert(`Proceso finalizado.\nExitosos: ${response.success}\nErrores: ${response.errors.length}`);
+
+        if (onRefresh) onRefresh(); 
+
+      } catch (error) {
+        console.error("Error importando:", error);
+        alert("Hubo un error al procesar el archivo.");
+      } finally {
+        setLoading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
+  // EL RETURN QUE FALTABA
+  return (
+    <div className="flex items-center gap-3">
+      {/* Input oculto */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileUpload} 
+        className="hidden" 
+        accept=".xlsx, .xls"
+      />
+
+      <button className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-colors">
+        <Download className="w-5 h-5" />
+        Exportar
+      </button>
+      
+      <button 
+        onClick={handleImportClick}
+        disabled={loading}
+        className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50"
+      >
+        <Upload className="w-5 h-5" />
+        {loading ? 'Procesando...' : 'Importar'}
+      </button>
+      
+      <button
+        // onClick={handleCrear} // Pásalo como prop si lo necesitas
+        className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors shadow-lg"
+      >
+        <UserPlus className="w-5 h-5" />
+        Nuevo Empleado
+      </button>
+    </div>
+  );
+};
 
 export default function EmpleadosPage() {
   const [empleados, setEmpleados] = useState<Empleado[]>([
@@ -86,7 +200,7 @@ export default function EmpleadosPage() {
 
     const matchArea = filtroArea === 'todas' || emp.area === filtroArea;
     const matchRole = filtroRole === 'todos' || emp.role === filtroRole;
-    const matchEstado = filtroEstado === 'todos' || 
+    const matchEstado = filtroEstado === 'todos' ||
       (filtroEstado === 'activos' && emp.activo) ||
       (filtroEstado === 'inactivos' && !emp.activo);
 
@@ -126,15 +240,18 @@ export default function EmpleadosPage() {
   };
 
   const handleToggleEstado = (id: string) => {
-    setEmpleados(prev => prev.map(emp => 
+    setEmpleados(prev => prev.map(emp =>
       emp.id === id ? { ...emp, activo: !emp.activo } : emp
     ));
   };
 
+
+
   return (
     <Layout>
       <div className="p-8 space-y-8">
-        {/* Header */}
+
+        {/* Header y Botones de Acción */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Empleados</h1>
@@ -143,23 +260,10 @@ export default function EmpleadosPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-colors">
-              <Download className="w-5 h-5" />
-              Exportar
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2.5 border-2 border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-50 transition-colors">
-              <Upload className="w-5 h-5" />
-              Importar
-            </button>
-            <button
-              onClick={handleCrear}
-              className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors shadow-lg"
-            >
-              <UserPlus className="w-5 h-5" />
-              Nuevo Empleado
-            </button>
-          </div>
+          <EmployeeToolbar onRefresh={() => {
+            // Aquí puedes recargar la lista de empleados desde el backend si lo deseas
+            console.log('Refrescar lista de empleados');
+          }} />
         </div>
 
         {/* Estadísticas */}
@@ -349,11 +453,10 @@ export default function EmpleadosPage() {
                     <td className="px-6 py-4 text-center">
                       <button
                         onClick={() => handleToggleEstado(empleado.id)}
-                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border-2 transition-colors ${
-                          empleado.activo 
-                            ? 'bg-green-100 text-green-700 border-green-300 hover:bg-green-200' 
-                            : 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200'
-                        }`}
+                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border-2 transition-colors ${empleado.activo
+                          ? 'bg-green-100 text-green-700 border-green-300 hover:bg-green-200'
+                          : 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200'
+                          }`}
                       >
                         {empleado.activo ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                         {empleado.activo ? 'Activo' : 'Inactivo'}
@@ -413,7 +516,7 @@ export default function EmpleadosPage() {
             <h2 className="text-2xl font-bold text-gray-900 mb-6">
               {modalMode === 'crear' ? 'Nuevo Empleado' : 'Editar Empleado'}
             </h2>
-            
+
             <p className="text-gray-600 mb-6">
               Formulario de {modalMode === 'crear' ? 'creación' : 'edición'} (implementar con campos completos)
             </p>

@@ -6,7 +6,7 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class EmpleadosService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   // ============================================
   // CREAR EMPLEADO
@@ -498,5 +498,29 @@ export class EmpleadosService {
       })),
       porArea: areasConNombres,
     };
+  }
+
+  // En tu empleados.service.ts
+  async createBulk(createEmpleadoDtos: CreateEmpleadoDto[]) {
+    const results = {
+      success: 0,
+      errors: [] as any[],
+    };
+
+    for (const dto of createEmpleadoDtos) {
+      try {
+        // Reutiliza tu lógica de creación existente si es posible
+        // para que valide duplicados de DNI/Email y hashee el password
+        await this.create(dto);
+        results.success++;
+      } catch (error) {
+        results.errors.push({
+          email: dto.email,
+          error: error.message,
+        });
+      }
+    }
+
+    return results;
   }
 }

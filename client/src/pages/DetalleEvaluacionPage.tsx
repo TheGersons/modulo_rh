@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/layout/Layout';
-import { ArrowLeft, CheckCircle, AlertCircle, Send, TrendingUp, TrendingDown, Minus, Info } from 'lucide-react';
+import { ArrowLeft, CheckCircle, AlertCircle, TrendingUp, TrendingDown, Minus, Info, X } from 'lucide-react';
 import type { EvaluacionDetalle, KPI } from '../types/kpi';
 import { evaluacionesService } from '../services/evaluaciones.service';
-import { kpisService } from '../services/kpis.service';
+import { validacionesService } from '../services/validaciones.service';
+import { Upload, FileText } from 'lucide-react';
+import { empleadosService } from '../services/empleados.service';
 
 interface EvaluacionCompleta {
   id: string;
@@ -34,10 +36,86 @@ export default function DetalleEvaluacionPage() {
   const navigate = useNavigate();
   const [evaluacion, setEvaluacion] = useState<EvaluacionCompleta | null>(null);
   const [loading, setLoading] = useState(true);
+  const [evaluado, setEvaluado] = useState<{ id: string; nombre: string; apellido: string; puesto: string; area: string } | null>(null);
   const [showValidacionModal, setShowValidacionModal] = useState(false);
   const [accion, setAccion] = useState<'aceptar' | 'revisar'>('aceptar');
-  const [motivoRevision, setMotivoRevision] = useState('');
+  const [motivoRevision, _setMotivoRevision] = useState('');
   const [enviando, setEnviando] = useState(false);
+  // Estados para el dialog de revisión
+  const [showRevisionDialog, setShowRevisionDialog] = useState(false);
+  const [revisionMotivo, setRevisionMotivo] = useState('');
+  const [kpisApelados, setKpisApelados] = useState<Array<{
+    kpiId: string;
+    kpiNombre: string;
+    motivo: string;
+  }>>([]);
+  const [archivosAdjuntos, setArchivosAdjuntos] = useState<Array<{
+    nombre: string;
+    url: string;
+  }>>([]);
+
+  // Corta a 2 decimales y asegura que siga siendo un número
+  const formatearNumero = (valor: number | null | undefined): number => {
+    if (valor === null || valor === undefined) return 0;
+    return Number(valor.toFixed(2));
+  };
+
+  useEffect(() => {
+    //usaremos el Id de la evaluacion que esta en el params para obtener el Id del empleado evaluado
+    const fetchEvaluado = async () => {
+      if (evaluacionId) {
+        const evalData = await evaluacionesService.getById(evaluacionId);
+        const empData = await empleadosService.getById(evalData.empleadoId);
+        setEvaluado({
+          id: empData.id || null,
+          nombre: empData.nombre || '',
+          apellido: empData.apellido || '',
+          puesto: empData.puesto || '',
+          area: empData.area.nombre || '',
+        });
+      }
+    };
+    fetchEvaluado();
+  }, [evaluacionId]);
+
+  const handleSolicitarRevision = async () => {
+    try {
+      // Validar que todos los KPIs seleccionados tengan justificación
+      const hayMotivosVacios = kpisApelados.some(k => k.motivo.trim().length < 20);
+      if (hayMotivosVacios) {
+        alert('Todos los KPIs seleccionados deben tener una justificación de al menos 20 caracteres');
+        return;
+      }
+      // Preparar URLs de archivos
+      const archivosUrls = archivosAdjuntos.map(a => a.url);
+
+      // Enviar solicitud de revisión
+      await validacionesService.create({
+        evaluacionId: evaluacion!.id,
+        empleadoId: evaluado!.id,
+        status: 'revision_solicitada',
+        motivoRevision: revisionMotivo || undefined,
+        detallesRevision: kpisApelados,
+        archivosAdjuntos: archivosUrls.length > 0 ? archivosUrls : undefined,
+      });
+
+      // Cerrar dialog
+      setShowRevisionDialog(false);
+      setRevisionMotivo('');
+      setKpisApelados([]);
+      setArchivosAdjuntos([]);
+
+      // Recargar evaluación
+      const updatedEvaluacion = await evaluacionesService.getById(evaluacion!.id);
+      setEvaluacion(updatedEvaluacion);
+
+      // Mostrar confirmación
+      alert('Solicitud de revisión enviada exitosamente');
+    } catch (error) {
+      console.error('Error al solicitar revisión:', error);
+      alert('Error al enviar la solicitud de revisión');
+    }
+  };
 
   useEffect(() => {
     cargarEvaluacion();
@@ -46,47 +124,85 @@ export default function DetalleEvaluacionPage() {
   const cargarEvaluacion = async () => {
     try {
       setLoading(true);
-      const evaluacion = await evaluacionesService.getById(evaluacionId!);
+      // Asumimos que 'data' es la respuesta JSON cruda que mostraste
+      const data = await evaluacionesService.getById(evaluacionId!);
 
-      const detalleEvaluaciones = [...evaluacion.detalles];
+      // 1. Transformamos los detalles primero (El paso clave)
+      // Mapeamos el array de la API al formato (EvaluacionDetalle & { kpi: KPI })
+      const detallesFormateados = data.detalles.map((d: any) => ({
+        // --- Campos de EvaluacionDetalle ---
+        id: d.id,
+        kpiId: d.kpiId,
+        resultadoNumerico: formatearNumero(d.resultadoNumerico),
+        meta: d.meta,
+        tolerancia: d.tolerancia,
+        umbralAmarillo: d.umbralAmarillo,
+        sentido: d.sentido,
+        resultadoPorcentaje: formatearNumero(d.resultadoPorcentaje),
+        brechaVsMeta: formatearNumero(d.brechaVsMeta),
+        // Casteamos el string a los tipos literales definidos
+        estado: d.estado as 'verde' | 'amarillo' | 'rojo',
+        comentarios: d.comentarios,
 
-      let DetalleFinal = new Map<EvaluacionDetalle, any>();
+        // --- Campo KPI anidado ---
+        kpi: {
+          id: d.kpi.id,
+          key: d.kpi.key,
+          area: d.kpi.area,
+          areaId: d.kpi.areaId,
+          // IMPORTANTE: Manejo de nulos.
+          // La API manda 'null', pero si tu interfaz dice 'string | undefined',
+          // usa '|| undefined' o '|| ""' según prefieras.
+          puesto: d.kpi.puesto || undefined,
+          indicador: d.kpi.indicador,
+          descripcion: d.kpi.descripcion || undefined,
+          formula: d.kpi.formula || undefined,
+          meta: d.kpi.meta,
+          tolerancia: d.kpi.tolerancia,
+          umbralAmarillo: d.kpi.umbralAmarillo,
+          periodicidad: d.kpi.periodicidad,
+          sentido: d.kpi.sentido,
+          unidad: d.kpi.unidad || undefined,
+          activo: d.kpi.activo,
+          orden: d.kpi.orden
+        }
+      }));
 
-      //llenamos el mapa con datos genericos basados en la interface
-      
-
-
-
-      for (const detalle of detalleEvaluaciones) {
-          DetalleFinal.set(id , detalle.id),
-          DetalleFinal.
-        },
-
-      //le damos fomatos a los detalles con su kpi
-      setEvaluacion({
-        id: evaluacion.id,
-        periodo: evaluacion.periodo,
-        anio: evaluacion.anio,
+      // 2. Llenamos el objeto principal
+      const evaluacionFinal: EvaluacionCompleta = {
+        id: data.id,
+        periodo: data.periodo,
+        anio: data.anio,
         evaluador: {
-          nombre: evaluacion.evaluador.nombre,
-          apellido: evaluacion.evaluador.apellido,
-          puesto: evaluacion.evaluador.puesto,
+          nombre: data.evaluador.nombre,
+          apellido: data.evaluador.apellido,
+          // Aquí también: la API trae null, tu interfaz pide string.
+          // Le ponemos un string vacío o un valor por defecto.
+          puesto: data.evaluador.puesto || 'Sin puesto asignado'
         },
-        promedioGeneral: evaluacion.promedioGeneral,
-        kpisRojos: evaluacion.kpisRojos,
-        porcentajeRojos: evaluacion.porcentajeRojos,
-        status: evaluacion.status,
-        fechaEnvio: evaluacion.fechaEnvio,
-        comentarioGeneral: evaluacion.comentarioGeneral,
-        detalles: 
-      
-    });
+        promedioGeneral: formatearNumero(data.promedioGeneral),
+        kpisRojos: data.kpisRojos,
+        porcentajeRojos: data.porcentajeRojos,
+        // Aseguramos a TypeScript que el string es uno de los permitidos
+        status: data.status as 'enviada' | 'validada' | 'en_revision',
+        fechaEnvio: data.fechaEnvio,
+        comentarioGeneral: data.comentarioGeneral,
+
+        // Asignamos el array que procesamos arriba
+        detalles: detallesFormateados,
+
+        validacion: data.validacion // Si es null, pasa como null/undefined
+      };
+
+      setEvaluacion(evaluacionFinal);
+
     } catch (error) {
       console.error('Error al cargar evaluación:', error);
-      alert('Error al cargar la evaluación');
+      // alert('Error al cargar la evaluación'); // Opcional
     } finally {
       setLoading(false);
     }
+
   };
 
   const getEstadoColor = (estado: string) => {
@@ -288,20 +404,18 @@ export default function DetalleEvaluacionPage() {
 
                 <div className="bg-gray-50 rounded-xl p-4">
                   <p className="text-xs text-gray-600 mb-1">Resultado %</p>
-                  <p className={`text-xl font-bold ${
-                    detalle.estado === 'verde' ? 'text-green-600' :
-                    detalle.estado === 'amarillo' ? 'text-yellow-600' :
-                    'text-red-600'
-                  }`}>
+                  <p className={`text-xl font-bold ${detalle.estado === 'verde' ? 'text-green-600' :
+                      detalle.estado === 'amarillo' ? 'text-yellow-600' :
+                        'text-red-600'
+                    }`}>
                     {detalle.resultadoPorcentaje.toFixed(1)}%
                   </p>
                 </div>
 
                 <div className="bg-gray-50 rounded-xl p-4">
                   <p className="text-xs text-gray-600 mb-1">Brecha vs Meta</p>
-                  <p className={`text-xl font-bold ${
-                    detalle.brechaVsMeta >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
+                  <p className={`text-xl font-bold ${detalle.brechaVsMeta >= 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
                     {detalle.brechaVsMeta > 0 ? '+' : ''}{detalle.brechaVsMeta}{detalle.kpi.unidad}
                   </p>
                 </div>
@@ -365,10 +479,11 @@ export default function DetalleEvaluacionPage() {
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Botón ACEPTAR (Abre el modal simple antiguo) */}
               <button
                 onClick={() => {
                   setAccion('aceptar');
-                  setShowValidacionModal(true);
+                  setShowValidacionModal(true); // Abre el modal pequeño solo para confirmar
                 }}
                 className="flex items-center justify-center gap-3 px-8 py-6 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg transition-colors shadow-lg"
               >
@@ -376,10 +491,14 @@ export default function DetalleEvaluacionPage() {
                 Aceptar Evaluación
               </button>
 
+              {/* Botón REVISAR (Abre tu NUEVO diálogo complejo) */}
               <button
                 onClick={() => {
-                  setAccion('revisar');
-                  setShowValidacionModal(true);
+                  // Aquí inicializamos y abrimos el NUEVO diálogo
+                  setKpisApelados([]); // Limpiamos selección previa
+                  setRevisionMotivo(''); // Limpiamos motivo
+                  setArchivosAdjuntos([]); // Limpiamos archivos
+                  setShowRevisionDialog(true); // <--- Abrimos el nuevo código
                 }}
                 className="flex items-center justify-center gap-3 px-8 py-6 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-lg transition-colors shadow-lg"
               >
@@ -390,58 +509,36 @@ export default function DetalleEvaluacionPage() {
           </div>
         )}
 
-        {/* Modal de validación */}
+        {/* Modal Simple (Solo para ACEPTAR) */}
         {showValidacionModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl p-8 max-w-lg w-full">
               <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                {accion === 'aceptar' ? 'Aceptar Evaluación' : 'Solicitar Revisión'}
+                Aceptar Evaluación
               </h3>
 
-              {accion === 'aceptar' ? (
-                <p className="text-gray-600 mb-6 leading-relaxed">
-                  Al aceptar esta evaluación, confirmas que estás de acuerdo con las calificaciones, metas, resultados y comentarios proporcionados por tu evaluador.
-                </p>
-              ) : (
-                <div className="mb-6">
-                  <p className="text-gray-600 mb-4 leading-relaxed">
-                    Por favor, indica el motivo por el cual solicitas una revisión de esta evaluación:
-                  </p>
-                  <textarea
-                    value={motivoRevision}
-                    onChange={(e) => setMotivoRevision(e.target.value)}
-                    rows={5}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-none"
-                    placeholder="Describe tu motivo de revisión..."
-                    required
-                  />
-                </div>
-              )}
+              <p className="text-gray-600 mb-6 leading-relaxed">
+                Al aceptar esta evaluación, confirmas que estás de acuerdo con las calificaciones, metas, resultados y comentarios proporcionados por tu evaluador. Esta acción es definitiva.
+              </p>
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => {
-                    setShowValidacionModal(false);
-                    setMotivoRevision('');
-                  }}
+                  onClick={() => setShowValidacionModal(false)}
                   className="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
-                  onClick={handleValidar}
-                  disabled={enviando || (accion === 'revisar' && !motivoRevision.trim())}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors disabled:opacity-50"
+                  onClick={handleValidar} // Esta función debe llamar al API para aceptar
+                  disabled={enviando}
+                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold transition-colors disabled:opacity-50"
                 >
                   {enviando ? (
-                    <>
-                      <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
-                      Procesando...
-                    </>
+                    <>Procesando...</>
                   ) : (
                     <>
-                      <Send className="w-5 h-5" />
-                      Confirmar
+                      <CheckCircle className="w-5 h-5" />
+                      Confirmar Aceptación
                     </>
                   )}
                 </button>
@@ -449,7 +546,246 @@ export default function DetalleEvaluacionPage() {
             </div>
           </div>
         )}
+
+        {/* Dialog Solicitar Revisión */}
+        {showRevisionDialog && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+              {/* Header */}
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-900">Solicitar Revisión</h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Selecciona los KPIs que deseas apelar y proporciona una justificación para cada uno
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowRevisionDialog(false);
+                      setRevisionMotivo('');
+                      setKpisApelados([]);
+                      setArchivosAdjuntos([]);
+                    }}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body - Scrollable */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* Lista de KPIs con checkboxes */}
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-900">KPIs a Apelar:</h4>
+
+                  {evaluacion?.detalles.map((detalle: any) => {
+                    const isSelected = kpisApelados.some(k => k.kpiId === detalle.kpi.id);
+                    const kpiData = kpisApelados.find(k => k.kpiId === detalle.kpi.id);
+
+                    return (
+                      <div
+                        key={detalle.id}
+                        className={`border rounded-lg p-4 transition-all ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                          }`}
+                      >
+                        {/* Checkbox y nombre del KPI */}
+                        <div className="flex items-start gap-3 mb-3">
+                          <input
+                            type="checkbox"
+                            id={`kpi-${detalle.kpi.id}`}
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setKpisApelados([
+                                  ...kpisApelados,
+                                  {
+                                    kpiId: detalle.kpi.id,
+                                    kpiNombre: detalle.kpi.indicador,
+                                    motivo: '',
+                                  },
+                                ]);
+                              } else {
+                                setKpisApelados(kpisApelados.filter(k => k.kpiId !== detalle.kpi.id));
+                              }
+                            }}
+                            className="mt-1 w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                          />
+                          <label htmlFor={`kpi-${detalle.kpi.id}`} className="flex-1 cursor-pointer">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium text-gray-900">{detalle.kpi.indicador}</p>
+                                <p className="text-sm text-gray-500 mt-1">
+                                  Resultado: <span className="font-semibold">{detalle.resultadoNumerico}</span> |
+                                  Meta: <span className="font-semibold">{detalle.meta}</span> |
+                                  Estado: <span className={`font-semibold ${detalle.estado === 'verde' ? 'text-green-600' :
+                                      detalle.estado === 'amarillo' ? 'text-yellow-600' :
+                                        'text-red-600'
+                                    }`}>
+                                    {detalle.estado.toUpperCase()}
+                                  </span>
+                                </p>
+                              </div>
+                              {detalle.estado === 'rojo' && (
+                                <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded">
+                                  KPI Crítico
+                                </span>
+                              )}
+                            </div>
+                          </label>
+                        </div>
+
+                        {/* Campo de texto para justificación (solo si está seleccionado) */}
+                        {isSelected && (
+                          <div className="ml-7 mt-3">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Justificación para este KPI: <span className="text-red-500">*</span>
+                            </label>
+                            <textarea
+                              value={kpiData?.motivo || ''}
+                              onChange={(e) => {
+                                setKpisApelados(
+                                  kpisApelados.map(k =>
+                                    k.kpiId === detalle.kpi.id
+                                      ? { ...k, motivo: e.target.value }
+                                      : k
+                                  )
+                                );
+                              }}
+                              placeholder="Explica por qué consideras que este KPI debe ser revisado..."
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[100px] resize-none"
+                              required
+                            />
+                            {kpiData && kpiData.motivo.length < 20 && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                Mínimo 20 caracteres (actual: {kpiData.motivo.length})
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Motivo general (opcional) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Comentario General (Opcional)
+                  </label>
+                  <textarea
+                    value={revisionMotivo}
+                    onChange={(e) => setRevisionMotivo(e.target.value)}
+                    placeholder="Agrega un comentario general sobre tu solicitud de revisión..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[80px] resize-none"
+                  />
+                </div>
+
+                {/* Adjuntar archivos (simulado) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Adjuntar Archivos (Opcional)
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                    <input
+                      type="file"
+                      id="file-upload"
+                      multiple
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        // Simulación: guardar nombres de archivos
+                        const nuevosArchivos = files.map(f => ({
+                          nombre: f.name,
+                          url: `https://storage.cloud.com/simulado/${f.name}`, // URL simulada
+                        }));
+                        setArchivosAdjuntos([...archivosAdjuntos, ...nuevosArchivos]);
+                      }}
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                    />
+                    <label htmlFor="file-upload" className="cursor-pointer">
+                      <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-600">
+                        <span className="text-blue-600 font-medium">Haz clic para subir</span> o arrastra archivos aquí
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">PDF, DOC, DOCX, JPG, PNG (máx. 10MB)</p>
+                    </label>
+                  </div>
+
+                  {/* Lista de archivos adjuntos */}
+                  {archivosAdjuntos.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {archivosAdjuntos.map((archivo, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                        >
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-gray-500" />
+                            <span className="text-sm text-gray-700">{archivo.nombre}</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setArchivosAdjuntos(archivosAdjuntos.filter((_, i) => i !== index));
+                            }}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-6 border-t border-gray-200 bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-600">
+                    {kpisApelados.length > 0 ? (
+                      <span className="font-medium text-blue-600">
+                        {kpisApelados.length} KPI{kpisApelados.length !== 1 ? 's' : ''} seleccionado{kpisApelados.length !== 1 ? 's' : ''}
+                      </span>
+                    ) : (
+                      <span className="text-gray-500">Selecciona al menos un KPI</span>
+                    )}
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setShowRevisionDialog(false);
+                        setRevisionMotivo('');
+                        setKpisApelados([]);
+                        setArchivosAdjuntos([]);
+                      }}
+                      className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleSolicitarRevision}
+                      disabled={
+                        kpisApelados.length === 0 ||
+                        kpisApelados.some(k => k.motivo.length < 20)
+                      }
+                      className={`px-6 py-2 rounded-lg font-medium transition-colors ${kpisApelados.length === 0 || kpisApelados.some(k => k.motivo.length < 20)
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                    >
+                      Enviar Solicitud
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );
+
 }
+

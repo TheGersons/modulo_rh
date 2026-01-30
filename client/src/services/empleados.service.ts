@@ -66,4 +66,9 @@ export const empleadosService = {
     const response = await apiClient.delete(API_ENDPOINTS.empleadoById(id));
     return response.data;
   },
+  createBulk: async (data: any[]) => {
+    // Apunta al nuevo endpoint que creamos en el backend
+    const response = await apiClient.post(`${API_ENDPOINTS.empleados}/bulk`, data);
+    return response.data;
+  },
 };

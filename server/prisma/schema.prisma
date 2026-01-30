@@ -31,7 +31,9 @@ model User {
   evaluacionesCreadas   Evaluacion[]  @relation("EvaluacionCreador")
   evaluacionesRecibidas Evaluacion[]  @relation("EvaluacionEmpleado")
   alertas               Alerta[]     @relation("AlertasEmpleado")
+  planesAccion          PlanAccion[] @relation("PlanesEmpleado")
   validaciones          Validacion[]
+  
   
 
   @@index([areaId])
@@ -96,6 +98,7 @@ model KPI {
   // Relaciones
   areaRelacion       Area                 @relation(fields: [areaId], references: [id])
   evaluacionDetalles EvaluacionDetalle[]
+  planesAccion PlanAccion[]
 
   @@index([areaId])
   @@index([activo])
@@ -128,6 +131,7 @@ model Evaluacion {
   evaluador  User                @relation("EvaluacionCreador", fields: [evaluadorId], references: [id])
   alertas    Alerta[]
   detalles   EvaluacionDetalle[]
+  planesAccion PlanAccion[]
   validacion Validacion?
 
   @@index([empleadoId])
@@ -177,6 +181,8 @@ model Validacion {
   status          String   // "aceptada", "revision_solicitada"
   motivoRevision  String?  @db.Text
   respuestaJefe   String?  @db.Text
+  archivosAdjuntos String? @db.Text
+  detallesRevision String? @db.Text
   fechaValidacion DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -291,4 +297,53 @@ model Configuracion {
   valor String @db.Text
 
   @@index([clave])
+}
+
+// ============================================
+// PLAN DE ACCION PARA KPIS EN ROJO
+// ============================================
+
+model PlanAccion {
+  id                String   @id @default(uuid())
+  evaluacionId      String
+  empleadoId        String
+  kpiId             String
+  
+  // Contenido del plan
+  descripcionProblema String   @db.Text  // Qué salió mal
+  accionesCorrectivas String   @db.Text  // Qué hará para mejorar
+  recursosNecesarios  String?  @db.Text  // Qué necesita
+  metasEspecificas    String   @db.Text  // Objetivos concretos
+  
+  // Workflow
+  status            String   @default("borrador") // "borrador", "enviado", "rechazado", "aprobado", "en_progreso", "completado"
+  motivoRechazo     String?  @db.Text
+  
+  // Plazos
+  diasPlazo         Int      @default(15)
+  fechaLimite       DateTime?
+  fechaCompletado   DateTime?
+  
+  // Evidencias (URLs simuladas por ahora)
+  archivosAdjuntos  String?  @db.Text  // JSON con URLs
+  
+  // Auditoría
+  fechaCreacion     DateTime @default(now())
+  fechaEnvio        DateTime?
+  fechaRevision     DateTime?
+  fechaAprobacion   DateTime?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relaciones
+  evaluacion Evaluacion @relation(fields: [evaluacionId], references: [id], onDelete: Cascade)
+  empleado   User       @relation("PlanesEmpleado", fields: [empleadoId], references: [id])
+  kpi        KPI        @relation(fields: [kpiId], references: [id])
+
+  @@index([evaluacionId])
+  @@index([empleadoId])
+  @@index([kpiId])
+  @@index([status])
+  @@index([fechaLimite])
 }

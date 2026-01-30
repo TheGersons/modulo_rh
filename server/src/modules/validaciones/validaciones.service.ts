@@ -2,10 +2,14 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../common/database/prisma.service';
 import { CreateValidacionDto } from './dto/create-validacion.dto';
 import { ResponderValidacionDto } from './dto/responder-validacion.dto';
+import { PlanesAccionService } from '../planes-accion/planes-accion.service';
 
 @Injectable()
 export class ValidacionesService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private planesAccionService: PlanesAccionService, // Importar e inyectar el servicio de planes de acción cuando esté disponible
+    ) { }
 
     // ============================================
     // CREAR VALIDACIÓN (Empleado valida su evaluación)
@@ -40,10 +44,21 @@ export class ValidacionesService {
             throw new BadRequestException('Esta evaluación ya ha sido validada');
         }
 
-        // Si el empleado NO acepta, debe proporcionar motivo
-        if (createValidacionDto.status === 'revision_solicitada' && !createValidacionDto.motivoRevision) {
-            throw new BadRequestException('Debe proporcionar un motivo si solicita revisión');
+        // Si el empleado NO acepta, debe proporcionar detalles
+        if (createValidacionDto.status === 'revision_solicitada') {
+            if (!createValidacionDto.detallesRevision || createValidacionDto.detallesRevision.length === 0) {
+                throw new BadRequestException('Debe proporcionar detalles de revisión para al menos un KPI');
+            }
         }
+
+        // Serializar detalles y archivos a JSON
+        const detallesRevisionJson = createValidacionDto.detallesRevision
+            ? JSON.stringify(createValidacionDto.detallesRevision)
+            : null;
+
+        const archivosAdjuntosJson = createValidacionDto.archivosAdjuntos
+            ? JSON.stringify(createValidacionDto.archivosAdjuntos)
+            : null;
 
         // Crear validación
         const validacion = await this.prisma.validacion.create({
@@ -52,6 +67,8 @@ export class ValidacionesService {
                 empleadoId: createValidacionDto.empleadoId,
                 status: createValidacionDto.status,
                 motivoRevision: createValidacionDto.motivoRevision,
+                detallesRevision: detallesRevisionJson,
+                archivosAdjuntos: archivosAdjuntosJson,
                 fechaValidacion: new Date(),
             },
             include: {
@@ -86,18 +103,43 @@ export class ValidacionesService {
             },
         });
 
-        // TODO: Crear notificación al jefe si se solicita revisión
-        if (createValidacionDto.status === 'revision_solicitada') {
-            console.log(`📧 Notificación: ${evaluacion.empleado.nombre} solicita revisión de evaluación`);
-            // await this.notificacionesService.crear({
-            //   tipo: 'revision_solicitada',
-            //   destinatarioId: evaluacion.evaluadorId,
-            //   titulo: 'Revisión de evaluación solicitada',
-            //   mensaje: `${evaluacion.empleado.nombre} ${evaluacion.empleado.apellido} ha solicitado revisión de su evaluación`,
-            // });
+        // Si se acepta la evaluación, verificar si tiene KPIs rojos y crear planes automáticos
+        if (createValidacionDto.status === 'aceptada') {
+            // Obtener evaluación con detalles
+            const evaluacionConDetalles = await this.prisma.evaluacion.findUnique({
+                where: { id: createValidacionDto.evaluacionId },
+                include: {
+                    detalles: {
+                        where: { estado: 'rojo' },
+                    },
+                },
+            });
+
+            // Si tiene KPIs rojos, crear planes automáticamente
+            if (evaluacionConDetalles && evaluacionConDetalles.detalles.length > 0) {
+                console.log(`🎯 Creando ${evaluacionConDetalles.detalles.length} planes de acción automáticos...`);
+
+                try {
+                    await this.planesAccionService.crearPlanesAutomaticos(createValidacionDto.evaluacionId);
+                    console.log('✅ Planes de acción creados exitosamente');
+                } catch (error) {
+                    console.error('❌ Error al crear planes automáticos:', error);
+                }
+            }
         }
 
-        return validacion;
+        // Notificación si se solicita revisión
+        if (createValidacionDto.status === 'revision_solicitada') {
+            console.log(`📧 Notificación: ${evaluacion.empleado.nombre} solicita revisión de evaluación`);
+            console.log(`📎 KPIs apelados: ${createValidacionDto.detallesRevision?.length}`);
+        }
+
+        // Parsear JSON antes de retornar
+        return {
+            ...validacion,
+            detallesRevision: validacion.detallesRevision ? JSON.parse(validacion.detallesRevision) : null,
+            archivosAdjuntos: validacion.archivosAdjuntos ? JSON.parse(validacion.archivosAdjuntos) : null,
+        };
     }
 
     // ============================================
@@ -142,7 +184,12 @@ export class ValidacionesService {
             throw new NotFoundException('Esta evaluación aún no ha sido validada');
         }
 
-        return validacion;
+        // Parsear JSON
+        return {
+            ...validacion,
+            detallesRevision: validacion.detallesRevision ? JSON.parse(validacion.detallesRevision) : null,
+            archivosAdjuntos: validacion.archivosAdjuntos ? JSON.parse(validacion.archivosAdjuntos) : null,
+        };
     }
 
     // ============================================
@@ -190,7 +237,12 @@ export class ValidacionesService {
             throw new NotFoundException(`No se encontró la validación con ID ${id}`);
         }
 
-        return validacion;
+        // Parsear JSON
+        return {
+            ...validacion,
+            detallesRevision: validacion.detallesRevision ? JSON.parse(validacion.detallesRevision) : null,
+            archivosAdjuntos: validacion.archivosAdjuntos ? JSON.parse(validacion.archivosAdjuntos) : null,
+        };
     }
 
     // ============================================

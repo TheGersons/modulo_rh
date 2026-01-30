@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, BarChart3, Target, Settings, FileText, ChevronDown, ChevronRight, ClipboardList, Eye } from 'lucide-react';
+import { LayoutDashboard, Users, BarChart3, Target, Settings, FileText, ChevronDown, ChevronRight, ClipboardList, Eye, ActivityIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -29,6 +29,7 @@ export default function Sidebar() {
                 { icon: ClipboardList, label: 'Evaluar Empleados', path: '/kpis/evaluar' },
                 { icon: Eye, label: 'Mis Evaluaciones', path: '/kpis/mis-evaluaciones' },
                 { icon: FileText, label: 'Reportes', path: '/kpis/reportes' },
+                { icon: ActivityIcon, label: 'Planes de Acción', path: '/kpis/planes-accion' }
             ]
         },
         {
@@ -40,7 +41,10 @@ export default function Sidebar() {
         {
             icon: Settings,
             label: 'Configuración',
-            path: '/configuracion'
+            submenu: [
+                { icon: Users, label: 'Configuración', path: '/configuracion' },
+                { icon: Target, label: 'Gestión de KPIs', path: '/configuracion/kpis' }
+            ]
         },
     ];
 
@@ -168,18 +172,7 @@ export default function Sidebar() {
                 })}
             </nav>
 
-            {/* Footer */}
-            <div className="p-6 border-t border-blue-600/30">
-                <div className="bg-blue-600/30 rounded-xl p-4">
-                    <p className="text-sm font-semibold mb-2">¿Necesitas ayuda?</p>
-                    <p className="text-xs text-blue-200 mb-3">
-                        Consulta nuestra documentación
-                    </p>
-                    <button className="w-full bg-white text-blue-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-50 transition-colors">
-                        Ver Guía
-                    </button>
-                </div>
-            </div>
+            
         </aside>
     );
 }

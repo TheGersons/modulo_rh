@@ -5,7 +5,7 @@ import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
 
 @Controller('empleados')
 export class EmpleadosController {
-  constructor(private readonly empleadosService: EmpleadosService) {}
+  constructor(private readonly empleadosService: EmpleadosService) { }
 
   @Post()
   create(@Body() createEmpleadoDto: CreateEmpleadoDto) {
@@ -72,5 +72,11 @@ export class EmpleadosController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.empleadosService.remove(id);
+  }
+  // En empleados.controller.ts
+
+  @Post('bulk')
+  createBulk(@Body() createEmpleadoDtos: CreateEmpleadoDto[]) {
+    return this.empleadosService.createBulk(createEmpleadoDtos);
   }
 }
