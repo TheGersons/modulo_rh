@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/layout/Layout';
 import { ArrowLeft, CheckCircle, AlertCircle, Send, TrendingUp, TrendingDown, Minus, Info } from 'lucide-react';
 import type { EvaluacionDetalle, KPI } from '../types/kpi';
+import { evaluacionesService } from '../services/evaluaciones.service';
+import { kpisService } from '../services/kpis.service';
 
 interface EvaluacionCompleta {
   id: string;
@@ -43,118 +45,45 @@ export default function DetalleEvaluacionPage() {
 
   const cargarEvaluacion = async () => {
     try {
-      // TODO: Llamar al backend
-      const evaluacionSimulada: EvaluacionCompleta = {
-        id: evaluacionId || '1',
-        periodo: 'Q1',
-        anio: 2026,
-        evaluador: {
-          nombre: 'Carlos',
-          apellido: 'Méndez',
-          puesto: 'Jefe de Gerencia',
+      setLoading(true);
+      const evaluacion = await evaluacionesService.getById(evaluacionId!);
+
+      const detalleEvaluaciones = [...evaluacion.detalles];
+
+      let DetalleFinal = new Map<EvaluacionDetalle, any>();
+
+      //llenamos el mapa con datos genericos basados en la interface
+      
+
+
+
+      for (const detalle of detalleEvaluaciones) {
+          DetalleFinal.set(id , detalle.id),
+          DetalleFinal.
         },
-        promedioGeneral: 96.67,
-        kpisRojos: 0,
-        porcentajeRojos: 0,
-        status: 'enviada',
-        fechaEnvio: '2026-03-15T10:30:00',
-        comentarioGeneral: 'Excelente desempeño general. Se destaca por su compromiso y proactividad en el cumplimiento de objetivos estratégicos.',
-        detalles: [
-          {
-            id: '1',
-            kpiId: '1',
-            kpi: {
-              id: '1',
-              key: 'GER-001',
-              area: 'Gerencia',
-              areaId: '1',
-              indicador: 'Cumplimiento de Objetivos Estratégicos',
-              descripcion: 'Porcentaje de objetivos estratégicos cumplidos en el periodo',
-              formula: '(Objetivos cumplidos / Total objetivos) * 100',
-              meta: 90,
-              tolerancia: -5,
-              umbralAmarillo: 85,
-              periodicidad: 'trimestral',
-              sentido: 'Mayor es mejor',
-              unidad: '%',
-              activo: true,
-              orden: 1
-            },
-            resultadoNumerico: 95,
-            meta: 90,
-            tolerancia: -5,
-            umbralAmarillo: 85,
-            sentido: 'Mayor es mejor',
-            resultadoPorcentaje: 100,
-            brechaVsMeta: 5,
-            estado: 'verde',
-            comentarios: 'Superó la meta establecida. Excelente gestión de objetivos estratégicos.',
-          },
-          {
-            id: '2',
-            kpiId: '2',
-            kpi: {
-              id: '2',
-              key: 'GER-002',
-              area: 'Gerencia',
-              areaId: '1',
-              indicador: 'Satisfacción de Stakeholders',
-              descripcion: 'Nivel de satisfacción de partes interesadas',
-              formula: 'Promedio de encuestas de satisfacción',
-              meta: 85,
-              tolerancia: -5,
-              umbralAmarillo: 80,
-              periodicidad: 'trimestral',
-              sentido: 'Mayor es mejor',
-              unidad: '%',
-              activo: true,
-              orden: 2
-            },
-            resultadoNumerico: 88,
-            meta: 85,
-            tolerancia: -5,
-            umbralAmarillo: 80,
-            sentido: 'Mayor es mejor',
-            resultadoPorcentaje: 100,
-            brechaVsMeta: 3,
-            estado: 'verde',
-            comentarios: 'Buen nivel de satisfacción de stakeholders.',
-          },
-          {
-            id: '3',
-            kpiId: '3',
-            kpi: {
-              id: '3',
-              key: 'GER-003',
-              area: 'Gerencia',
-              areaId: '1',
-              indicador: 'ROI de Proyectos',
-              descripcion: 'Retorno de inversión de proyectos ejecutados',
-              formula: '((Beneficio - Inversión) / Inversión) * 100',
-              meta: 20,
-              tolerancia: -5,
-              umbralAmarillo: 15,
-              periodicidad: 'trimestral',
-              sentido: 'Mayor es mejor',
-              unidad: '%',
-              activo: true,
-              orden: 3
-            },
-            resultadoNumerico: 18,
-            meta: 20,
-            tolerancia: -5,
-            umbralAmarillo: 15,
-            sentido: 'Mayor es mejor',
-            resultadoPorcentaje: 90,
-            brechaVsMeta: -2,
-            estado: 'amarillo',
-            comentarios: 'ROI dentro de tolerancia. Se recomienda optimizar rentabilidad de proyectos.',
-          },
-        ],
-      };
-      setEvaluacion(evaluacionSimulada);
+
+      //le damos fomatos a los detalles con su kpi
+      setEvaluacion({
+        id: evaluacion.id,
+        periodo: evaluacion.periodo,
+        anio: evaluacion.anio,
+        evaluador: {
+          nombre: evaluacion.evaluador.nombre,
+          apellido: evaluacion.evaluador.apellido,
+          puesto: evaluacion.evaluador.puesto,
+        },
+        promedioGeneral: evaluacion.promedioGeneral,
+        kpisRojos: evaluacion.kpisRojos,
+        porcentajeRojos: evaluacion.porcentajeRojos,
+        status: evaluacion.status,
+        fechaEnvio: evaluacion.fechaEnvio,
+        comentarioGeneral: evaluacion.comentarioGeneral,
+        detalles: 
+      
+    });
     } catch (error) {
       console.error('Error al cargar evaluación:', error);
+      alert('Error al cargar la evaluación');
     } finally {
       setLoading(false);
     }
