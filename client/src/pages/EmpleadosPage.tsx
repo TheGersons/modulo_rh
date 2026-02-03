@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Layout from '../components/layout/Layout';
 import { empleadosService } from '../services/empleados.service';
 import * as XLSX from 'xlsx';
@@ -146,7 +146,8 @@ export const EmployeeToolbar = ({ onRefresh }: EmployeeToolbarProps) => {
 };
 
 export default function EmpleadosPage() {
-  const [empleados, setEmpleados] = useState<Empleado[]>([
+
+  const _initialEmpleados: Empleado[] = [
     {
       id: '1',
       dni: '0801-1990-12345',
@@ -158,32 +159,37 @@ export default function EmpleadosPage() {
       role: 'empleado',
       activo: true,
       createdAt: '2024-01-15',
-    },
-    {
-      id: '2',
-      dni: '0801-1988-54321',
-      nombre: 'Sandra',
-      apellido: 'Gómez',
-      email: 'sandra.gomez@energiapd.com',
-      puesto: 'Coordinadora',
-      area: 'Gerencia',
-      role: 'empleado',
-      activo: true,
-      createdAt: '2024-02-20',
-    },
-    {
-      id: '3',
-      dni: '0801-1992-67890',
-      nombre: 'Carlos',
-      apellido: 'Méndez',
-      email: 'carlos.mendez@energiapd.com',
-      puesto: 'Jefe de Gerencia',
-      area: 'Gerencia',
-      role: 'jefe',
-      activo: true,
-      createdAt: '2023-11-10',
-    },
-  ]);
+    }
+  ]
+  const [empleados, setEmpleados] = useState<Empleado[]>(_initialEmpleados);
+  useEffect(() => {
+    const cargarEmpleados = async () => {
+      try {
+        const data = await empleadosService.getAll();
+
+        const empleadosFormateados = data.map((emp: any) => ({
+          id: emp.id,
+          dni: emp.dni,
+          nombre: emp.nombre,
+          apellido: emp.apellido,
+          email: emp.email,
+          puesto: emp.puesto,
+          area:  'Sin área', // Ajuste para manejar área como objeto o string
+          role: emp.role,
+          activo: emp.activo,
+          createdAt: emp.createdAt,
+        }));
+        setEmpleados(
+          empleadosFormateados
+        );
+        return empleadosFormateados;
+      } catch (error) {
+        console.error("Error al cargar empleados:", error);
+      }
+    };
+    cargarEmpleados();
+  }, []);
+    
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroArea, setFiltroArea] = useState('todas');
@@ -384,10 +390,10 @@ export default function EmpleadosPage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
+                  <th className="px-18 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
                     DNI
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
+                  <th className="px-30 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
                     Empleado
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
@@ -396,7 +402,7 @@ export default function EmpleadosPage() {
                   <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
                     Puesto
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
+                  <th className="px-16 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
                     Área
                   </th>
                   <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
