@@ -36,7 +36,7 @@ export default function Sidebar() {
             icon: Users,
             label: 'Empleados',
             path: '/empleados',
-            badge: 45
+            badge: 98
         },
         {
             icon: Settings,

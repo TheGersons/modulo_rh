@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CreateKpiDto } from './dto/create-kpi.dto';
 import { UpdateKpiDto } from './dto/update-kpi.dto';
@@ -17,7 +22,9 @@ export class KpisService {
     });
 
     if (existeKey) {
-      throw new ConflictException(`Ya existe un KPI con el key "${createKpiDto.key}"`);
+      throw new ConflictException(
+        `Ya existe un KPI con el key "${createKpiDto.key}"`,
+      );
     }
 
     // Validar que el área exista
@@ -26,11 +33,17 @@ export class KpisService {
     });
 
     if (!area) {
-      throw new NotFoundException(`No se encontró el área con ID ${createKpiDto.areaId}`);
+      throw new NotFoundException(
+        `No se encontró el área con ID ${createKpiDto.areaId}`,
+      );
     }
 
     // Validar que meta y tolerancia sean coherentes
-    this.validarMetaYTolerancia(createKpiDto.meta, createKpiDto.tolerancia, createKpiDto.sentido);
+    this.validarMetaYTolerancia(
+      createKpiDto.meta,
+      createKpiDto.tolerancia,
+      createKpiDto.sentido,
+    );
 
     // Calcular umbral amarillo
     const umbralAmarillo = this.calcularUmbralAmarillo(
@@ -74,7 +87,11 @@ export class KpisService {
   // ============================================
   // LISTAR TODOS LOS KPIs
   // ============================================
-  async findAll(filters?: { areaId?: string; puesto?: string; activo?: boolean }) {
+  async findAll(filters?: {
+    areaId?: string;
+    puesto?: string;
+    activo?: boolean;
+  }) {
     const where: any = {};
 
     if (filters?.areaId) {
@@ -220,7 +237,9 @@ export class KpisService {
       });
 
       if (existeKey) {
-        throw new ConflictException(`Ya existe un KPI con el key "${updateKpiDto.key}"`);
+        throw new ConflictException(
+          `Ya existe un KPI con el key "${updateKpiDto.key}"`,
+        );
       }
     }
 
@@ -231,7 +250,9 @@ export class KpisService {
       });
 
       if (!area) {
-        throw new NotFoundException(`No se encontró el área con ID ${updateKpiDto.areaId}`);
+        throw new NotFoundException(
+          `No se encontró el área con ID ${updateKpiDto.areaId}`,
+        );
       }
     }
 
@@ -350,12 +371,17 @@ export class KpisService {
 
     // Calcular estadísticas
     const totalEvaluaciones = evaluaciones.length;
-    const sumaResultados = evaluaciones.reduce((acc, e) => acc + e.resultadoPorcentaje, 0);
+    const sumaResultados = evaluaciones.reduce(
+      (acc, e) => acc + e.resultadoPorcentaje!,
+      0,
+    );
     const promedioResultado = sumaResultados / totalEvaluaciones;
 
-    const verdes = evaluaciones.filter(e => e.estado === 'verde').length;
-    const amarillos = evaluaciones.filter(e => e.estado === 'amarillo').length;
-    const rojos = evaluaciones.filter(e => e.estado === 'rojo').length;
+    const verdes = evaluaciones.filter((e) => e.estado === 'verde').length;
+    const amarillos = evaluaciones.filter(
+      (e) => e.estado === 'amarillo',
+    ).length;
+    const rojos = evaluaciones.filter((e) => e.estado === 'rojo').length;
 
     return {
       kpi: {
@@ -371,11 +397,13 @@ export class KpisService {
         verdes,
         amarillos,
         rojos,
-        porcentajeVerdes: Math.round((verdes / totalEvaluaciones) * 10000) / 100,
-        porcentajeAmarillos: Math.round((amarillos / totalEvaluaciones) * 10000) / 100,
+        porcentajeVerdes:
+          Math.round((verdes / totalEvaluaciones) * 10000) / 100,
+        porcentajeAmarillos:
+          Math.round((amarillos / totalEvaluaciones) * 10000) / 100,
         porcentajeRojos: Math.round((rojos / totalEvaluaciones) * 10000) / 100,
       },
-      ultimasEvaluaciones: evaluaciones.slice(0, 5).map(e => ({
+      ultimasEvaluaciones: evaluaciones.slice(0, 5).map((e) => ({
         periodo: e.evaluacion.periodo,
         anio: e.evaluacion.anio,
         resultado: e.resultadoNumerico,
@@ -389,7 +417,11 @@ export class KpisService {
   // MÉTODOS AUXILIARES
   // ============================================
 
-  private validarMetaYTolerancia(meta: number, tolerancia: number, sentido: string) {
+  private validarMetaYTolerancia(
+    meta: number,
+    tolerancia: number,
+    sentido: string,
+  ) {
     if (meta <= 0) {
       throw new BadRequestException('La meta debe ser mayor a 0');
     }
@@ -407,7 +439,11 @@ export class KpisService {
     }
   }
 
-  private calcularUmbralAmarillo(meta: number, tolerancia: number, sentido: string): number {
+  private calcularUmbralAmarillo(
+    meta: number,
+    tolerancia: number,
+    sentido: string,
+  ): number {
     if (sentido === 'Mayor es mejor') {
       // Ej: meta = 90, tolerancia = -5 → umbral = 85
       return meta + tolerancia;
@@ -430,7 +466,7 @@ export class KpisService {
     }
 
     // Actualizar el orden de cada KPI
-    const updates = orden.map(item =>
+    const updates = orden.map((item) =>
       this.prisma.kPI.update({
         where: { id: item.id },
         data: { orden: item.orden },

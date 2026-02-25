@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CreateEvaluacionDto } from './dto/create-evaluacion.dto';
 import { UpdateEvaluacionDto } from './dto/update-evaluacion.dto';
@@ -18,7 +22,9 @@ export class EvaluacionesService {
     });
 
     if (!empleado) {
-      throw new NotFoundException(`No se encontró el empleado con ID ${createEvaluacionDto.empleadoId}`);
+      throw new NotFoundException(
+        `No se encontró el empleado con ID ${createEvaluacionDto.empleadoId}`,
+      );
     }
 
     // Validar que el evaluador exista
@@ -27,7 +33,9 @@ export class EvaluacionesService {
     });
 
     if (!evaluador) {
-      throw new NotFoundException(`No se encontró el evaluador con ID ${createEvaluacionDto.evaluadorId}`);
+      throw new NotFoundException(
+        `No se encontró el evaluador con ID ${createEvaluacionDto.evaluadorId}`,
+      );
     }
 
     // Verificar si ya existe una evaluación para este empleado en el mismo periodo
@@ -54,7 +62,6 @@ export class EvaluacionesService {
         tipoPeriodo: createEvaluacionDto.tipoPeriodo,
         anio: createEvaluacionDto.anio,
         status: 'borrador',
-        comentarioGeneral: createEvaluacionDto.comentarioGeneral,
         promedioGeneral: 0,
         kpisRojos: 0,
         porcentajeRojos: 0,
@@ -85,7 +92,10 @@ export class EvaluacionesService {
     });
 
     // Si se proporcionan detalles, crearlos
-    if (createEvaluacionDto.detalles && createEvaluacionDto.detalles.length > 0) {
+    if (
+      createEvaluacionDto.detalles &&
+      createEvaluacionDto.detalles.length > 0
+    ) {
       await this.agregarDetalles(evaluacion.id, createEvaluacionDto.detalles);
       return this.findOne(evaluacion.id);
     }
@@ -207,7 +217,6 @@ export class EvaluacionesService {
             },
           },
         },
-        validacion: true,
       },
     });
 
@@ -227,7 +236,9 @@ export class EvaluacionesService {
 
     // Solo se puede editar si está en borrador
     if (evaluacionExistente.status !== 'borrador') {
-      throw new BadRequestException('Solo se pueden editar evaluaciones en estado borrador');
+      throw new BadRequestException(
+        'Solo se pueden editar evaluaciones en estado borrador',
+      );
     }
 
     // Actualizar evaluación
@@ -236,12 +247,14 @@ export class EvaluacionesService {
       data: {
         periodo: updateEvaluacionDto.periodo,
         anio: updateEvaluacionDto.anio,
-        comentarioGeneral: updateEvaluacionDto.comentarioGeneral,
       },
     });
 
     // Si se proporcionan detalles, actualizarlos
-    if (updateEvaluacionDto.detalles && updateEvaluacionDto.detalles.length > 0) {
+    if (
+      updateEvaluacionDto.detalles &&
+      updateEvaluacionDto.detalles.length > 0
+    ) {
       // Eliminar detalles existentes
       await this.prisma.evaluacionDetalle.deleteMany({
         where: { evaluacionId: id },
@@ -268,11 +281,16 @@ export class EvaluacionesService {
       });
 
       if (!kpi) {
-        throw new NotFoundException(`No se encontró el KPI con ID ${detalle.kpiId}`);
+        throw new NotFoundException(
+          `No se encontró el KPI con ID ${detalle.kpiId}`,
+        );
       }
 
       // Calcular métricas del detalle
-      const metricas = this.calcularMetricasDetalle(kpi, detalle.resultadoNumerico);
+      const metricas = this.calcularMetricasDetalle(
+        kpi,
+        detalle.resultadoNumerico,
+      );
 
       // Crear o actualizar detalle
       if (detalle.id) {
@@ -283,7 +301,6 @@ export class EvaluacionesService {
             resultadoPorcentaje: metricas.resultadoPorcentaje,
             brechaVsMeta: metricas.brechaVsMeta,
             estado: metricas.estado,
-            comentarios: detalle.comentarios,
           },
         });
       } else {
@@ -293,13 +310,10 @@ export class EvaluacionesService {
             kpiId: detalle.kpiId,
             resultadoNumerico: detalle.resultadoNumerico,
             meta: kpi.meta,
-            tolerancia: kpi.tolerancia,
             umbralAmarillo: kpi.umbralAmarillo!,
-            sentido: kpi.sentido,
             resultadoPorcentaje: metricas.resultadoPorcentaje,
             brechaVsMeta: metricas.brechaVsMeta,
             estado: metricas.estado,
-            comentarios: detalle.comentarios,
           },
         });
       }
@@ -363,11 +377,16 @@ export class EvaluacionesService {
     }
 
     // Calcular promedio general
-    const sumaPromedios = evaluacion.detalles.reduce((acc, d) => acc + d.resultadoPorcentaje, 0);
+    const sumaPromedios = evaluacion.detalles.reduce(
+      (acc, d) => acc + d.resultadoPorcentaje!,
+      0,
+    );
     const promedioGeneral = sumaPromedios / evaluacion.detalles.length;
 
     // Contar KPIs rojos
-    const kpisRojos = evaluacion.detalles.filter(d => d.estado === 'rojo').length;
+    const kpisRojos = evaluacion.detalles.filter(
+      (d) => d.estado === 'rojo',
+    ).length;
     const porcentajeRojos = (kpisRojos / evaluacion.detalles.length) * 100;
 
     // Actualizar evaluación
@@ -389,18 +408,9 @@ export class EvaluacionesService {
 
     // Validar que esté en borrador
     if (evaluacion.status !== 'borrador') {
-      throw new BadRequestException('Solo se pueden enviar evaluaciones en estado borrador');
-    }
-
-    // Validar que todos los KPIs tengan calificación
-    if (evaluacion.detalles.length === 0) {
-      throw new BadRequestException('La evaluación debe tener al menos un KPI evaluado');
-    }
-
-    // Validar que todos los detalles tengan resultado
-    const sinEvaluar = evaluacion.detalles.filter(d => !d.resultadoNumerico || d.resultadoNumerico === 0);
-    if (sinEvaluar.length > 0) {
-      throw new BadRequestException('Todos los KPIs deben tener una calificación');
+      throw new BadRequestException(
+        'Solo se pueden enviar evaluaciones en estado borrador',
+      );
     }
 
     // Recalcular métricas antes de enviar
@@ -411,7 +421,6 @@ export class EvaluacionesService {
       where: { id },
       data: {
         status: 'enviada',
-        fechaEnvio: new Date(),
       },
       include: {
         empleado: true,
@@ -433,7 +442,9 @@ export class EvaluacionesService {
 
     // Solo se pueden eliminar borradores
     if (evaluacion.status !== 'borrador') {
-      throw new BadRequestException('Solo se pueden eliminar evaluaciones en estado borrador');
+      throw new BadRequestException(
+        'Solo se pueden eliminar evaluaciones en estado borrador',
+      );
     }
 
     // Eliminar detalles primero
@@ -458,7 +469,9 @@ export class EvaluacionesService {
     });
 
     if (!empleado) {
-      throw new NotFoundException(`No se encontró el empleado con ID ${empleadoId}`);
+      throw new NotFoundException(
+        `No se encontró el empleado con ID ${empleadoId}`,
+      );
     }
 
     return this.findAll({ empleadoId });
@@ -473,7 +486,9 @@ export class EvaluacionesService {
     });
 
     if (!evaluador) {
-      throw new NotFoundException(`No se encontró el evaluador con ID ${evaluadorId}`);
+      throw new NotFoundException(
+        `No se encontró el evaluador con ID ${evaluadorId}`,
+      );
     }
 
     return this.findAll({ evaluadorId });

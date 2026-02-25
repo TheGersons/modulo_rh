@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CreateAreaDto } from './dto/create-area.dto';
 import { UpdateAreaDto } from './dto/update-area.dto';
@@ -17,7 +22,9 @@ export class AreasService {
     });
 
     if (existeNombre) {
-      throw new ConflictException(`Ya existe un área con el nombre "${createAreaDto.nombre}"`);
+      throw new ConflictException(
+        `Ya existe un área con el nombre "${createAreaDto.nombre}"`,
+      );
     }
 
     // Validar que el jefe exista
@@ -26,16 +33,20 @@ export class AreasService {
     });
 
     if (!jefe) {
-      throw new NotFoundException(`No se encontró el jefe con ID ${createAreaDto.jefeId}`);
+      throw new NotFoundException(
+        `No se encontró el jefe con ID ${createAreaDto.jefeId}`,
+      );
     }
 
     // Validar que el jefe no esté asignado a otra área
-    const jefeYaAsignado = await this.prisma.area.findUnique({
+    const jefeYaAsignado = await this.prisma.area.findFirst({
       where: { jefeId: createAreaDto.jefeId },
     });
 
     if (jefeYaAsignado) {
-      throw new ConflictException(`El jefe ya está asignado al área "${jefeYaAsignado.nombre}"`);
+      throw new ConflictException(
+        `El jefe ya está asignado al área "${jefeYaAsignado.nombre}."`,
+      );
     }
 
     // Crear área
@@ -151,7 +162,9 @@ export class AreasService {
       });
 
       if (existeNombre) {
-        throw new ConflictException(`Ya existe un área con el nombre "${updateAreaDto.nombre}"`);
+        throw new ConflictException(
+          `Ya existe un área con el nombre "${updateAreaDto.nombre}"`,
+        );
       }
     }
 
@@ -162,15 +175,19 @@ export class AreasService {
       });
 
       if (!jefe) {
-        throw new NotFoundException(`No se encontró el jefe con ID ${updateAreaDto.jefeId}`);
+        throw new NotFoundException(
+          `No se encontró el jefe con ID ${updateAreaDto.jefeId}`,
+        );
       }
 
-      const jefeYaAsignado = await this.prisma.area.findUnique({
+      const jefeYaAsignado = await this.prisma.area.findFirst({
         where: { jefeId: updateAreaDto.jefeId },
       });
 
       if (jefeYaAsignado && jefeYaAsignado.id !== id) {
-        throw new ConflictException(`El jefe ya está asignado al área "${jefeYaAsignado.nombre}"`);
+        throw new ConflictException(
+          `El jefe ya está asignado al área "${jefeYaAsignado.nombre}"`,
+        );
       }
 
       // Actualizar areaId del nuevo jefe
@@ -221,7 +238,7 @@ export class AreasService {
 
     if (empleados > 0) {
       throw new BadRequestException(
-        `No se puede eliminar el área porque tiene ${empleados} empleado(s) asignado(s)`
+        `No se puede eliminar el área porque tiene ${empleados} empleado(s) asignado(s)`,
       );
     }
 
@@ -232,7 +249,7 @@ export class AreasService {
 
     if (kpis > 0) {
       throw new BadRequestException(
-        `No se puede eliminar el área porque tiene ${kpis} KPI(s) asignado(s)`
+        `No se puede eliminar el área porque tiene ${kpis} KPI(s) asignado(s)`,
       );
     }
 
@@ -309,25 +326,32 @@ export class AreasService {
 
     // Calcular estadísticas
     const totalEvaluaciones = evaluaciones.length;
-    const evaluacionesCompletadas = evaluaciones.filter(e => e.status === 'enviada' || e.status === 'validada').length;
-    const evaluacionesValidadas = evaluaciones.filter(e => e.status === 'validada').length;
+    const evaluacionesCompletadas = evaluaciones.filter(
+      (e) => e.status === 'enviada' || e.status === 'validada',
+    ).length;
+    const evaluacionesValidadas = evaluaciones.filter(
+      (e) => e.status === 'validada',
+    ).length;
 
     // Calcular promedio de evaluaciones
     let promedioEvaluaciones = 0;
     if (evaluacionesCompletadas > 0) {
       const suma = evaluaciones
-        .filter(e => e.status === 'enviada' || e.status === 'validada')
+        .filter((e) => e.status === 'enviada' || e.status === 'validada')
         .reduce((acc, e) => acc + (e.promedioGeneral || 0), 0);
       promedioEvaluaciones = suma / evaluacionesCompletadas;
     }
 
     // Contar KPIs rojos
     let kpisRojos = 0;
-    evaluaciones.forEach(evaluacion => {
-      kpisRojos += evaluacion.detalles.filter(d => d.estado === 'rojo').length;
+    evaluaciones.forEach((evaluacion) => {
+      kpisRojos += evaluacion.detalles.filter(
+        (d) => d.estado === 'rojo',
+      ).length;
     });
 
-    const porcentajeRojos = totalKpis > 0 ? (kpisRojos / (totalKpis * empleados)) * 100 : 0;
+    const porcentajeRojos =
+      totalKpis > 0 ? (kpisRojos / (totalKpis * empleados)) * 100 : 0;
 
     return {
       area: {
@@ -384,16 +408,21 @@ export class AreasService {
     }
 
     // Calcular promedio global
-    const sumaPromedios = evaluaciones.reduce((acc, e) => acc + (e.promedioGeneral || 0), 0);
+    const sumaPromedios = evaluaciones.reduce(
+      (acc, e) => acc + (e.promedioGeneral || 0),
+      0,
+    );
     const promedioGlobal = sumaPromedios / evaluaciones.length;
 
     // Contar KPIs totales y rojos
     let totalKpis = 0;
     let kpisRojos = 0;
 
-    evaluaciones.forEach(evaluacion => {
+    evaluaciones.forEach((evaluacion) => {
       totalKpis += evaluacion.detalles.length;
-      kpisRojos += evaluacion.detalles.filter(d => d.estado === 'rojo').length;
+      kpisRojos += evaluacion.detalles.filter(
+        (d) => d.estado === 'rojo',
+      ).length;
     });
 
     const porcentajeRojos = totalKpis > 0 ? (kpisRojos / totalKpis) * 100 : 0;
