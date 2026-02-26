@@ -1,12 +1,12 @@
 import {
   Injectable,
   NotFoundException,
-  ConflictException,
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CreateKpiDto } from './dto/create-kpi.dto';
 import { UpdateKpiDto } from './dto/update-kpi.dto';
+import { CalcularKpiDto } from './dto/calcular-kpi.dto';
 
 @Injectable()
 export class KpisService {
@@ -16,65 +16,55 @@ export class KpisService {
   // CREAR KPI
   // ============================================
   async create(createKpiDto: CreateKpiDto) {
-    // Validar que el key no exista
-    const existeKey = await this.prisma.kPI.findUnique({
-      where: { key: createKpiDto.key },
-    });
-
-    if (existeKey) {
-      throw new ConflictException(
-        `Ya existe un KPI con el key "${createKpiDto.key}"`,
-      );
-    }
-
-    // Validar que el área exista
+    // Validar que el área existe
     const area = await this.prisma.area.findUnique({
       where: { id: createKpiDto.areaId },
     });
 
     if (!area) {
       throw new NotFoundException(
-        `No se encontró el área con ID ${createKpiDto.areaId}`,
+        `Área con ID ${createKpiDto.areaId} no encontrada`,
       );
     }
 
-    // Validar que meta y tolerancia sean coherentes
-    this.validarMetaYTolerancia(
-      createKpiDto.meta,
-      createKpiDto.tolerancia,
-      createKpiDto.sentido,
-    );
+    // Validar que la key es única
+    const kpiExistente = await this.prisma.kPI.findUnique({
+      where: { key: createKpiDto.key },
+    });
 
-    // Calcular umbral amarillo
-    const umbralAmarillo = this.calcularUmbralAmarillo(
-      createKpiDto.meta,
-      createKpiDto.tolerancia,
-      createKpiDto.sentido,
-    );
+    if (kpiExistente) {
+      throw new BadRequestException(
+        `Ya existe un KPI con la key ${createKpiDto.key}`,
+      );
+    }
 
-    // Crear KPI
+    // Validar formulaCalculo es JSON válido
+    try {
+      JSON.parse(createKpiDto.formulaCalculo);
+    } catch (error) {
+      throw new BadRequestException('formulaCalculo debe ser un JSON válido');
+    }
+
+    // Calcular umbralAmarillo si hay meta y tolerancia
+    let umbralAmarillo = createKpiDto.umbralAmarillo;
+    if (createKpiDto.meta && createKpiDto.tolerancia && !umbralAmarillo) {
+      if (createKpiDto.sentido === 'Mayor es mejor') {
+        umbralAmarillo = createKpiDto.meta + createKpiDto.tolerancia;
+      } else {
+        umbralAmarillo = createKpiDto.meta - createKpiDto.tolerancia;
+      }
+    }
+
     const kpi = await this.prisma.kPI.create({
       data: {
-        key: createKpiDto.key,
-        area: createKpiDto.area,
-        areaId: createKpiDto.areaId,
-        puesto: createKpiDto.puesto,
-        indicador: createKpiDto.indicador,
-        descripcion: createKpiDto.descripcion,
-        formula: createKpiDto.formula,
-        meta: createKpiDto.meta,
-        tolerancia: createKpiDto.tolerancia,
+        ...createKpiDto,
         umbralAmarillo,
-        periodicidad: createKpiDto.periodicidad,
-        sentido: createKpiDto.sentido,
-        unidad: createKpiDto.unidad,
-        orden: createKpiDto.orden ?? 0,
-        activo: createKpiDto.activo ?? true,
+        tipoCriticidad: createKpiDto.tipoCriticidad || 'no_critico',
+        operadorMeta: createKpiDto.operadorMeta || '=',
       },
       include: {
         areaRelacion: {
           select: {
-            id: true,
             nombre: true,
           },
         },
@@ -85,45 +75,38 @@ export class KpisService {
   }
 
   // ============================================
-  // LISTAR TODOS LOS KPIs
+  // LISTAR KPIs
   // ============================================
   async findAll(filters?: {
     areaId?: string;
     puesto?: string;
     activo?: boolean;
+    tipoCriticidad?: string;
   }) {
     const where: any = {};
 
-    if (filters?.areaId) {
-      where.areaId = filters.areaId;
-    }
-
-    if (filters?.puesto) {
-      where.puesto = filters.puesto;
-    }
-
-    if (filters?.activo !== undefined) {
-      where.activo = filters.activo;
-    }
+    if (filters?.areaId) where.areaId = filters.areaId;
+    if (filters?.puesto) where.puesto = filters.puesto;
+    if (filters?.activo !== undefined) where.activo = filters.activo;
+    if (filters?.tipoCriticidad) where.tipoCriticidad = filters.tipoCriticidad;
 
     const kpis = await this.prisma.kPI.findMany({
       where,
       include: {
         areaRelacion: {
           select: {
-            id: true,
             nombre: true,
           },
         },
       },
-      orderBy: [{ areaId: 'asc' }, { orden: 'asc' }],
+      orderBy: [{ orden: 'asc' }, { createdAt: 'desc' }],
     });
 
     return kpis;
   }
 
   // ============================================
-  // OBTENER UN KPI POR ID
+  // OBTENER KPI POR ID
   // ============================================
   async findOne(id: string) {
     const kpi = await this.prisma.kPI.findUnique({
@@ -131,42 +114,6 @@ export class KpisService {
       include: {
         areaRelacion: {
           select: {
-            id: true,
-            nombre: true,
-          },
-        },
-        evaluacionDetalles: {
-          select: {
-            id: true,
-            resultadoNumerico: true,
-            resultadoPorcentaje: true,
-            estado: true,
-          },
-          take: 10,
-          orderBy: {
-            createdAt: 'desc',
-          },
-        },
-      },
-    });
-
-    if (!kpi) {
-      throw new NotFoundException(`No se encontró el KPI con ID ${id}`);
-    }
-
-    return kpi;
-  }
-
-  // ============================================
-  // OBTENER KPI POR KEY
-  // ============================================
-  async findByKey(key: string) {
-    const kpi = await this.prisma.kPI.findUnique({
-      where: { key },
-      include: {
-        areaRelacion: {
-          select: {
-            id: true,
             nombre: true,
           },
         },
@@ -174,97 +121,35 @@ export class KpisService {
     });
 
     if (!kpi) {
-      throw new NotFoundException(`No se encontró el KPI con key "${key}"`);
+      throw new NotFoundException(`KPI con ID ${id} no encontrado`);
     }
 
     return kpi;
-  }
-
-  // ============================================
-  // OBTENER KPIs POR ÁREA
-  // ============================================
-  async findByArea(areaId: string) {
-    const area = await this.prisma.area.findUnique({
-      where: { id: areaId },
-    });
-
-    if (!area) {
-      throw new NotFoundException(`No se encontró el área con ID ${areaId}`);
-    }
-
-    const kpis = await this.prisma.kPI.findMany({
-      where: { areaId, activo: true },
-      orderBy: { orden: 'asc' },
-    });
-
-    return kpis;
-  }
-
-  // ============================================
-  // OBTENER KPIs POR PUESTO
-  // ============================================
-  async findByPuesto(puesto: string) {
-    const kpis = await this.prisma.kPI.findMany({
-      where: {
-        OR: [{ puesto }, { puesto: null }],
-        activo: true,
-      },
-      include: {
-        areaRelacion: {
-          select: {
-            id: true,
-            nombre: true,
-          },
-        },
-      },
-      orderBy: [{ areaId: 'asc' }, { orden: 'asc' }],
-    });
-
-    return kpis;
   }
 
   // ============================================
   // ACTUALIZAR KPI
   // ============================================
   async update(id: string, updateKpiDto: UpdateKpiDto) {
-    // Verificar que el KPI existe
-    const kpiExistente = await this.findOne(id);
+    await this.findOne(id);
 
-    // Si se actualiza el key, validar que no exista otro con ese key
-    if (updateKpiDto.key && updateKpiDto.key !== kpiExistente.key) {
-      const existeKey = await this.prisma.kPI.findUnique({
-        where: { key: updateKpiDto.key },
-      });
-
-      if (existeKey) {
-        throw new ConflictException(
-          `Ya existe un KPI con el key "${updateKpiDto.key}"`,
-        );
+    // Validar formulaCalculo si se proporciona
+    if (updateKpiDto.formulaCalculo) {
+      try {
+        JSON.parse(updateKpiDto.formulaCalculo);
+      } catch (error) {
+        throw new BadRequestException('formulaCalculo debe ser un JSON válido');
       }
     }
 
-    // Si se actualiza el área, validar que exista
-    if (updateKpiDto.areaId && updateKpiDto.areaId !== kpiExistente.areaId) {
-      const area = await this.prisma.area.findUnique({
-        where: { id: updateKpiDto.areaId },
-      });
-
-      if (!area) {
-        throw new NotFoundException(
-          `No se encontró el área con ID ${updateKpiDto.areaId}`,
-        );
+    // Recalcular umbralAmarillo si se actualizan meta o tolerancia
+    let umbralAmarillo = updateKpiDto.umbralAmarillo;
+    if (updateKpiDto.meta && updateKpiDto.tolerancia && !umbralAmarillo) {
+      if (updateKpiDto.sentido === 'Mayor es mejor') {
+        umbralAmarillo = updateKpiDto.meta + updateKpiDto.tolerancia;
+      } else {
+        umbralAmarillo = updateKpiDto.meta - updateKpiDto.tolerancia;
       }
-    }
-
-    // Si se actualizan meta, tolerancia o sentido, recalcular umbral
-    let umbralAmarillo = kpiExistente.umbralAmarillo;
-    const meta = updateKpiDto.meta ?? kpiExistente.meta;
-    const tolerancia = updateKpiDto.tolerancia ?? kpiExistente.tolerancia;
-    const sentido = updateKpiDto.sentido ?? kpiExistente.sentido;
-
-    if (updateKpiDto.meta || updateKpiDto.tolerancia || updateKpiDto.sentido) {
-      this.validarMetaYTolerancia(meta, tolerancia, sentido);
-      umbralAmarillo = this.calcularUmbralAmarillo(meta, tolerancia, sentido);
     }
 
     const kpi = await this.prisma.kPI.update({
@@ -276,7 +161,6 @@ export class KpisService {
       include: {
         areaRelacion: {
           select: {
-            id: true,
             nombre: true,
           },
         },
@@ -290,17 +174,16 @@ export class KpisService {
   // ELIMINAR KPI
   // ============================================
   async remove(id: string) {
-    // Verificar que el KPI existe
     await this.findOne(id);
 
-    // Verificar que no tenga evaluaciones asociadas
-    const evaluaciones = await this.prisma.evaluacionDetalle.count({
+    // Verificar que no tenga órdenes de trabajo asociadas
+    const ordenesCount = await this.prisma.ordenTrabajo.count({
       where: { kpiId: id },
     });
 
-    if (evaluaciones > 0) {
+    if (ordenesCount > 0) {
       throw new BadRequestException(
-        `No se puede eliminar el KPI porque tiene ${evaluaciones} evaluación(es) asociada(s). Considere desactivarlo en su lugar.`,
+        'No se puede eliminar este KPI porque tiene órdenes de trabajo asociadas',
       );
     }
 
@@ -312,169 +195,205 @@ export class KpisService {
   }
 
   // ============================================
-  // DESACTIVAR/ACTIVAR KPI
+  // TOGGLE ACTIVO
   // ============================================
-  async toggleActivo(id: string) {
+  async toggle(id: string) {
     const kpi = await this.findOne(id);
 
-    const kpiActualizado = await this.prisma.kPI.update({
+    return this.prisma.kPI.update({
       where: { id },
-      data: { activo: !kpi.activo },
+      data: {
+        activo: !kpi.activo,
+      },
     });
+  }
+
+  // ============================================
+  // MOTOR DE CÁLCULO
+  // ============================================
+  async calcularResultado(calcularDto: CalcularKpiDto) {
+    const kpi = await this.findOne(calcularDto.kpiId);
+    const formula = JSON.parse(kpi.formulaCalculo);
+    const valores = calcularDto.valores;
+
+    let resultado: number;
+    let detalleCalculo: string;
+
+    switch (kpi.tipoCalculo) {
+      case 'binario':
+        // Espera un campo "cumplido" en valores (true/false)
+        resultado = valores.cumplido === true ? 100 : 0;
+        detalleCalculo = `Cumplimiento binario: ${valores.cumplido ? 'SÍ' : 'NO'}`;
+        break;
+
+      case 'division':
+        // Espera numerador y denominador en valores
+        const numerador = valores[formula.numerador];
+        const denominador = valores[formula.denominador];
+
+        if (!numerador || !denominador) {
+          throw new BadRequestException(
+            `Faltan valores: ${formula.numerador} y ${formula.denominador}`,
+          );
+        }
+
+        if (denominador === 0) {
+          throw new BadRequestException('El denominador no puede ser cero');
+        }
+
+        const multiplicador = formula.multiplicador || 1;
+        resultado = (numerador / denominador) * multiplicador;
+
+        if (formula.invertir) {
+          resultado = 100 - resultado;
+        }
+
+        detalleCalculo = `(${numerador} / ${denominador}) × ${multiplicador} = ${resultado.toFixed(2)}`;
+        break;
+
+      case 'conteo':
+        // Espera un campo con el conteo
+        resultado = valores[formula.target] || 0;
+        detalleCalculo = `Conteo de ${formula.target}: ${resultado}`;
+        break;
+
+      case 'porcentaje_kpis_equipo':
+        // Espera "total_kpis" y "kpis_verdes"
+        const totalKpis = valores.total_kpis || 0;
+        const kpisVerdes = valores.kpis_verdes || 0;
+
+        if (totalKpis === 0) {
+          resultado = 0;
+        } else {
+          resultado = (kpisVerdes / totalKpis) * 100;
+        }
+
+        detalleCalculo = `(${kpisVerdes} / ${totalKpis}) × 100 = ${resultado.toFixed(2)}%`;
+        break;
+
+      case 'dashboard_presentado':
+        // Espera "presentado" (true/false)
+        resultado = valores.presentado === true ? 100 : 0;
+        detalleCalculo = `Dashboard ${valores.presentado ? 'presentado' : 'no presentado'}`;
+        break;
+
+      case 'personalizado':
+        // Lógica custom según la fórmula
+        throw new BadRequestException(
+          'Tipo de cálculo personalizado no implementado aún',
+        );
+
+      default:
+        throw new BadRequestException(
+          `Tipo de cálculo ${kpi.tipoCalculo} no reconocido`,
+        );
+    }
+
+    // Determinar estado (verde/amarillo/rojo)
+    const estado = this.determinarEstado(resultado, kpi);
 
     return {
-      message: `KPI ${kpiActualizado.activo ? 'activado' : 'desactivado'} exitosamente`,
-      kpi: kpiActualizado,
+      kpiId: kpi.id,
+      indicador: kpi.indicador,
+      tipoCalculo: kpi.tipoCalculo,
+      resultado: Math.round(resultado * 100) / 100,
+      meta: kpi.meta,
+      operadorMeta: kpi.operadorMeta,
+      umbralAmarillo: kpi.umbralAmarillo,
+      estado,
+      detalleCalculo,
+      valoresIngresados: valores,
     };
   }
 
   // ============================================
-  // OBTENER ESTADÍSTICAS DE UN KPI
+  // DETERMINAR ESTADO (VERDE/AMARILLO/ROJO)
   // ============================================
-  async getEstadisticas(id: string) {
-    const kpi = await this.findOne(id);
+  private determinarEstado(resultado: number, kpi: any): string {
+    if (!kpi.meta) return 'verde'; // Si no hay meta, siempre verde
 
-    // Obtener todas las evaluaciones de este KPI
-    const evaluaciones = await this.prisma.evaluacionDetalle.findMany({
-      where: { kpiId: id },
-      include: {
-        evaluacion: {
-          select: {
-            periodo: true,
-            anio: true,
-            status: true,
-          },
-        },
-      },
-    });
+    const meta = kpi.meta;
+    const umbral = kpi.umbralAmarillo || meta;
+    const operador = kpi.operadorMeta || '=';
 
-    if (evaluaciones.length === 0) {
-      return {
-        kpi: {
-          id: kpi.id,
-          key: kpi.key,
-          indicador: kpi.indicador,
-          meta: kpi.meta,
-        },
-        estadisticas: {
-          totalEvaluaciones: 0,
-          promedioResultado: 0,
-          verdes: 0,
-          amarillos: 0,
-          rojos: 0,
-          porcentajeVerdes: 0,
-          porcentajeAmarillos: 0,
-          porcentajeRojos: 0,
-        },
-      };
+    let cumpleMeta = false;
+
+    switch (operador) {
+      case '>':
+        cumpleMeta = resultado > meta;
+        break;
+      case '>=':
+        cumpleMeta = resultado >= meta;
+        break;
+      case '=':
+        cumpleMeta = Math.abs(resultado - meta) < 0.01; // Tolerancia mínima
+        break;
+      case '<=':
+        cumpleMeta = resultado <= meta;
+        break;
+      case '<':
+        cumpleMeta = resultado < meta;
+        break;
     }
 
-    // Calcular estadísticas
-    const totalEvaluaciones = evaluaciones.length;
-    const sumaResultados = evaluaciones.reduce(
-      (acc, e) => acc + e.resultadoPorcentaje!,
-      0,
-    );
-    const promedioResultado = sumaResultados / totalEvaluaciones;
-
-    const verdes = evaluaciones.filter((e) => e.estado === 'verde').length;
-    const amarillos = evaluaciones.filter(
-      (e) => e.estado === 'amarillo',
-    ).length;
-    const rojos = evaluaciones.filter((e) => e.estado === 'rojo').length;
-
-    return {
-      kpi: {
-        id: kpi.id,
-        key: kpi.key,
-        indicador: kpi.indicador,
-        meta: kpi.meta,
-        area: kpi.area,
-      },
-      estadisticas: {
-        totalEvaluaciones,
-        promedioResultado: Math.round(promedioResultado * 100) / 100,
-        verdes,
-        amarillos,
-        rojos,
-        porcentajeVerdes:
-          Math.round((verdes / totalEvaluaciones) * 10000) / 100,
-        porcentajeAmarillos:
-          Math.round((amarillos / totalEvaluaciones) * 10000) / 100,
-        porcentajeRojos: Math.round((rojos / totalEvaluaciones) * 10000) / 100,
-      },
-      ultimasEvaluaciones: evaluaciones.slice(0, 5).map((e) => ({
-        periodo: e.evaluacion.periodo,
-        anio: e.evaluacion.anio,
-        resultado: e.resultadoNumerico,
-        porcentaje: e.resultadoPorcentaje,
-        estado: e.estado,
-      })),
-    };
-  }
-
-  // ============================================
-  // MÉTODOS AUXILIARES
-  // ============================================
-
-  private validarMetaYTolerancia(
-    meta: number,
-    tolerancia: number,
-    sentido: string,
-  ) {
-    if (meta <= 0) {
-      throw new BadRequestException('La meta debe ser mayor a 0');
+    if (cumpleMeta) {
+      return 'verde';
     }
 
-    if (sentido === 'Mayor es mejor' && tolerancia > 0) {
-      throw new BadRequestException(
-        'Para KPIs donde "Mayor es mejor", la tolerancia debe ser negativa (ej: -5)',
-      );
-    }
-
-    if (sentido === 'Menor es mejor' && tolerancia < 0) {
-      throw new BadRequestException(
-        'Para KPIs donde "Menor es mejor", la tolerancia debe ser positiva (ej: +5)',
-      );
-    }
-  }
-
-  private calcularUmbralAmarillo(
-    meta: number,
-    tolerancia: number,
-    sentido: string,
-  ): number {
-    if (sentido === 'Mayor es mejor') {
-      // Ej: meta = 90, tolerancia = -5 → umbral = 85
-      return meta + tolerancia;
+    // Verificar si está en zona amarilla
+    if (kpi.sentido === 'Mayor es mejor') {
+      return resultado >= umbral ? 'amarillo' : 'rojo';
     } else {
-      // Ej: meta = 30, tolerancia = +5 → umbral = 35
-      return meta + tolerancia;
+      return resultado <= umbral ? 'amarillo' : 'rojo';
     }
   }
 
   // ============================================
-  // REORDENAR KPIs DE UN ÁREA
+  // VALIDAR FÓRMULA
   // ============================================
-  async reordenar(areaId: string, orden: { id: string; orden: number }[]) {
-    const area = await this.prisma.area.findUnique({
-      where: { id: areaId },
-    });
+  async validarFormula(formulaCalculo: string, tipoCalculo: string) {
+    try {
+      const formula = JSON.parse(formulaCalculo);
 
-    if (!area) {
-      throw new NotFoundException(`No se encontró el área con ID ${areaId}`);
+      // Validar estructura según tipo
+      switch (tipoCalculo) {
+        case 'binario':
+          if (!formula.descripcion) {
+            throw new Error('Falta campo "descripcion"');
+          }
+          break;
+
+        case 'division':
+          if (!formula.numerador || !formula.denominador) {
+            throw new Error('Faltan campos "numerador" y "denominador"');
+          }
+          break;
+
+        case 'conteo':
+          if (!formula.target) {
+            throw new Error('Falta campo "target"');
+          }
+          break;
+
+        case 'porcentaje_kpis_equipo':
+          if (!formula.filtro) {
+            throw new Error('Falta campo "filtro"');
+          }
+          break;
+
+        case 'dashboard_presentado':
+          if (!formula.descripcion) {
+            throw new Error('Falta campo "descripcion"');
+          }
+          break;
+
+        default:
+          throw new Error(`Tipo de cálculo ${tipoCalculo} no reconocido`);
+      }
+
+      return { valido: true, mensaje: 'Fórmula válida' };
+    } catch (error: any) {
+      return { valido: false, mensaje: error.message };
     }
-
-    // Actualizar el orden de cada KPI
-    const updates = orden.map((item) =>
-      this.prisma.kPI.update({
-        where: { id: item.id },
-        data: { orden: item.orden },
-      }),
-    );
-
-    await Promise.all(updates);
-
-    return { message: 'KPIs reordenados exitosamente' };
   }
 }

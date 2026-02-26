@@ -1,4 +1,13 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsBoolean, IsIn } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsInt,
+  IsIn,
+  IsJSON,
+} from 'class-validator';
 
 export class CreateKpiDto {
   @IsString()
@@ -25,21 +34,49 @@ export class CreateKpiDto {
   @IsOptional()
   descripcion?: string;
 
+  // Configuración de cálculo
+  @IsString()
+  @IsNotEmpty()
+  @IsIn([
+    'binario',
+    'division',
+    'conteo',
+    'porcentaje_kpis_equipo',
+    'dashboard_presentado',
+    'personalizado',
+  ])
+  tipoCalculo: string;
+
+  @IsString()
+  @IsNotEmpty()
+  formulaCalculo: string; // JSON como string
+
+  // Metas
+  @IsNumber()
+  @IsOptional()
+  meta?: number;
+
   @IsString()
   @IsOptional()
-  formula?: string;
+  @IsIn(['>', '>=', '=', '<=', '<'])
+  operadorMeta?: string;
 
   @IsNumber()
-  @IsNotEmpty()
-  meta: number;
+  @IsOptional()
+  tolerancia?: number;
 
   @IsNumber()
-  @IsNotEmpty()
-  tolerancia: number;
+  @IsOptional()
+  umbralAmarillo?: number;
+
+  // Criticidad
+  @IsString()
+  @IsIn(['critico', 'no_critico'])
+  @IsOptional()
+  tipoCriticidad?: string;
 
   @IsString()
   @IsNotEmpty()
-  @IsIn(['mensual', 'trimestral', 'semestral', 'anual'])
   periodicidad: string;
 
   @IsString()
@@ -51,7 +88,7 @@ export class CreateKpiDto {
   @IsOptional()
   unidad?: string;
 
-  @IsNumber()
+  @IsInt()
   @IsOptional()
   orden?: number;
 

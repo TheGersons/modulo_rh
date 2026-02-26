@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CreateEmpleadoDto } from './dto/create-empleado.dto';
 import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
@@ -6,7 +11,7 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class EmpleadosService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   // ============================================
   // CREAR EMPLEADO
@@ -18,7 +23,9 @@ export class EmpleadosService {
     });
 
     if (existeEmail) {
-      throw new ConflictException(`Ya existe un empleado con el email "${createEmpleadoDto.email}"`);
+      throw new ConflictException(
+        `Ya existe un empleado con el email "${createEmpleadoDto.email}"`,
+      );
     }
 
     // Validar que el DNI no exista (si se proporciona)
@@ -28,7 +35,9 @@ export class EmpleadosService {
       });
 
       if (existeDni) {
-        throw new ConflictException(`Ya existe un empleado con el DNI "${createEmpleadoDto.dni}"`);
+        throw new ConflictException(
+          `Ya existe un empleado con el DNI "${createEmpleadoDto.dni}"`,
+        );
       }
     }
 
@@ -39,7 +48,9 @@ export class EmpleadosService {
       });
 
       if (!area) {
-        throw new NotFoundException(`No se encontró el área con ID ${createEmpleadoDto.areaId}`);
+        throw new NotFoundException(
+          `No se encontró el área con ID ${createEmpleadoDto.areaId}`,
+        );
       }
     }
 
@@ -77,7 +88,12 @@ export class EmpleadosService {
   // ============================================
   // LISTAR TODOS LOS EMPLEADOS
   // ============================================
-  async findAll(filters?: { areaId?: string; role?: string; activo?: boolean; search?: string }) {
+  async findAll(filters?: {
+    areaId?: string;
+    role?: string;
+    activo?: boolean;
+    search?: string;
+  }) {
     const where: any = {};
 
     if (filters?.areaId) {
@@ -195,7 +211,9 @@ export class EmpleadosService {
   // ============================================
   async search(query: string) {
     if (!query || query.trim().length === 0) {
-      throw new BadRequestException('El término de búsqueda no puede estar vacío');
+      throw new BadRequestException(
+        'El término de búsqueda no puede estar vacío',
+      );
     }
 
     const empleados = await this.prisma.user.findMany({
@@ -232,35 +250,50 @@ export class EmpleadosService {
     const empleadoExistente = await this.findOne(id);
 
     // Si se actualiza el email, validar que no exista otro con ese email
-    if (updateEmpleadoDto.email && updateEmpleadoDto.email !== empleadoExistente.email) {
+    if (
+      updateEmpleadoDto.email &&
+      updateEmpleadoDto.email !== empleadoExistente.email
+    ) {
       const existeEmail = await this.prisma.user.findUnique({
         where: { email: updateEmpleadoDto.email },
       });
 
       if (existeEmail) {
-        throw new ConflictException(`Ya existe un empleado con el email "${updateEmpleadoDto.email}"`);
+        throw new ConflictException(
+          `Ya existe un empleado con el email "${updateEmpleadoDto.email}"`,
+        );
       }
     }
 
     // Si se actualiza el DNI, validar que no exista otro con ese DNI
-    if (updateEmpleadoDto.dni && updateEmpleadoDto.dni !== empleadoExistente.dni) {
+    if (
+      updateEmpleadoDto.dni &&
+      updateEmpleadoDto.dni !== empleadoExistente.dni
+    ) {
       const existeDni = await this.prisma.user.findUnique({
         where: { dni: updateEmpleadoDto.dni },
       });
 
       if (existeDni) {
-        throw new ConflictException(`Ya existe un empleado con el DNI "${updateEmpleadoDto.dni}"`);
+        throw new ConflictException(
+          `Ya existe un empleado con el DNI "${updateEmpleadoDto.dni}"`,
+        );
       }
     }
 
     // Si se actualiza el área, validar que exista
-    if (updateEmpleadoDto.areaId && updateEmpleadoDto.areaId !== empleadoExistente.areaId) {
+    if (
+      updateEmpleadoDto.areaId &&
+      updateEmpleadoDto.areaId !== empleadoExistente.areaId
+    ) {
       const area = await this.prisma.area.findUnique({
         where: { id: updateEmpleadoDto.areaId },
       });
 
       if (!area) {
-        throw new NotFoundException(`No se encontró el área con ID ${updateEmpleadoDto.areaId}`);
+        throw new NotFoundException(
+          `No se encontró el área con ID ${updateEmpleadoDto.areaId}`,
+        );
       }
     }
 
@@ -363,7 +396,6 @@ export class EmpleadosService {
             },
           },
         },
-        validacion: true,
       },
       orderBy: [{ anio: 'desc' }, { periodo: 'desc' }],
     });
@@ -406,25 +438,36 @@ export class EmpleadosService {
 
     // Calcular estadísticas
     const totalEvaluaciones = evaluaciones.length;
-    const evaluacionesValidadas = evaluaciones.filter(e => e.status === 'validada').length;
-    const evaluacionesPendientes = evaluaciones.filter(e => e.status === 'enviada').length;
+    const evaluacionesValidadas = evaluaciones.filter(
+      (e) => e.status === 'validada',
+    ).length;
+    const evaluacionesPendientes = evaluaciones.filter(
+      (e) => e.status === 'enviada',
+    ).length;
 
     const evaluacionesCompletadas = evaluaciones.filter(
-      e => e.status === 'enviada' || e.status === 'validada',
+      (e) => e.status === 'enviada' || e.status === 'validada',
     );
 
     let promedioGeneral = 0;
     if (evaluacionesCompletadas.length > 0) {
-      const suma = evaluacionesCompletadas.reduce((acc, e) => acc + (e.promedioGeneral || 0), 0);
+      const suma = evaluacionesCompletadas.reduce(
+        (acc, e) => acc + (e.promedioGeneral || 0),
+        0,
+      );
       promedioGeneral = suma / evaluacionesCompletadas.length;
     }
 
     // Contar KPIs rojos y verdes
     let kpisRojos = 0;
     let kpisVerdes = 0;
-    evaluaciones.forEach(evaluacion => {
-      kpisRojos += evaluacion.detalles.filter(d => d.estado === 'rojo').length;
-      kpisVerdes += evaluacion.detalles.filter(d => d.estado === 'verde').length;
+    evaluaciones.forEach((evaluacion) => {
+      kpisRojos += evaluacion.detalles.filter(
+        (d) => d.estado === 'rojo',
+      ).length;
+      kpisVerdes += evaluacion.detalles.filter(
+        (d) => d.estado === 'verde',
+      ).length;
     });
 
     return {
@@ -442,12 +485,11 @@ export class EmpleadosService {
         kpisRojos,
         kpisVerdes,
       },
-      ultimasEvaluaciones: evaluaciones.slice(0, 5).map(e => ({
+      ultimasEvaluaciones: evaluaciones.slice(0, 5).map((e) => ({
         periodo: e.periodo,
         anio: e.anio,
         promedio: e.promedioGeneral,
         status: e.status,
-        fechaEnvio: e.fechaEnvio,
       })),
     };
   }
@@ -474,7 +516,7 @@ export class EmpleadosService {
 
     // Obtener nombres de áreas
     const areasConNombres = await Promise.all(
-      porArea.map(async item => {
+      porArea.map(async (item) => {
         const area = await this.prisma.area.findUnique({
           where: { id: item.areaId! },
           select: { nombre: true },
@@ -492,7 +534,7 @@ export class EmpleadosService {
         activos,
         inactivos,
       },
-      porRol: porRol.map(r => ({
+      porRol: porRol.map((r) => ({
         role: r.role,
         cantidad: r._count,
       })),

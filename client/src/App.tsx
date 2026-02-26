@@ -3,18 +3,18 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/Dashboard';
 import KPIsPage from './pages/KPIsPage';
-import EvaluarEmpleadosPage from './pages/EvaluarEmpleadosPage';
-import FormularioEvaluacionPage from './pages/FormularioEvaluacionPage';
 import DetalleEvaluacionPage from './pages/DetalleEvaluacionPage';
 import MisEvaluacionesPage from './pages/MisEvaluacionesPage';
 import ReportesPage from './pages/ReportesPage';
 import EmpleadosPage from './pages/EmpleadosPage';
 import ConfiguracionPage from './pages/ConfiguracionPage';
-import EditarPlanAccionPage from './pages/EditarPlanAccionPage';
-import DetallePlanAccionPage from './pages/DetallePlanAccionPage';
-import PlanesAccionPage from './pages/PlanesAccionPage';
 import Layout from './components/layout/Layout';
 import GestionKPIsPage from './pages/GestionKPIsPage';
+import OrdenesTrabajoPage from './pages/OrdenesTrabajoPage';
+import DetalleOrdenPage from './pages/DetalleOrdenPage';
+import CrearOrdenPage from './pages/CrearOrdenPage';
+import SolicitudesPage from './pages/SolicitudesPage';
+import CerrarPeriodoPage from './pages/CerrarPeriodoPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -44,17 +44,7 @@ function AppRoutes() {
           <KPIsPage />
         </PrivateRoute>
       } />
-      <Route path="/kpis/evaluar" element={
-        <PrivateRoute>
-          <EvaluarEmpleadosPage />
-        </PrivateRoute>
-      } />
-      <Route path="/kpis/evaluar/:empleadoId" element={
-        <PrivateRoute>
-          <FormularioEvaluacionPage />
-        </PrivateRoute>
-      } />
-      <Route path="/kpis/mis-evaluaciones" element={
+      <Route path="/evaluaciones" element={
         <PrivateRoute>
           <MisEvaluacionesPage />
         </PrivateRoute>
@@ -64,30 +54,13 @@ function AppRoutes() {
           <DetalleEvaluacionPage />
         </PrivateRoute>
       } />
-      <Route path="/kpis/planes-accion" element={
+      <Route path="/ordenes" element={
         <PrivateRoute>
           <Layout>
-            <div className="p-8">
-              <PlanesAccionPage />
-            </div>
+            <OrdenesTrabajoPage />
           </Layout>
-        </PrivateRoute>} />
-      <Route path="/kpis/planes-accion/:id" element={
-        <PrivateRoute>
-          <Layout>
-            <div className="p-8">
-              <DetallePlanAccionPage />
-            </div>
-          </Layout>
-        </PrivateRoute>} />
-      <Route path="/kpis/planes-accion/:id/editar" element={
-        <PrivateRoute>
-          <Layout>
-            <div className="p-8">
-              <EditarPlanAccionPage />
-            </div>
-          </Layout>
-        </PrivateRoute>} />
+        </PrivateRoute>
+      } />
       <Route path="/configuracion/kpis" element={
         <PrivateRoute>
           <Layout>
@@ -97,7 +70,7 @@ function AppRoutes() {
           </Layout>
         </PrivateRoute>
       } />
-      <Route path="/kpis/reportes" element={
+      <Route path="/reportes" element={
         <PrivateRoute>
           <ReportesPage />
         </PrivateRoute>
@@ -110,6 +83,28 @@ function AppRoutes() {
       <Route path="/configuracion" element={
         <PrivateRoute>
           <ConfiguracionPage />
+        </PrivateRoute>
+      } />
+      <Route path="/ordenes/:id" element={
+        <PrivateRoute>
+          <Layout>
+            <DetalleOrdenPage />
+          </Layout>
+        </PrivateRoute>
+      } />
+      <Route path="/ordenes/crear" element={
+        <PrivateRoute>
+          <CrearOrdenPage />
+        </PrivateRoute>
+      } />
+      <Route path="/solicitudes" element={
+        <PrivateRoute>
+          <SolicitudesPage />
+        </PrivateRoute>
+      } />
+      <Route path="/evaluaciones/cerrar-periodo" element={
+        <PrivateRoute>
+          <CerrarPeriodoPage />
         </PrivateRoute>
       } />
       <Route path="/" element={<Navigate to="/dashboard" />} />

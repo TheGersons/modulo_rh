@@ -22,14 +22,16 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relaciones
-  area                    Area?          @relation("AreaEmpleados", fields: [areaId], references: [id])
-  areaJefe                Area[]         @relation("AreaJefe")
-  evaluacionesRecibidas   Evaluacion[]   @relation("EmpleadoEvaluado")
-  evaluacionesCreadas     Evaluacion[]   @relation("Evaluador")
-  ordenesTrabajoRecibidas OrdenTrabajo[] @relation("EmpleadoOrden")
-  ordenesTrabajoCreadas   OrdenTrabajo[] @relation("CreadorOrden")
+  area                    Area?              @relation("AreaEmpleados", fields: [areaId], references: [id])
+  areaJefe                Area[]             @relation("AreaJefe")
+  evaluacionesRecibidas   Evaluacion[]       @relation("EmpleadoEvaluado")
+  evaluacionesCreadas     Evaluacion[]       @relation("Evaluador")
+  ordenesTrabajoRecibidas OrdenTrabajo[]     @relation("EmpleadoOrden")
+  ordenesTrabajoCreadas   OrdenTrabajo[]     @relation("CreadorOrden")
   revisionesRealizadas    RevisionJefe[]
-  alertas                 Alerta[]       @relation("AlertasEmpleado")
+  solicitudesTarea        SolicitudTarea[]   @relation("EmpleadoSolicitud")
+  solicitudesEdicion      SolicitudEdicion[] @relation("SolicitanteEdicion")
+  alertas                 Alerta[]           @relation("AlertasEmpleado")
 
   @@index([areaId])
   @@index([email])
@@ -74,13 +76,17 @@ model KPI {
   descripcion String? @db.Text
 
   // Configuración de cálculo automático
-  tipoCalculo    String // "cumplimiento_simple", "tareas_completadas", "puntualidad", "calidad", "personalizado"
-  formulaCalculo String @db.Text // JSON con parámetros del cálculo
+  tipoCalculo    String // "binario", "division", "conteo", "porcentaje_kpis_equipo", "dashboard_presentado"
+  formulaCalculo String @db.Text // JSON con estructura de cálculo
 
-  // Metas (opcional según tipo de cálculo)
+  // Metas
   meta           Float?
+  operadorMeta   String? @default("=") // ">", ">=", "=", "<=", "<"
   tolerancia     Float?
   umbralAmarillo Float?
+
+  // Criticidad
+  tipoCriticidad String @default("no_critico") // "critico", "no_critico"
 
   periodicidad String
   sentido      String // "Mayor es mejor", "Menor es mejor"
@@ -99,6 +105,7 @@ model KPI {
   @@index([activo])
   @@index([puesto])
   @@index([tipoCalculo])
+  @@index([tipoCriticidad])
 }
 
 model OrdenTrabajo {
@@ -111,32 +118,50 @@ model OrdenTrabajo {
   descripcion    String @db.Text
   cantidadTareas Int // Número de tareas/evidencias requeridas
 
-  fechaInicio     DateTime  @default(now())
-  fechaLimite     DateTime
-  fechaCompletada DateTime?
+  // Tipo y estado
+  tipoOrden String @default("kpi_sistema") // "kpi_sistema", "orden_empleado"
+  status    String @default("pendiente") // "pendiente", "en_proceso", "completada", "vencida", "rechazada", "en_pausa", "cancelada", "aprobada"
 
-  status String @default("pendiente") // "pendiente", "en_proceso", "completada", "vencida", "rechazada"
+  // Fechas
+  fechaInicio         DateTime  @default(now())
+  fechaLimite         DateTime
+  fechaLimiteOriginal DateTime?
+  fechaExtendida      DateTime?
+  motivoExtension     String?   @db.Text
+  fechaCompletada     DateTime?
+
+  // Pausa
+  enPausa     Boolean   @default(false)
+  motivoPausa String?   @db.Text
+  fechaPausa  DateTime?
+
+  // Edición
+  requiereAprobacion Boolean @default(false)
 
   // Cálculo automático
-  tareasCompletadas Int    @default(0)
-  progreso          Float  @default(0) // Porcentaje de avance
+  valoresCalculo    String? @db.Text
+  tareasCompletadas Int     @default(0)
+  progreso          Float   @default(0) // Porcentaje de avance
   resultadoFinal    Float? // Resultado calculado automáticamente
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relaciones
-  kpi      KPI           @relation(fields: [kpiId], references: [id])
-  empleado User          @relation("EmpleadoOrden", fields: [empleadoId], references: [id])
-  creador  User          @relation("CreadorOrden", fields: [creadorId], references: [id])
-  tareas   Tarea[]
-  revision RevisionJefe?
+  kpi                KPI                @relation(fields: [kpiId], references: [id])
+  empleado           User               @relation("EmpleadoOrden", fields: [empleadoId], references: [id])
+  creador            User               @relation("CreadorOrden", fields: [creadorId], references: [id])
+  tareas             Tarea[]
+  revision           RevisionJefe?
+  solicitudesTarea   SolicitudTarea[]
+  solicitudesEdicion SolicitudEdicion[]
 
   @@index([kpiId])
   @@index([empleadoId])
   @@index([creadorId])
   @@index([status])
   @@index([fechaLimite])
+  @@index([tipoOrden])
 }
 
 model Tarea {
@@ -146,7 +171,16 @@ model Tarea {
   orden          Int // Orden de la tarea (1, 2, 3...)
 
   completada      Boolean   @default(false)
+  fueraDeTiempo   Boolean   @default(false)
+  fechaLimite     DateTime? // Heredada de la orden
   fechaCompletada DateTime?
+
+  // Solicitud de tarea adicional
+  solicitudAgregar Boolean @default(false)
+  aprobadaPorJefe  Boolean @default(false)
+
+  // Intentos de evidencia
+  intentosEvidencia Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -168,8 +202,16 @@ model Evidencia {
   nombre     String // Nombre original del archivo
   tamanio    Int? // Tamaño en bytes
 
-  status        String  @default("pendiente_revision") // "pendiente_revision", "aprobada", "rechazada"
-  motivoRechazo String? @db.Text
+  intento Int @default(1) // 1er intento, 2do, etc
+
+  status          String  @default("pendiente_revision") // "pendiente_revision", "aprobada", "rechazada"
+  motivoRechazo   String? @db.Text
+  esFueraDeTiempo Boolean @default(false)
+
+  // Apelación
+  apelacion          String?   @db.Text
+  respuestaApelacion String?   @db.Text
+  fechaApelacion     DateTime?
 
   fechaSubida DateTime @default(now())
   createdAt   DateTime @default(now())
@@ -179,6 +221,60 @@ model Evidencia {
   tarea Tarea @relation(fields: [tareaId], references: [id], onDelete: Cascade)
 
   @@index([tareaId])
+  @@index([status])
+}
+
+model SolicitudTarea {
+  id             String @id @default(cuid())
+  ordenTrabajoId String
+  empleadoId     String
+
+  descripcion   String @db.Text
+  justificacion String @db.Text
+
+  status        String  @default("pendiente") // "pendiente", "aprobada", "rechazada"
+  motivoRechazo String? @db.Text
+
+  fechaSolicitud DateTime  @default(now())
+  fechaRespuesta DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  ordenTrabajo OrdenTrabajo @relation(fields: [ordenTrabajoId], references: [id], onDelete: Cascade)
+  empleado     User         @relation("EmpleadoSolicitud", fields: [empleadoId], references: [id])
+
+  @@index([ordenTrabajoId])
+  @@index([empleadoId])
+  @@index([status])
+}
+
+model SolicitudEdicion {
+  id             String @id @default(cuid())
+  ordenTrabajoId String
+  solicitanteId  String
+
+  campoAEditar  String // "fechaLimite", "descripcion", "cantidadTareas"
+  valorActual   String @db.Text
+  valorNuevo    String @db.Text
+  justificacion String @db.Text
+
+  status        String  @default("pendiente") // "pendiente", "aprobada", "rechazada"
+  motivoRechazo String? @db.Text
+
+  fechaSolicitud DateTime  @default(now())
+  fechaRespuesta DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  ordenTrabajo OrdenTrabajo @relation(fields: [ordenTrabajoId], references: [id], onDelete: Cascade)
+  solicitante  User         @relation("SolicitanteEdicion", fields: [solicitanteId], references: [id])
+
+  @@index([ordenTrabajoId])
+  @@index([solicitanteId])
   @@index([status])
 }
 
@@ -278,7 +374,7 @@ model Alerta {
   empleadoId   String?
   evaluacionId String?
 
-  tipo           String // "orden_vencida", "kpi_critico", "evidencia_rechazada", "carga_alta"
+  tipo           String // "orden_vencida", "orden_completada", "kpi_critico", "evidencia_rechazada", "evidencia_aprobada", "carga_alta", "solicitud_tarea_pendiente", "solicitud_edicion_pendiente"
   nivel          String // "BAJO", "MEDIO", "ALTO"
   titulo         String
   descripcion    String  @db.Text

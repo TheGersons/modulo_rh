@@ -4,11 +4,12 @@ import { AuthModule } from './modules/auth/auth.module';
 import { AreasModule } from './modules/areas/areas.module';
 import { KpisModule } from './modules/kpis/kpis.module';
 import { EmpleadosModule } from './modules/empleados/empleados.module';
-// import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module'; // ← COMENTAR
 // import { ValidacionesModule } from './modules/validaciones/validaciones.module'; // ← COMENTAR
 import { EstadisticasModule } from './modules/estadisticas/estadisticas.module';
 import { AlertasModule } from './modules/alertas/alertas.module';
+import { OrdenesTrabajoModule } from './modules/ordenes-trabajo/ordenes-trabajo.module';
 // import { PlanesAccionModule } from './modules/planes-accion/planes-accion.module'; // ← COMENTAR
+import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
 import { PrismaService } from './common/database/prisma.service';
 
 @Module({
@@ -20,10 +21,11 @@ import { PrismaService } from './common/database/prisma.service';
     AreasModule,
     KpisModule,
     EmpleadosModule,
-    // EvaluacionesModule, // ← COMENTADO
+    EvaluacionesModule,
     // ValidacionesModule, // ← COMENTADO
     EstadisticasModule,
     AlertasModule,
+    OrdenesTrabajoModule,
     // PlanesAccionModule, // ← COMENTADO
   ],
   providers: [PrismaService],

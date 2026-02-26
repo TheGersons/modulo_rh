@@ -1,385 +1,514 @@
-import { useEffect, useState, /*useEffect*/ } from 'react';
-import Layout from '../components/layout/Layout';
-import { BarChart3, TrendingUp, /*TrendingDown,*/ Users, AlertTriangle, CheckCircle, Clock, Target } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { estadisticasService } from '../services/estadisticas.service';
+import {
+  Target,
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  ToggleLeft,
+  ToggleRight,
+  AlertCircle,
+  CheckCircle,
+  Calculator,
+} from 'lucide-react';
+import { kpisService } from '../services/kpis.service';
 import { areasService } from '../services/areas.service';
-import { alertasService } from '../services/alertas.service';
+import { useAuth } from '../contexts/AuthContext';
+import Layout from '../components/layout/Layout';
 
-interface KPIStats {
-  promedioGeneral: number;
-  totalKpis: number;
-  kpisVerdes: number;
-  kpisAmarillos: number;
-  kpisRojos: number;
-  porcentajeRojos: number;
-  evaluacionesPendientes: number;
-  empleadosEvaluados: number;
-  totalEmpleados: number;
-}
-
-interface AreaResumen{
-  nombre: string;
-  promedioGlobal: number;
-  kpisRojos: number;
-  porcentajeRojos: number;
-  nivelRiesgo: 'BAJO' | 'MEDIO' | 'ALTO';
-  totalKpis: number;
-}
-
-interface AlertaActiva {
+interface KPI {
   id: string;
-  titulo: string;
-  nivel: 'BAJO' | 'MEDIO' | 'ALTO';
+  key: string;
   area: string;
+  areaId: string;
+  puesto?: string;
+  indicador: string;
+  descripcion?: string;
+  tipoCalculo: string;
+  formulaCalculo: string;
+  meta?: number;
+  operadorMeta?: string;
+  umbralAmarillo?: number;
+  tipoCriticidad: string;
+  periodicidad: string;
+  sentido: string;
+  unidad?: string;
+  activo: boolean;
+  areaRelacion?: {
+    nombre: string;
+  };
+}
+
+interface Area {
+  id: string;
+  nombre: string;
 }
 
 export default function KPIsPage() {
-  const { user } = useAuth();
   const navigate = useNavigate();
-  
-  const [stats, _setStats] = useState<KPIStats>({
-    promedioGeneral: 0,
-    totalKpis: 0,
-    kpisVerdes: 0,
-    kpisAmarillos: 0,
-    kpisRojos: 0,
-    porcentajeRojos: 0,
-    evaluacionesPendientes: 0,
-    empleadosEvaluados: 0,
-    totalEmpleados: 0,
-  });
+  const { user } = useAuth();
+  const [kpis, setKpis] = useState<KPI[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [areas, _setAreas] = useState<AreaResumen[]> ( [
-    { nombre: 'Gerencia', promedioGlobal: 0, kpisRojos: 0, porcentajeRojos: 0, nivelRiesgo: 'BAJO', totalKpis: 0 },
-  ]);  ;
+  // Filtros
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filtroArea, setFiltroArea] = useState<string>('todas');
+  const [filtroCriticidad, setFiltroCriticidad] = useState<string>('todas');
+  const [filtroTipo, setFiltroTipo] = useState<string>('todos');
+  const [filtroEstado, setFiltroEstado] = useState<boolean | undefined>(undefined);
 
-  const [alertas, _setAlertas] = useState<AlertaActiva[]>([
-    { id: '1', titulo: 'Sin datos', nivel: 'BAJO', area: 'N/A' },
-  ]);
+  // Paginación
+  const [paginaActual, setPaginaActual] = useState(1);
+  const [kpisPorPagina] = useState(10);
 
-
+  const esAdmin = user?.role === 'admin' || user?.role === 'jefe';
 
   useEffect(() => {
-    //cargaremos todos los datos en un solo llamado
-    
-
-    const cargarDatos = async () => {
-      //primero las estadisticas globales
-      try {
-        //estadisticas globales para las cards principales
-        const statsData = await estadisticasService.getGlobales();
-
-        _setStats({
-          promedioGeneral: statsData.desempenio.promedioGeneral,
-          totalKpis: statsData.desempenio.totalKpisEvaluados,
-          kpisVerdes: statsData.desempenio.kpisVerdes,
-          kpisAmarillos: statsData.desempenio.kpisAmarillos,
-          kpisRojos: statsData.desempenio.kpisRojos,
-          porcentajeRojos: statsData.desempenio.porcentajeRojos,
-          evaluacionesPendientes: statsData.evaluaciones.pendientes,
-          empleadosEvaluados: statsData.evaluaciones.total,
-          totalEmpleados: statsData.recursos.totalEmpleados
-        });
-
-        //Areas para la tabla comparativa
-        const areasData = await areasService.getAll();
-
-        const areasFormateadas: AreaResumen[] = areasData.map((area: any) => ({
-          nombre: area.nombre,
-          promedioGlobal: area.promedioGlobal,
-          kpisRojos: area.kpisRojos,
-          porcentajeRojos: area.porcentajeRojos,
-          nivelRiesgo: area.nivelRiesgo,
-          totalKpis: area.totalKpis,
-        }));
-        _setAreas(areasFormateadas);
-        console.log('Areas formateadas:', areasFormateadas);
-
-        //Alertas activas
-        const alertasData = await alertasService.getActivas();
-
-        _setAlertas(alertasData.map((alerta: any) => ({
-          id: alerta.id,
-          titulo: alerta.titulo,
-          nivel: alerta.nivel,
-          area: alerta.area.nombre,
-        })));
-      } catch (error) {
-        console.error('Error cargando datos del dashboard:', error);
-      }
-    };
     cargarDatos();
   }, []);
-  
 
-  const getNivelRiesgoColor = (nivel: string) => {
-    switch (nivel) {
-      case 'ALTO':
-        return 'bg-red-100 text-red-700 border-red-300';
-      case 'MEDIO':
-        return 'bg-yellow-100 text-yellow-700 border-yellow-300';
-      case 'BAJO':
-        return 'bg-green-100 text-green-700 border-green-300';
-      default:
-        return 'bg-gray-100 text-gray-700 border-gray-300';
+  useEffect(() => {
+    setPaginaActual(1);
+  }, [searchTerm, filtroArea, filtroCriticidad, filtroTipo, filtroEstado]);
+
+  const cargarDatos = async () => {
+    try {
+      setLoading(true);
+      const [kpisData, areasData] = await Promise.all([
+        kpisService.getAll(),
+        areasService.getAll(),
+      ]);
+      setKpis(kpisData);
+      setAreas(areasData);
+    } catch (error) {
+      console.error('Error al cargar datos:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getPromedioColor = (promedio: number) => {
-    if (promedio >= 90) return 'text-green-600';
-    if (promedio >= 75) return 'text-blue-600';
-    if (promedio >= 60) return 'text-yellow-600';
-    return 'text-red-600';
+  const handleToggleActivo = async (id: string) => {
+    try {
+      await kpisService.toggle(id);
+      await cargarDatos();
+    } catch (error) {
+      console.error('Error al cambiar estado:', error);
+      alert('Error al cambiar estado del KPI');
+    }
   };
+
+  const handleEliminar = async (id: string, key: string) => {
+    if (!confirm(`¿Estás seguro de eliminar el KPI ${key}?`)) return;
+
+    try {
+      await kpisService.delete(id);
+      await cargarDatos();
+      alert('KPI eliminado exitosamente');
+    } catch (error: any) {
+      console.error('Error al eliminar:', error);
+      alert(error.response?.data?.message || 'Error al eliminar el KPI');
+    }
+  };
+
+  const getTipoCalculoLabel = (tipo: string) => {
+    const labels: Record<string, string> = {
+      binario: 'Binario',
+      division: 'División',
+      conteo: 'Conteo',
+      porcentaje_kpis_equipo: '% KPIs Equipo',
+      dashboard_presentado: 'Dashboard',
+      personalizado: 'Personalizado',
+    };
+    return labels[tipo] || tipo;
+  };
+
+  const getTipoCalculoBadge = (tipo: string) => {
+    const badges: Record<string, string> = {
+      binario: 'bg-blue-100 text-blue-700',
+      division: 'bg-purple-100 text-purple-700',
+      conteo: 'bg-green-100 text-green-700',
+      porcentaje_kpis_equipo: 'bg-orange-100 text-orange-700',
+      dashboard_presentado: 'bg-pink-100 text-pink-700',
+      personalizado: 'bg-gray-100 text-gray-700',
+    };
+    return badges[tipo] || 'bg-gray-100 text-gray-700';
+  };
+
+  // Filtrado
+  const kpisFiltrados = kpis.filter((kpi) => {
+    const matchSearch =
+      kpi.key.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      kpi.indicador.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchArea = filtroArea === 'todas' || kpi.areaId === filtroArea;
+    const matchCriticidad = filtroCriticidad === 'todas' || kpi.tipoCriticidad === filtroCriticidad;
+    const matchTipo = filtroTipo === 'todos' || kpi.tipoCalculo === filtroTipo;
+    const matchEstado = filtroEstado === undefined || kpi.activo === filtroEstado;
+
+    return matchSearch && matchArea && matchCriticidad && matchTipo && matchEstado;
+  });
+
+  // Paginación
+  const totalPaginas = Math.ceil(kpisFiltrados.length / kpisPorPagina);
+  const indexInicio = (paginaActual - 1) * kpisPorPagina;
+  const indexFin = indexInicio + kpisPorPagina;
+  const kpisPaginados = kpisFiltrados.slice(indexInicio, indexFin);
+
+  // Stats
+  const stats = {
+    total: kpis.length,
+    activos: kpis.filter((k) => k.activo).length,
+    criticos: kpis.filter((k) => k.tipoCriticidad === 'critico').length,
+    porArea: areas.map((area) => ({
+      nombre: area.nombre,
+      cantidad: kpis.filter((k) => k.areaId === area.id).length,
+    })),
+  };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Cargando KPIs...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
-      <div className="p-8 space-y-8">
+      <div className="p-8 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Dashboard de KPIs</h1>
-            <p className="text-gray-600 mt-1">
-              Vista general del desempeño organizacional
-            </p>
+            <h1 className="text-3xl font-bold text-gray-900">KPIs</h1>
+            <p className="text-gray-600 mt-1">{kpis.length} indicadores configurados</p>
+          </div>
+
+          {esAdmin && (
+            <button
+              onClick={() => navigate('/configuracion/kpis')}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Nuevo KPI
+            </button>
+          )}
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total KPIs</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
+              </div>
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <Target className="w-6 h-6 text-blue-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Activos</p>
+                <p className="text-2xl font-bold text-green-600 mt-1">{stats.activos}</p>
+              </div>
+              <div className="p-3 bg-green-50 rounded-lg">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Críticos</p>
+                <p className="text-2xl font-bold text-red-600 mt-1">{stats.criticos}</p>
+              </div>
+              <div className="p-3 bg-red-50 rounded-lg">
+                <AlertCircle className="w-6 h-6 text-red-600" />
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* KPI Cards Principales */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {/* Promedio General */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600">
-                <BarChart3 className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex items-center gap-1 px-3 py-1 rounded-full text-sm font-semibold bg-green-50 text-green-700">
-                <TrendingUp className="w-4 h-4" />
-                +3.2%
-              </div>
+        {/* Filtros */}
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* Búsqueda */}
+            <div className="lg:col-span-2 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por código o indicador..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
             </div>
-            <h3 className="text-gray-600 text-sm font-medium mb-2">Promedio General</h3>
-            <p className="text-4xl font-bold text-gray-900">{stats.promedioGeneral}%</p>
-            <p className="text-xs text-gray-500 mt-2">Basado en {stats.totalKpis} KPIs</p>
+
+            {/* Área */}
+            <select
+              value={filtroArea}
+              onChange={(e) => setFiltroArea(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="todas">Todas las áreas</option>
+              {areas.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {area.nombre}
+                </option>
+              ))}
+            </select>
+
+            {/* Criticidad */}
+            <select
+              value={filtroCriticidad}
+              onChange={(e) => setFiltroCriticidad(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="todas">Todas las criticidades</option>
+              <option value="critico">Crítico</option>
+              <option value="no_critico">No Crítico</option>
+            </select>
+
+            {/* Tipo de Cálculo */}
+            <select
+              value={filtroTipo}
+              onChange={(e) => setFiltroTipo(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="todos">Todos los tipos</option>
+              <option value="binario">Binario</option>
+              <option value="division">División</option>
+              <option value="conteo">Conteo</option>
+              <option value="porcentaje_kpis_equipo">% KPIs Equipo</option>
+              <option value="dashboard_presentado">Dashboard</option>
+            </select>
           </div>
 
-          {/* Distribución por Estado */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-green-500 to-green-600">
-                <Target className="w-6 h-6 text-white" />
-              </div>
-            </div>
-            <h3 className="text-gray-600 text-sm font-medium mb-4">Distribución KPIs</h3>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 flex items-center gap-2">
-                  <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-                  Verde
-                </span>
-                <span className="font-bold text-green-600">{stats.kpisVerdes}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 flex items-center gap-2">
-                  <span className="w-3 h-3 bg-yellow-500 rounded-full"></span>
-                  Amarillo
-                </span>
-                <span className="font-bold text-yellow-600">{stats.kpisAmarillos}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 flex items-center gap-2">
-                  <span className="w-3 h-3 bg-red-500 rounded-full"></span>
-                  Rojo
-                </span>
-                <span className="font-bold text-red-600">{stats.kpisRojos}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* KPIs Críticos */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-red-500 to-red-600">
-                <AlertTriangle className="w-6 h-6 text-white" />
-              </div>
-            </div>
-            <h3 className="text-gray-600 text-sm font-medium mb-2">KPIs Críticos (Rojos)</h3>
-            <p className="text-4xl font-bold text-red-600">{stats.kpisRojos}</p>
-            <p className="text-xs text-gray-500 mt-2">{stats.porcentajeRojos}% del total</p>
-          </div>
-
-          {/* Evaluaciones Pendientes */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600">
-                <Clock className="w-6 h-6 text-white" />
-              </div>
-            </div>
-            <h3 className="text-gray-600 text-sm font-medium mb-2">Evaluaciones Pendientes</h3>
-            <p className="text-4xl font-bold text-orange-600">{stats.evaluacionesPendientes}</p>
-            <p className="text-xs text-gray-500 mt-2">
-              {stats.empleadosEvaluados}/{stats.totalEmpleados} empleados evaluados
-            </p>
+          {/* Filtro de Estado */}
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={() => setFiltroEstado(undefined)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filtroEstado === undefined
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+            >
+              Todos
+            </button>
+            <button
+              onClick={() => setFiltroEstado(true)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filtroEstado === true
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+            >
+              Activos
+            </button>
+            <button
+              onClick={() => setFiltroEstado(false)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filtroEstado === false
+                ? 'bg-red-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+            >
+              Inactivos
+            </button>
           </div>
         </div>
 
-        {/* Alertas Activas */}
-        {alertas.length > 0 && (
-          <div className="bg-gradient-to-r from-orange-50 to-red-50 rounded-2xl p-6 border-2 border-orange-200">
-            <div className="flex items-start gap-4">
-              <AlertTriangle className="w-6 h-6 text-orange-600 flex-shrink-0 mt-1" />
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-gray-900 mb-3">
-                  Alertas Activas ({alertas.length})
-                </h3>
-                <div className="space-y-2">
-                  {alertas.map((alerta) => (
-                    <div key={alerta.id} className="bg-white rounded-xl p-4 border border-orange-200">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                            alerta.nivel === 'ALTO' ? 'bg-red-100 text-red-700' :
-                            alerta.nivel === 'MEDIO' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-blue-100 text-blue-700'
-                          }`}>
-                            {alerta.nivel}
+        {/* Info de resultados */}
+        <div className="flex items-center justify-between text-sm text-gray-600">
+          <p>
+            Mostrando {kpisFiltrados.length > 0 ? indexInicio + 1 : 0} -{' '}
+            {Math.min(indexFin, kpisFiltrados.length)} de {kpisFiltrados.length} KPIs
+          </p>
+        </div>
+
+        {/* Lista de KPIs */}
+        {kpisPaginados.length === 0 ? (
+          <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-200">
+            <Target className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No se encontraron KPIs</h3>
+            <p className="text-gray-600">Intenta ajustar los filtros de búsqueda</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {kpisPaginados.map((kpi) => (
+              <div
+                key={kpi.id}
+                className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    {/* Header */}
+                    <div className="flex items-start gap-4 mb-4">
+                      <div className="p-3 bg-blue-50 rounded-lg">
+                        <Target className="w-6 h-6 text-blue-600" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-lg font-semibold text-gray-900">{kpi.key}</h3>
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-medium ${getTipoCalculoBadge(
+                              kpi.tipoCalculo
+                            )}`}
+                          >
+                            <Calculator className="w-3 h-3 inline mr-1" />
+                            {getTipoCalculoLabel(kpi.tipoCalculo)}
                           </span>
-                          <div>
-                            <p className="font-semibold text-gray-900">{alerta.titulo}</p>
-                            <p className="text-sm text-gray-600">Área: {alerta.area}</p>
-                          </div>
+                          {kpi.tipoCriticidad === 'critico' && (
+                            <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                              <AlertCircle className="w-3 h-3 inline mr-1" />
+                              Crítico
+                            </span>
+                          )}
+                          {kpi.activo ? (
+                            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                              Activo
+                            </span>
+                          ) : (
+                            <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
+                              Inactivo
+                            </span>
+                          )}
                         </div>
-                        <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors">
-                          Ver Detalle
-                        </button>
+                        <p className="text-gray-900 font-medium mb-2">{kpi.indicador}</p>
+                        {kpi.descripcion && (
+                          <p className="text-sm text-gray-600 mb-3">{kpi.descripcion}</p>
+                        )}
+
+                        {/* Info Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                          <div>
+                            <p className="text-gray-500">Área</p>
+                            <p className="font-medium text-gray-900">{kpi.areaRelacion?.nombre || kpi.area}</p>
+                          </div>
+                          {kpi.puesto && (
+                            <div>
+                              <p className="text-gray-500">Puesto</p>
+                              <p className="font-medium text-gray-900">{kpi.puesto}</p>
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-gray-500">Periodicidad</p>
+                            <p className="font-medium text-gray-900">{kpi.periodicidad}</p>
+                          </div>
+                          {kpi.meta && (
+                            <div>
+                              <p className="text-gray-500">Meta</p>
+                              <p className="font-medium text-gray-900">
+                                {kpi.operadorMeta} {kpi.meta}
+                                {kpi.unidad}
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  ))}
+                  </div>
+
+                  {/* Acciones */}
+                  {esAdmin && (
+                    <div className="flex items-center gap-2 ml-4">
+                      <button
+                        onClick={() => handleToggleActivo(kpi.id)}
+                        className={`p-2 rounded-lg transition-colors ${kpi.activo
+                          ? 'text-green-600 hover:bg-green-50'
+                          : 'text-gray-400 hover:bg-gray-50'
+                          }`}
+                        title={kpi.activo ? 'Desactivar' : 'Activar'}
+                      >
+                        {kpi.activo ? (
+                          <ToggleRight className="w-6 h-6" />
+                        ) : (
+                          <ToggleLeft className="w-6 h-6" />
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => navigate(`/configuracion/kpis?edit=${kpi.id}`)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Editar"
+                      >
+                        <Edit className="w-5 h-5" />
+                      </button>
+
+                      <button
+                        onClick={() => handleEliminar(kpi.id, kpi.key)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
+            ))}
           </div>
         )}
 
-        {/* Desempeño por Área */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-100">
-            <h2 className="text-xl font-bold text-gray-900">Desempeño por Área</h2>
-            <p className="text-sm text-gray-600 mt-1">Comparativo de KPIs entre áreas</p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                    Área
-                  </th>
-                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
-                    Promedio
-                  </th>
-                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
-                    Total KPIs
-                  </th>
-                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
-                    KPIs Rojos
-                  </th>
-                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
-                    % Rojos
-                  </th>
-                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
-                    Nivel Riesgo
-                  </th>
-                  <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {areas.map((area: AreaResumen, index: number) => (
-                  <tr key={index} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold">
-                          {area.nombre[0]}
-                        </div>
-                        <span className="font-semibold text-gray-900">{area.nombre}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`text-2xl font-bold ${getPromedioColor(area.promedioGlobal)}`}>
-                        {area.promedioGlobal.toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="text-lg font-semibold text-gray-900">{area.totalKpis}</span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold ${
-                        area.kpisRojos > 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {area.kpisRojos}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`font-semibold ${
-                        area.porcentajeRojos > 30 ? 'text-red-600' :
-                        area.porcentajeRojos > 10 ? 'text-yellow-600' :
-                        'text-green-600'
-                      }`}>
-                        {area.porcentajeRojos.toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold border-2 ${getNivelRiesgoColor(area.nivelRiesgo)}`}>
-                        {area.nivelRiesgo}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors">
-                        Ver Detalle
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Accesos Rápidos */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {user?.role === 'jefe' && (
+        {/* Paginación */}
+        {totalPaginas > 1 && (
+          <div className="flex items-center justify-between bg-white px-6 py-4 rounded-xl shadow-sm border border-gray-200">
             <button
-              onClick={() => navigate('/kpis/evaluar')}
-              className="bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-2xl p-8 text-left transition-all shadow-lg hover:shadow-xl"
+              onClick={() => setPaginaActual((prev) => Math.max(1, prev - 1))}
+              disabled={paginaActual === 1}
+              className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <CheckCircle className="w-12 h-12 mb-4" />
-              <h3 className="text-xl font-bold mb-2">Evaluar Empleados</h3>
-              <p className="text-blue-100">Gestiona las evaluaciones de tu equipo</p>
+              ← Anterior
             </button>
-          )}
 
-          <button
-            onClick={() => navigate('/kpis/mis-evaluaciones')}
-            className="bg-gradient-to-br from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-2xl p-8 text-left transition-all shadow-lg hover:shadow-xl"
-          >
-            <Users className="w-12 h-12 mb-4" />
-            <h3 className="text-xl font-bold mb-2">Mis Evaluaciones</h3>
-            <p className="text-purple-100">Consulta tus evaluaciones de desempeño</p>
-          </button>
+            <div className="flex items-center gap-2">
+              {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((numero) => {
+                if (
+                  numero === 1 ||
+                  numero === totalPaginas ||
+                  (numero >= paginaActual - 1 && numero <= paginaActual + 1)
+                ) {
+                  return (
+                    <button
+                      key={numero}
+                      onClick={() => setPaginaActual(numero)}
+                      className={`w-10 h-10 rounded-lg font-medium transition-colors ${paginaActual === numero
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-700 hover:bg-gray-100'
+                        }`}
+                    >
+                      {numero}
+                    </button>
+                  );
+                } else if (numero === paginaActual - 2 || numero === paginaActual + 2) {
+                  return (
+                    <span key={numero} className="text-gray-400">
+                      ...
+                    </span>
+                  );
+                }
+                return null;
+              })}
+            </div>
 
-          <button
-            onClick={() => navigate('/kpis/reportes')}
-            className="bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-2xl p-8 text-left transition-all shadow-lg hover:shadow-xl"
-          >
-            <BarChart3 className="w-12 h-12 mb-4" />
-            <h3 className="text-xl font-bold mb-2">Reportes</h3>
-            <p className="text-green-100">Genera reportes personalizados</p>
-          </button>
-        </div>
+            <button
+              onClick={() => setPaginaActual((prev) => Math.min(totalPaginas, prev + 1))}
+              disabled={paginaActual === totalPaginas}
+              className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Siguiente →
+            </button>
+          </div>
+        )}
       </div>
     </Layout>
   );
