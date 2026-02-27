@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsEmail, IsOptional, IsBoolean, IsIn } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsEmail,
+  IsOptional,
+  IsBoolean,
+  IsIn,
+  IsUUID,
+} from 'class-validator';
 
 export class CreateEmpleadoDto {
   @IsString()
@@ -29,9 +37,9 @@ export class CreateEmpleadoDto {
   @IsOptional()
   areaId?: string;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
-  puesto?: string;
+  puestoId?: string; // ID de la tabla Puesto (relación)
 
   @IsBoolean()
   @IsOptional()

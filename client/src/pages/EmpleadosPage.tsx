@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Users, Upload, Search, Filter, CheckCircle, XCircle } from 'lucide-react';
+import { Users, Upload, Search, Filter, CheckCircle, XCircle, UserPlus, Edit } from 'lucide-react';
 import { empleadosService } from '../services/empleados.service';
 import { areasService } from '../services/areas.service';
 import Layout from '../components/layout/Layout';
 import * as XLSX from 'xlsx';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface Empleado {
   id: string;
@@ -15,7 +16,7 @@ interface Empleado {
   areaId?: string;
   role: string;
   activo: boolean;
-  area?: { nombre: string };
+  area?: { nombre: string, id: string };
 }
 
 interface Area {
@@ -39,9 +40,11 @@ export default function EmpleadosPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroArea, setFiltroArea] = useState<string>('todas');
+  const [mostrarInactivos, setMostrarInactivos] = useState(false);
   const [paginaActual, setPaginaActual] = useState(1);
   const [empleadosPorPagina, setEmpleadosPorPagina] = useState(10);
-
+  const { can } = usePermissions();
+  const puedeGestionarEmpleados = can('gestionar_empleados');
 
   // Import modal
   const [showImportModal, setShowImportModal] = useState(false);
@@ -51,6 +54,85 @@ export default function EmpleadosPage() {
     success: number;
     errors: Array<{ row: number; error: string }>;
   } | null>(null);
+
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [empleadoEditar, setEmpleadoEditar] = useState<Empleado | null>(null);
+  const [editNombre, setEditNombre] = useState('');
+  const [editApellido, setEditApellido] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editDni, setEditDni] = useState('');
+  const [editPuesto, setEditPuesto] = useState('');
+  const [editAreaId, setEditAreaId] = useState('');
+  const [editActivo, setEditActivo] = useState(true);
+  const [editando, setEditando] = useState(false);
+  const [errorEdit, setErrorEdit] = useState('');
+
+  const abrirModalEditar = (empleado: Empleado) => {
+    setEmpleadoEditar(empleado);
+    setEditNombre(empleado.nombre);
+    setEditApellido(empleado.apellido);
+    setEditEmail(empleado.email);
+    setEditDni(empleado.dni || '');
+    setEditPuesto(empleado.puesto || '');
+    setEditAreaId(empleado.area?.id || '');
+    setEditActivo(empleado.activo);
+    setErrorEdit('');
+    setShowEditModal(true);
+  };
+
+  const handleGuardarEdicion = async () => {
+    setErrorEdit('');
+
+    if (!editNombre.trim() || !editApellido.trim() || !editEmail.trim()) {
+      setErrorEdit('Nombre, apellido y email son requeridos');
+      return;
+    }
+
+    try {
+      setEditando(true);
+
+      await empleadosService.update(empleadoEditar!.id, {
+        nombre: editNombre.trim(),
+        apellido: editApellido.trim(),
+        email: editEmail.trim().toLowerCase(),
+        dni: editDni.trim() || undefined,
+        puesto: editPuesto.trim() || undefined,
+        areaId: editAreaId || undefined,
+        activo: editActivo,
+      });
+
+      alert('Empleado actualizado exitosamente');
+      setShowEditModal(false);
+      setEmpleadoEditar(null);
+      await cargarDatos();
+    } catch (error: any) {
+      console.error('Error al actualizar empleado:', error);
+      setErrorEdit(error.response?.data?.message || 'Error al actualizar el empleado');
+    } finally {
+      setEditando(false);
+    }
+  };
+
+  // AGREGAR: Función para desactivar empleado
+  const handleDesactivar = async (id: string, nombre: string, apellido: string, activo: boolean) => {
+    const accion = activo ? 'desactivar' : 'reactivar';
+    const mensaje = activo
+      ? `¿Estás seguro de desactivar a ${nombre} ${apellido}?\n\nEl empleado será marcado como inactivo y no aparecerá en las listas principales.`
+      : `¿Reactivar a ${nombre} ${apellido}?`;
+
+    if (!confirm(mensaje)) {
+      return;
+    }
+
+    try {
+      await empleadosService.update(id, { activo: !activo });
+      alert(`Empleado ${activo ? 'desactivado' : 'reactivado'} exitosamente`);
+      await cargarDatos();
+    } catch (error: any) {
+      console.error(`Error al ${accion} empleado:`, error);
+      alert(error.response?.data?.message || `Error al ${accion} el empleado`);
+    }
+  };
 
   useEffect(() => {
     cargarDatos();
@@ -207,7 +289,9 @@ export default function EmpleadosPage() {
 
     const matchArea = filtroArea === 'todas' || emp.areaId === filtroArea;
 
-    return matchSearch && matchArea;
+    const matchActivo = mostrarInactivos ? true : emp.activo;
+
+    return matchSearch && matchArea && matchActivo;
   });
 
   const totalPaginas = Math.ceil(empleadosFiltrados.length / empleadosPorPagina);
@@ -239,23 +323,40 @@ export default function EmpleadosPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Empleados</h1>
-            <p className="text-gray-600 mt-1">{empleados.length} empleados registrados</p>
+            <p className="text-gray-600 mt-1">
+              {empleados.filter(e => e.activo).length} empleados activos
+            </p>
           </div>
 
           <div className="flex gap-3">
+            {/* Botón Nuevo Empleado - todos pueden ver */}
             <button
-              onClick={descargarPlantilla}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              onClick={() => alert('Crear empleado (por implementar)')}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!puedeGestionarEmpleados}
+              title={!puedeGestionarEmpleados ? 'Solo admin/RRHH pueden crear empleados' : ''}
             >
-              <Upload className="w-5 h-5" />
-              Descargar Plantilla
+              <UserPlus className="w-5 h-5" />
+              Nuevo Empleado
             </button>
 
-            <label className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer">
-              <Upload className="w-5 h-5" />
-              Importar Excel
-              <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
-            </label>
+            {puedeGestionarEmpleados && (
+              <>
+                <button
+                  onClick={descargarPlantilla}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  <Upload className="w-5 h-5" />
+                  Descargar Plantilla
+                </button>
+
+                <label className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer">
+                  <Upload className="w-5 h-5" />
+                  Importar Excel
+                  <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
+                </label>
+              </>
+            )}
           </div>
         </div>
 
@@ -290,13 +391,32 @@ export default function EmpleadosPage() {
                 ))}
               </select>
             </div>
+
+            {/* AGREGAR: Toggle mostrar inactivos */}
+            {puedeGestionarEmpleados && (
+              <label className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={mostrarInactivos}
+                  onChange={(e) => setMostrarInactivos(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium text-gray-700">Mostrar inactivos</span>
+              </label>
+            )}
           </div>
         </div>
 
-        {/* Info de resultados y selector de registros por página */}
+        {/* Info de resultados */}
         <div className="flex items-center justify-between text-sm text-gray-600">
           <p>
-            Mostrando {empleadosFiltrados.length > 0 ? indexInicio + 1 : 0} - {Math.min(indexFin, empleadosFiltrados.length)} de {empleadosFiltrados.length} empleados
+            Mostrando {empleadosFiltrados.length > 0 ? indexInicio + 1 : 0} -{' '}
+            {Math.min(indexFin, empleadosFiltrados.length)} de {empleadosFiltrados.length} empleados
+            {mostrarInactivos && (
+              <span className="ml-2 px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
+                Incluyendo inactivos
+              </span>
+            )}
           </p>
           <div className="flex items-center gap-2">
             <label className="font-medium">Mostrar:</label>
@@ -308,7 +428,6 @@ export default function EmpleadosPage() {
               }}
               className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
-              <option value={5}>5</option>
               <option value={10}>10</option>
               <option value={25}>25</option>
               <option value={50}>50</option>
@@ -328,29 +447,36 @@ export default function EmpleadosPage() {
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Puesto</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Área</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Estado</th>
+                  {puedeGestionarEmpleados && (
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase">Acciones</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {empleadosPaginados.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center">
+                    <td colSpan={puedeGestionarEmpleados ? 6 : 5} className="px-6 py-12 text-center">
                       <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                       <p className="text-gray-600">No se encontraron empleados</p>
                     </td>
                   </tr>
                 ) : (
                   empleadosPaginados.map((empleado) => (
-                    <tr key={empleado.id} className="hover:bg-gray-50 transition-colors">
+                    <tr
+                      key={empleado.id}
+                      className={`transition-colors ${empleado.activo ? 'hover:bg-gray-50' : 'bg-gray-50 opacity-60'
+                        }`}
+                    >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                            <span className="text-blue-600 font-semibold">
+                          <div className={`w-10 h-10 ${empleado.activo ? 'bg-blue-100' : 'bg-gray-200'} rounded-full flex items-center justify-center`}>
+                            <span className={`${empleado.activo ? 'text-blue-600' : 'text-gray-500'} font-semibold`}>
                               {empleado.nombre[0]}
                               {empleado.apellido[0]}
                             </span>
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900">
+                            <p className={`font-medium ${empleado.activo ? 'text-gray-900' : 'text-gray-500'}`}>
                               {empleado.nombre} {empleado.apellido}
                             </p>
                             {empleado.dni && <p className="text-sm text-gray-500">DNI: {empleado.dni}</p>}
@@ -381,6 +507,33 @@ export default function EmpleadosPage() {
                           </span>
                         )}
                       </td>
+                      {puedeGestionarEmpleados && (
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => abrirModalEditar(empleado)}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Editar"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDesactivar(empleado.id, empleado.nombre, empleado.apellido, empleado.activo)}
+                              className={`p-2 rounded-lg transition-colors ${empleado.activo
+                                ? 'text-orange-600 hover:bg-orange-50'
+                                : 'text-green-600 hover:bg-green-50'
+                                }`}
+                              title={empleado.activo ? 'Desactivar' : 'Reactivar'}
+                            >
+                              {empleado.activo ? (
+                                <XCircle className="w-4 h-4" />
+                              ) : (
+                                <CheckCircle className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -484,6 +637,7 @@ export default function EmpleadosPage() {
                             <td className="px-4 py-2">{emp.email}</td>
                             <td className="px-4 py-2">{emp.puesto || '-'}</td>
                             <td className="px-4 py-2">{emp.area || '-'}</td>
+
                           </tr>
                         ))}
                       </tbody>
@@ -561,6 +715,158 @@ export default function EmpleadosPage() {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+        {showEditModal && empleadoEditar && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-gray-900">
+                  Editar Empleado
+                </h3>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <XCircle className="w-5 h-5 text-gray-600" />
+                </button>
+              </div>
+
+              {errorEdit && (
+                <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-700">{errorEdit}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {/* Nombre y Apellido */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Nombre <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editNombre}
+                      onChange={(e) => setEditNombre(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Apellido <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editApellido}
+                      onChange={(e) => setEditApellido(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                {/* DNI */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    DNI / Identidad
+                  </label>
+                  <input
+                    type="text"
+                    value={editDni}
+                    onChange={(e) => setEditDni(e.target.value)}
+                    placeholder="0801199012345"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                {/* Puesto */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Puesto
+                  </label>
+                  <input
+                    type="text"
+                    value={editPuesto}
+                    onChange={(e) => setEditPuesto(e.target.value)}
+                    placeholder="Ej: Desarrollador, Gerente"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                {/* Área */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Área
+                  </label>
+                  <select
+                    value={editAreaId}
+                    onChange={(e) => setEditAreaId(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Sin área</option>
+                    {areas.map((area) => (
+                      <option key={area.id} value={area.id}>
+                        {area.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Estado */}
+                <div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editActivo}
+                      onChange={(e) => setEditActivo(e.target.checked)}
+                      className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Empleado activo</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  disabled={editando}
+                  className="flex-1 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleGuardarEdicion}
+                  disabled={editando}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  {editando ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-5 h-5" />
+                      Guardar Cambios
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}

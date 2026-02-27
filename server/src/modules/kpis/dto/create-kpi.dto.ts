@@ -7,6 +7,7 @@ import {
   IsInt,
   IsIn,
   IsJSON,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateKpiDto {
@@ -95,4 +96,8 @@ export class CreateKpiDto {
   @IsBoolean()
   @IsOptional()
   activo?: boolean;
+
+  @IsUUID()
+  @IsOptional()
+  puestoId?: string; // NUEVO: referencia a tabla Puesto
 }

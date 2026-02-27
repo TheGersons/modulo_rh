@@ -15,7 +15,6 @@ import {
 import { ordenesTrabajoService } from '../services/ordenes-trabajo.service';
 import { kpisService } from '../services/kpis.service';
 import { empleadosService } from '../services/empleados.service';
-import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/layout/Layout';
 
 interface KPI {
@@ -42,7 +41,6 @@ interface TareaForm {
 
 export default function CrearOrdenPage() {
     const navigate = useNavigate();
-    const { user } = useAuth();
 
     // Form state
     const [titulo, setTitulo] = useState('');

@@ -10,9 +10,12 @@ import {
     Inbox,
     Award,
     Plus,
+    Edit,
+    Building,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { usePermissions } from '../../hooks/usePermissions';
 
 interface MenuItem {
     icon: any;
@@ -20,67 +23,159 @@ interface MenuItem {
     path?: string;
     badge?: number;
     submenu?: MenuItem[];
+    allowedRoles?: string[];
+    exact?: boolean; // Si true, solo match exacto (no subrutas)
 }
 
 export default function Sidebar() {
     const navigate = useNavigate();
     const location = useLocation();
-    const [expandedMenus, setExpandedMenus] = useState<string[]>(['KPIs']);
+    const { can, isAdmin, isRRHH } = usePermissions();
+    const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
 
     const menuItems: MenuItem[] = [
         {
             icon: LayoutDashboard,
             label: 'Dashboard',
             path: '/dashboard',
+            exact: true,
         },
         {
             icon: Target,
             label: 'KPIs',
             submenu: [
-                { icon: Target, label: 'Vista General', path: '/kpis' },
-                { icon: Briefcase, label: 'Órdenes de Trabajo', path: '/ordenes' },
+                { icon: Target, label: 'Vista General', path: '/kpis', exact: true },
+                {
+                    icon: Edit,
+                    label: 'Gestionar KPIs',
+                    path: '/configuracion/kpis',
+                    allowedRoles: ['admin', 'jefe'],
+                },
+            ],
+        },
+        {
+            icon: Briefcase,
+            label: 'Órdenes de Trabajo',
+            submenu: [
+                { icon: Briefcase, label: 'Ver Órdenes', path: '/ordenes', exact: true },
                 { icon: Plus, label: 'Nueva Orden', path: '/ordenes/crear' },
-                { icon: Inbox, label: 'Solicitudes', path: '/solicitudes' },
-                { icon: ClipboardCheck, label: 'Mis Evaluaciones', path: '/kpis/mis-evaluaciones' },
-                { icon: Award, label: 'Cerrar Periodo', path: '/evaluaciones/cerrar-periodo' },
+                {
+                    icon: Inbox,
+                    label: 'Solicitudes',
+                    path: '/solicitudes',
+                    allowedRoles: ['admin', 'jefe'],
+                },
+            ],
+        },
+        {
+            icon: Award,
+            label: 'Evaluaciones',
+            submenu: [
+                // 'Mis Evaluaciones' solo aparece en este menú (eliminado el duplicado de KPIs)
+                { icon: ClipboardCheck, label: 'Mis Evaluaciones', path: '/kpis/mis-evaluaciones', exact: true },
+                {
+                    icon: Award,
+                    label: 'Cerrar Periodo',
+                    path: '/evaluaciones/cerrar-periodo',
+                    exact: true,
+                    allowedRoles: ['admin', 'rrhh'],
+                },
             ],
         },
         {
             icon: Users,
             label: 'Empleados',
             path: '/empleados',
+            exact: true,
         },
         {
             icon: Settings,
             label: 'Configuración',
             submenu: [
-                { icon: Settings, label: 'General', path: '/configuracion' },
-                { icon: Target, label: 'Gestión de KPIs', path: '/configuracion/kpis' },
+                {
+                    icon: Building,
+                    label: 'Áreas',
+                    path: '/configuracion/areas',
+                    allowedRoles: ['admin', 'rrhh'],
+                },
+                {
+                    icon: Briefcase,
+                    label: 'Puestos',
+                    path: '/puestos',
+                    exact: true,
+                    allowedRoles: ['admin', 'rrhh'],
+                },
+                {
+                    icon: Settings,
+                    label: 'Preferencias',
+                    path: '/configuracion',
+                    exact: true, // IMPORTANTE: evita que /configuracion active /configuracion/areas
+                },
             ],
         },
     ];
 
-    const toggleMenu = (label: string) => {
-        setExpandedMenus((prev) =>
-            prev.includes(label) ? prev.filter((item) => item !== label) : [...prev, label]
-        );
+    // Filtrar items según permisos
+    const filterMenuItems = (items: MenuItem[]): MenuItem[] => {
+        return items
+            .map((item) => {
+                if (item.allowedRoles) {
+                    const hasPermission = isAdmin || isRRHH || item.allowedRoles.some((role) => can(role as any));
+                    if (!hasPermission) return null;
+                }
+
+                if (item.submenu) {
+                    const filteredSubmenu = filterMenuItems(item.submenu);
+                    if (filteredSubmenu.length === 0) return null;
+                    return { ...item, submenu: filteredSubmenu };
+                }
+
+                return item;
+            })
+            .filter((item): item is MenuItem => item !== null);
     };
 
-    const isActive = (path?: string) => {
-        if (!path) return false;
+    const filteredMenuItems = filterMenuItems(menuItems);
 
-        // Para la ruta exacta de /kpis (Vista General)
-        if (path === '/kpis') {
-            return location.pathname === '/kpis';
+    /**
+     * Determina si un ítem está activo.
+     * Si `exact=true` → solo match exacto de pathname.
+     * Si `exact=false/undefined` → match exacto O subrutas directas (path + '/').
+     */
+    const isActive = useCallback(
+        (path?: string, exact?: boolean): boolean => {
+            if (!path) return false;
+            if (exact) return location.pathname === path;
+            return location.pathname === path || location.pathname.startsWith(path + '/');
+        },
+        [location.pathname]
+    );
+
+    // Verifica si algún hijo del ítem está activo
+    const hasActiveChild = useCallback(
+        (item: MenuItem): boolean => {
+            if (!item.submenu) return false;
+            return item.submenu.some((subItem) => isActive(subItem.path, subItem.exact));
+        },
+        [isActive]
+    );
+
+    // Auto-expandir el menú padre cuando la URL cambia (ej: navegación directa por URL)
+    useEffect(() => {
+        const activeParent = filteredMenuItems.find((item) => hasActiveChild(item));
+        if (activeParent) {
+            setExpandedMenus((prev) =>
+                prev.includes(activeParent.label) ? prev : [activeParent.label]
+            );
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.pathname]);
 
-        // Para /ordenes y /ordenes/crear
-        if (path === '/ordenes') {
-            return location.pathname === '/ordenes';
-        }
-
-        // Para otras rutas, verificar si comienza con el path
-        return location.pathname.startsWith(path);
+    const toggleMenu = (label: string) => {
+        // Solo un menú abierto a la vez
+        setExpandedMenus((prev) =>
+            prev.includes(label) ? prev.filter((item) => item !== label) : [label]
+        );
     };
 
     const handleNavigation = (item: MenuItem) => {
@@ -96,11 +191,9 @@ export default function Sidebar() {
             {/* Logo */}
             <div className="flex justify-center pt-2 px-4">
                 <div className="bg-white rounded-2xl shadow-xl shadow-blue-900/10 p-5 flex items-center gap-5 max-w-sm w-full border border-blue-50">
-                    {/* Logo con un fondo sutil para destacarlo */}
                     <div className="bg-blue-50 p-2 rounded-lg">
                         <img src="/logo-pd.svg" alt="Energía PD" className="w-15 h-15" />
                     </div>
-
                     <div>
                         <h2 className="text-lg font-bold text-slate-800 leading-tight">Energía PD</h2>
                         <p className="text-xs font-medium text-blue-600 uppercase tracking-wider">Sistema RH</p>
@@ -110,34 +203,49 @@ export default function Sidebar() {
 
             {/* Menú */}
             <nav className="flex-1 p-6 space-y-2 overflow-y-auto">
-                {menuItems.map((item) => {
+                {filteredMenuItems.map((item) => {
                     const Icon = item.icon;
                     const hasSubmenu = item.submenu && item.submenu.length > 0;
                     const isExpanded = expandedMenus.includes(item.label);
-                    const isItemActive = isActive(item.path);
+                    const isItemActive = isActive(item.path, item.exact);
+                    const hasChildActive = hasActiveChild(item);
+                    const highlighted = isItemActive || hasChildActive;
 
                     return (
                         <div key={item.label}>
                             {/* Item principal */}
                             <button
                                 onClick={() => handleNavigation(item)}
-                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${isItemActive ? 'bg-white text-blue-700 shadow-lg' : 'text-blue-100 hover:bg-blue-600/30'
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${highlighted
+                                        ? 'bg-white text-blue-700 shadow-lg'
+                                        : 'text-blue-100 hover:bg-blue-600/30'
                                     }`}
                             >
                                 <div className="flex items-center gap-3">
-                                    <Icon className={`w-5 h-5 ${isItemActive ? 'text-blue-700' : 'text-blue-200'}`} />
-                                    <span className={`font-medium ${isItemActive ? 'text-blue-900' : ''}`}>{item.label}</span>
+                                    <Icon
+                                        className={`w-5 h-5 ${highlighted ? 'text-blue-700' : 'text-blue-200'}`}
+                                    />
+                                    <span className={`font-medium ${highlighted ? 'text-blue-900' : ''}`}>
+                                        {item.label}
+                                    </span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     {item.badge && (
                                         <span
-                                            className={`px-2 py-1 text-xs font-bold rounded-full ${isItemActive ? 'bg-blue-100 text-blue-700' : 'bg-blue-600 text-white'
+                                            className={`px-2 py-1 text-xs font-bold rounded-full ${highlighted
+                                                    ? 'bg-blue-100 text-blue-700'
+                                                    : 'bg-blue-600 text-white'
                                                 }`}
                                         >
                                             {item.badge}
                                         </span>
                                     )}
-                                    {hasSubmenu && (isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />)}
+                                    {hasSubmenu &&
+                                        (isExpanded ? (
+                                            <ChevronDown className="w-4 h-4" />
+                                        ) : (
+                                            <ChevronRight className="w-4 h-4" />
+                                        ))}
                                 </div>
                             </button>
 
@@ -146,17 +254,25 @@ export default function Sidebar() {
                                 <div className="mt-2 ml-4 space-y-1">
                                     {item.submenu!.map((subItem) => {
                                         const SubIcon = subItem.icon;
-                                        const isSubActive = isActive(subItem.path);
+                                        const isSubActive = isActive(subItem.path, subItem.exact);
 
                                         return (
                                             <button
                                                 key={subItem.label}
                                                 onClick={() => subItem.path && navigate(subItem.path)}
-                                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 ${isSubActive ? 'bg-blue-600 text-white' : 'text-blue-200 hover:bg-blue-600/20 hover:text-white'
+                                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 ${isSubActive
+                                                        ? 'bg-blue-600 text-white shadow-md'
+                                                        : 'text-blue-200 hover:bg-blue-600/20 hover:text-white'
                                                     }`}
                                             >
-                                                <SubIcon className="w-4 h-4" />
-                                                <span className="text-sm font-medium">{subItem.label}</span>
+                                                <SubIcon
+                                                    className={`w-4 h-4 ${isSubActive ? 'text-white' : ''}`}
+                                                />
+                                                <span
+                                                    className={`text-sm font-medium ${isSubActive ? 'text-white' : ''}`}
+                                                >
+                                                    {subItem.label}
+                                                </span>
                                             </button>
                                         );
                                     })}

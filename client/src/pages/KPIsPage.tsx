@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import { kpisService } from '../services/kpis.service';
 import { areasService } from '../services/areas.service';
-import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/layout/Layout';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface KPI {
   id: string;
@@ -47,7 +47,7 @@ interface Area {
 
 export default function KPIsPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { can } = usePermissions();
   const [kpis, setKpis] = useState<KPI[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +63,7 @@ export default function KPIsPage() {
   const [paginaActual, setPaginaActual] = useState(1);
   const [kpisPorPagina] = useState(10);
 
-  const esAdmin = user?.role === 'admin' || user?.role === 'jefe';
+  const puedeGestionarKpis = can('gestionar_kpis');
 
   useEffect(() => {
     cargarDatos();
@@ -190,7 +190,7 @@ export default function KPIsPage() {
             <p className="text-gray-600 mt-1">{kpis.length} indicadores configurados</p>
           </div>
 
-          {esAdmin && (
+          {puedeGestionarKpis && (
             <button
               onClick={() => navigate('/configuracion/kpis')}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -419,7 +419,7 @@ export default function KPIsPage() {
                   </div>
 
                   {/* Acciones */}
-                  {esAdmin && (
+                  {puedeGestionarKpis && (
                     <div className="flex items-center gap-2 ml-4">
                       <button
                         onClick={() => handleToggleActivo(kpi.id)}

@@ -34,4 +34,9 @@ export class EstadisticasController {
   getResumenKpis() {
     return this.estadisticasService.getResumenPorTipoKpi();
   }
+
+  @Get('ranking-areas')
+  getRankingAreas() {
+    return this.estadisticasService.getRankingAreas();
+  }
 }

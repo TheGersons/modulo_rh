@@ -2,20 +2,29 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
-  Target,
   Save,
   AlertCircle,
   Info,
-  Calculator,
-  TrendingUp,
+  Target,
+  Building,
+  Briefcase,
+  FolderOpen,
 } from 'lucide-react';
+import Layout from '../components/layout/Layout';
 import { kpisService } from '../services/kpis.service';
 import { areasService } from '../services/areas.service';
-import Layout from '../components/layout/Layout';
+import { puestosService } from '../services/puestos.service';
 
 interface Area {
   id: string;
   nombre: string;
+  areaPadreId?: string;
+}
+
+interface Puesto {
+  id: string;
+  nombre: string;
+  areaId: string;
 }
 
 interface FormulaCalculo {
@@ -35,41 +44,80 @@ export default function GestionKPIsPage() {
   const editId = searchParams.get('edit');
   const isEdit = !!editId;
 
-  // Form state
-  const [key, setKey] = useState('');
+  // Estados de carga
+  const [loading, setLoading] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState('');
+
+  // Datos de catálogos
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [subAreas, setSubAreas] = useState<Area[]>([]);
+  const [puestos, setPuestos] = useState<Puesto[]>([]);
+
+  // Información básica
+  const [codigo, setCodigo] = useState('');
   const [indicador, setIndicador] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [areaId, setAreaId] = useState('');
-  const [puesto, setPuesto] = useState('');
-  const [tipoCalculo, setTipoCalculo] = useState<string>('binario');
-  const [meta, setMeta] = useState<number | ''>('');
-  const [operadorMeta, setOperadorMeta] = useState('>=');
-  const [tolerancia, setTolerancia] = useState<number | ''>('');
-  const [tipoCriticidad, setTipoCriticidad] = useState<'critico' | 'no_critico'>('no_critico');
-  const [periodicidad, setPeriodicidad] = useState('mensual');
-  const [sentido, setSentido] = useState('mayor_mejor');
-  const [unidad, setUnidad] = useState('');
+  const [subAreaId, setSubAreaId] = useState('');
+  const [puestoId, setPuestoId] = useState('');
 
-  // Fórmula específica por tipo
+  // Tipo de cálculo y campos dinámicos
+  const [tipoCalculo, setTipoCalculo] = useState('');
+  const [descripcionCondicion, setDescripcionCondicion] = useState('');
   const [numerador, setNumerador] = useState('');
   const [denominador, setDenominador] = useState('');
-  const [multiplicador, setMultiplicador] = useState<number>(100);
+  const [multiplicador, setMultiplicador] = useState('100');
   const [invertir, setInvertir] = useState(false);
-  const [targetConteo, setTargetConteo] = useState('');
-  const [descripcionBinario, setDescripcionBinario] = useState('');
+  const [target, setTarget] = useState('');
 
-  // Data y UI
-  const [areas, setAreas] = useState<Area[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  // Configuración de meta
+  const [meta, setMeta] = useState('');
+  const [operador, setOperador] = useState('>');
+  const [unidad, setUnidad] = useState('%');
+  const [tolerancia, setTolerancia] = useState('');
+  const [criticidad, setCriticidad] = useState('no_critico');
+  const [periodicidad, setPeriodicidad] = useState('mensual');
+  const [sentido, setSentido] = useState('Mayor es mejor');
 
   useEffect(() => {
     cargarAreas();
     if (isEdit) {
       cargarKPI();
     }
-  }, [editId]);
+  }, []);
+
+  useEffect(() => {
+    // Cargar sub-áreas cuando se selecciona un área
+    if (areaId) {
+      const areaSeleccionada = areas.find((a) => a.id === areaId);
+      if (areaSeleccionada && !areaSeleccionada.areaPadreId) {
+        // Es área padre, cargar sus sub-áreas
+        const subs = areas.filter((a) => a.areaPadreId === areaId);
+        setSubAreas(subs);
+      } else {
+        setSubAreas([]);
+        setSubAreaId('');
+      }
+
+      // Cargar puestos del área
+      cargarPuestos(areaId);
+    } else {
+      setSubAreas([]);
+      setSubAreaId('');
+      setPuestos([]);
+      setPuestoId('');
+    }
+  }, [areaId, areas]);
+
+  useEffect(() => {
+    // Cargar puestos de sub-área si se selecciona
+    if (subAreaId) {
+      cargarPuestos(subAreaId);
+    } else if (areaId) {
+      cargarPuestos(areaId);
+    }
+  }, [subAreaId]);
 
   const cargarAreas = async () => {
     try {
@@ -80,37 +128,60 @@ export default function GestionKPIsPage() {
     }
   };
 
+  const cargarPuestos = async (areaIdParam: string) => {
+    try {
+      const data = await puestosService.getAll(areaIdParam);
+      setPuestos(data);
+      // Si el puesto actual no está en la nueva lista, limpiar
+      if (puestoId && !data.find((p: Puesto) => p.id === puestoId)) {
+        setPuestoId('');
+      }
+    } catch (error) {
+      console.error('Error al cargar puestos:', error);
+      setPuestos([]);
+    }
+  };
+
   const cargarKPI = async () => {
     try {
       setLoading(true);
       const kpi = await kpisService.getById(editId!);
 
-      setKey(kpi.key);
+      setCodigo(kpi.key);
       setIndicador(kpi.indicador);
       setDescripcion(kpi.descripcion || '');
       setAreaId(kpi.areaId);
-      setPuesto(kpi.puesto || '');
+
+      // Si tiene sub-área (areaPadreId del área del KPI)
+      const kpiArea = await areasService.getById(kpi.areaId);
+      if (kpiArea.areaPadreId) {
+        setAreaId(kpiArea.areaPadreId);
+        setSubAreaId(kpi.areaId);
+      }
+
+      setPuestoId(kpi.puestoId || '');
       setTipoCalculo(kpi.tipoCalculo);
-      setMeta(kpi.meta || '');
-      setOperadorMeta(kpi.operadorMeta || '>=');
-      setTolerancia(kpi.tolerancia || '');
-      setTipoCriticidad(kpi.tipoCriticidad as any);
+      setMeta(kpi.meta?.toString() || '');
+      setOperador(kpi.operadorMeta || '>');
+      setUnidad(kpi.unidad || '%');
+      setTolerancia(kpi.tolerancia?.toString() || '');
+      setCriticidad(kpi.tipoCriticidad || 'no_critico');
       setPeriodicidad(kpi.periodicidad);
-      setSentido(kpi.sentido);
-      setUnidad(kpi.unidad || '');
+      setSentido(kpi.sentido || 'Mayor es mejor');
 
       // Parsear fórmula
       if (kpi.formulaCalculo) {
-        try {
-          const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
-          if (formula.numerador) setNumerador(formula.numerador);
-          if (formula.denominador) setDenominador(formula.denominador);
-          if (formula.multiplicador) setMultiplicador(formula.multiplicador);
-          if (formula.invertir !== undefined) setInvertir(formula.invertir);
-          if (formula.target) setTargetConteo(formula.target);
-          if (formula.descripcion) setDescripcionBinario(formula.descripcion);
-        } catch (e) {
-          console.error('Error al parsear fórmula:', e);
+        const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+
+        if (formula.tipo === 'binario') {
+          setDescripcionCondicion(formula.descripcion || '');
+        } else if (formula.tipo === 'division') {
+          setNumerador(formula.numerador || '');
+          setDenominador(formula.denominador || '');
+          setMultiplicador(formula.multiplicador?.toString() || '100');
+          setInvertir(formula.invertir || false);
+        } else if (formula.tipo === 'conteo') {
+          setTarget(formula.target || '');
         }
       }
     } catch (error) {
@@ -124,95 +195,85 @@ export default function GestionKPIsPage() {
   const construirFormula = (): string => {
     const formula: FormulaCalculo = { tipo: tipoCalculo };
 
-    switch (tipoCalculo) {
-      case 'binario':
-        formula.descripcion = descripcionBinario || indicador;
-        break;
-
-      case 'division':
-        formula.numerador = numerador;
-        formula.denominador = denominador;
-        formula.multiplicador = multiplicador;
-        formula.invertir = invertir;
-        break;
-
-      case 'conteo':
-        formula.target = targetConteo;
-        break;
-
-      case 'porcentaje_kpis_equipo':
-        formula.filtro = 'verde';
-        break;
-
-      case 'dashboard_presentado':
-        formula.descripcion = 'Dashboard presentado a tiempo';
-        break;
-
-      case 'personalizado':
-        formula.descripcion = 'Fórmula personalizada';
-        break;
+    if (tipoCalculo === 'binario') {
+      formula.descripcion = descripcionCondicion;
+    } else if (tipoCalculo === 'division') {
+      formula.numerador = numerador;
+      formula.denominador = denominador;
+      formula.multiplicador = parseFloat(multiplicador);
+      formula.invertir = invertir;
+    } else if (tipoCalculo === 'conteo') {
+      formula.target = target;
     }
 
     return JSON.stringify(formula);
   };
 
-  const validarFormulario = (): boolean => {
+  const handleSubmit = async () => {
     setError('');
 
-    if (!key.trim()) {
-      setError('El código del KPI es requerido');
-      return false;
-    }
-    if (!indicador.trim()) {
-      setError('El indicador es requerido');
-      return false;
-    }
-    if (!areaId) {
-      setError('Debes seleccionar un área');
-      return false;
+    // Validaciones
+    if (!codigo.trim()) {
+      setError('El código KPI es requerido');
+      return;
     }
 
-    // Validaciones específicas por tipo
+    if (!indicador.trim()) {
+      setError('El indicador es requerido');
+      return;
+    }
+
+    if (!areaId) {
+      setError('Debes seleccionar un área');
+      return;
+    }
+
+    // Validar que si hay sub-áreas disponibles, se seleccione una
+    const tieneSubs = areas.some((a) => a.areaPadreId === areaId);
+
+    if (tieneSubs && !subAreaId) {
+      setError('Debes seleccionar una sub-área');
+      return;
+    }
+
+    if (!puestoId) {
+      setError('El puesto es requerido');
+      return;
+    }
+
+    // Validaciones por tipo de cálculo
     if (tipoCalculo === 'division') {
-      if (!numerador || !denominador) {
-        setError('Para división, debes especificar numerador y denominador');
-        return false;
+      if (!numerador.trim() || !denominador.trim()) {
+        setError('Numerador y denominador son requeridos para el tipo división');
+        return;
       }
     }
 
     if (tipoCalculo === 'conteo') {
-      if (!targetConteo) {
-        setError('Para conteo, debes especificar el target');
-        return false;
+      if (!target.trim()) {
+        setError('El campo "target" es requerido para el tipo conteo');
+        return;
       }
     }
 
-    return true;
-  };
-
-  const handleSubmit = async () => {
-    if (!validarFormulario()) return;
-
     try {
-      setSubmitting(true);
-
-      const formulaCalculo = construirFormula();
+      setGuardando(true);
 
       const kpiData = {
-        key: key.trim().toUpperCase(),
+        key: codigo.toUpperCase(),
         indicador: indicador.trim(),
         descripcion: descripcion.trim() || undefined,
-        areaId,
-        puesto: puesto.trim() || undefined,
+        areaId: subAreaId || areaId, // Usar sub-área si está seleccionada
+        puestoId: puestoId,
         tipoCalculo,
-        formulaCalculo,
-        meta: meta || undefined,
-        operadorMeta: meta ? operadorMeta : undefined,
-        tolerancia: tolerancia || undefined,
-        tipoCriticidad,
+        formulaCalculo: construirFormula(),
+        meta: meta ? parseFloat(meta) : undefined,
+        operadorMeta: operador,
+        unidad: unidad || undefined,
+        tolerancia: tolerancia ? parseFloat(tolerancia) : undefined,
+        tipoCriticidad: criticidad,
         periodicidad,
         sentido,
-        unidad: unidad.trim() || undefined,
         activo: true,
       };
 
@@ -229,7 +290,7 @@ export default function GestionKPIsPage() {
       console.error('Error al guardar KPI:', error);
       setError(error.response?.data?.message || 'Error al guardar el KPI');
     } finally {
-      setSubmitting(false);
+      setGuardando(false);
     }
   };
 
@@ -246,7 +307,11 @@ export default function GestionKPIsPage() {
     );
   }
 
+  // Filtrar áreas principales (sin padre)
+  const areasPrincipales = areas.filter((a) => !a.areaPadreId);
+
   return (
+
     <div className="p-8 max-w-5xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -261,7 +326,7 @@ export default function GestionKPIsPage() {
             {isEdit ? 'Editar KPI' : 'Nuevo KPI'}
           </h1>
           <p className="text-gray-600 mt-1">
-            {isEdit ? 'Actualiza la configuración del KPI' : 'Define un nuevo indicador de desempeño'}
+            {isEdit ? 'Modifica la configuración del KPI' : 'Configura un nuevo indicador de desempeño'}
           </p>
         </div>
       </div>
@@ -284,20 +349,20 @@ export default function GestionKPIsPage() {
           Información Básica
         </h2>
 
-        <div className="space-y-4">
-          {/* Key */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Código KPI */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Código del KPI <span className="text-red-500">*</span>
+              Código KPI <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
-              value={key}
-              onChange={(e) => setKey(e.target.value.toUpperCase())}
-              placeholder="Ej: KPI-TEC-001"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+              placeholder="Ej: KPI-001"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase"
+              disabled={isEdit}
             />
-            <p className="text-xs text-gray-500 mt-1">Identificador único del KPI</p>
           </div>
 
           {/* Indicador */}
@@ -309,107 +374,159 @@ export default function GestionKPIsPage() {
               type="text"
               value={indicador}
               onChange={(e) => setIndicador(e.target.value)}
-              placeholder="Ej: Cumplimiento de presupuesto"
+              placeholder="Nombre del KPI"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
 
           {/* Descripción */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Descripción
-            </label>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Descripción</label>
             <textarea
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
-              placeholder="Descripción detallada del KPI..."
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[100px] resize-none"
+              placeholder="Describe brevemente el KPI..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+              rows={3}
             />
           </div>
 
-          {/* Grid: Área y Puesto */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Área */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Building className="w-4 h-4 inline mr-1" />
+              Área <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={areaId}
+              onChange={(e) => {
+                setAreaId(e.target.value);
+                setSubAreaId('');
+                setPuestoId('');
+              }}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Selecciona un área</option>
+              {areasPrincipales.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {area.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Sub-área (solo si el área tiene sub-áreas) */}
+          {subAreas.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Área <span className="text-red-500">*</span>
+                <FolderOpen className="w-4 h-4 inline mr-1" />
+                Sub-área <span className="text-red-500">*</span>
               </label>
               <select
-                value={areaId}
-                onChange={(e) => setAreaId(e.target.value)}
+                value={subAreaId}
+                onChange={(e) => {
+                  setSubAreaId(e.target.value);
+                  setPuestoId('');
+                }}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="">Selecciona un área</option>
-                {areas.map((area) => (
-                  <option key={area.id} value={area.id}>
-                    {area.nombre}
+                <option value="">Selecciona una sub-área</option>
+                {subAreas.map((sub) => (
+                  <option key={sub.id} value={sub.id}>
+                    {sub.nombre}
                   </option>
                 ))}
               </select>
             </div>
+          )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Puesto (Opcional)
-              </label>
-              <input
-                type="text"
-                value={puesto}
-                onChange={(e) => setPuesto(e.target.value)}
-                placeholder="Ej: Gerente, Analista"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
+          {/* Puesto */}
+          <div className={subAreas.length > 0 ? 'md:col-span-2' : ''}>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Briefcase className="w-4 h-4 inline mr-1" />
+              Puesto <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={puestoId}
+              onChange={(e) => setPuestoId(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              disabled={!areaId && !subAreaId}
+            >
+              <option value="">
+                {puestos.length === 0 ? 'No hay puestos disponibles' : 'Selecciona un puesto'}
+              </option>
+              {puestos.map((puesto) => (
+                <option key={puesto.id} value={puesto.id}>
+                  {puesto.nombre}
+                </option>
+              ))}
+            </select>
+            {puestos.length === 0 && (areaId || subAreaId) && (
+              <p className="text-xs text-gray-500 mt-1">
+                No hay puestos registrados para esta área. Crea puestos primero.
+              </p>
+            )}
           </div>
         </div>
       </div>
 
       {/* Tipo de Cálculo */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <Calculator className="w-5 h-5 text-blue-600" />
-          Tipo de Cálculo
-        </h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Tipo de Cálculo</h2>
 
-        <div className="mb-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Método de Cálculo <span className="text-red-500">*</span>
+          </label>
           <select
             value={tipoCalculo}
             onChange={(e) => setTipoCalculo(e.target.value)}
             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value="binario">Binario (Cumplió / No cumplió)</option>
-            <option value="division">División (A / B × multiplicador)</option>
-            <option value="conteo">Conteo (Cantidad de items)</option>
+            <option value="">Selecciona un tipo</option>
+            <option value="binario">Binario (Sí/No)</option>
+            <option value="division">División</option>
+            <option value="conteo">Conteo</option>
             <option value="porcentaje_kpis_equipo">% KPIs del Equipo</option>
             <option value="dashboard_presentado">Dashboard Presentado</option>
             <option value="personalizado">Personalizado</option>
           </select>
         </div>
 
-        {/* Campos específicos por tipo */}
+        {/* Campos dinámicos según tipo */}
         {tipoCalculo === 'binario' && (
-          <div className="p-4 bg-blue-50 rounded-lg">
-            <Info className="w-5 h-5 text-blue-600 mb-2" />
-            <p className="text-sm text-blue-900 mb-3">
-              <strong>Binario:</strong> El resultado será 100% si cumple o 0% si no cumple
-            </p>
-            <input
-              type="text"
-              value={descripcionBinario}
-              onChange={(e) => setDescripcionBinario(e.target.value)}
-              placeholder="Descripción de la condición (opcional)"
-              className="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex items-start gap-2 mb-3">
+              <Info className="w-5 h-5 text-blue-600 mt-0.5" />
+              <p className="text-sm text-blue-900">
+                El KPI se evalúa como Cumplido/No Cumplido según una condición específica.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Descripción de la Condición
+              </label>
+              <input
+                type="text"
+                value={descripcionCondicion}
+                onChange={(e) => setDescripcionCondicion(e.target.value)}
+                placeholder="Ej: Entrega dentro de plazo"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
           </div>
         )}
 
         {tipoCalculo === 'division' && (
-          <div className="space-y-4 p-4 bg-purple-50 rounded-lg">
-            <p className="text-sm text-purple-900 flex items-center gap-2 mb-3">
-              <Info className="w-5 h-5" />
-              <strong>División:</strong> Resultado = (numerador / denominador) × multiplicador
-            </p>
+          <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-200 space-y-4">
+            <div className="flex items-start gap-2">
+              <Info className="w-5 h-5 text-purple-600 mt-0.5" />
+              <p className="text-sm text-purple-900">
+                Fórmula: (Numerador / Denominador) × Multiplicador
+              </p>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Numerador <span className="text-red-500">*</span>
@@ -418,8 +535,8 @@ export default function GestionKPIsPage() {
                   type="text"
                   value={numerador}
                   onChange={(e) => setNumerador(e.target.value)}
-                  placeholder="Ej: gasto_real"
-                  className="w-full px-3 py-2 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  placeholder="Campo del numerador"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 />
               </div>
 
@@ -431,8 +548,8 @@ export default function GestionKPIsPage() {
                   type="text"
                   value={denominador}
                   onChange={(e) => setDenominador(e.target.value)}
-                  placeholder="Ej: presupuesto_aprobado"
-                  className="w-full px-3 py-2 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  placeholder="Campo del denominador"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 />
               </div>
 
@@ -443,197 +560,192 @@ export default function GestionKPIsPage() {
                 <input
                   type="number"
                   value={multiplicador}
-                  onChange={(e) => setMultiplicador(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  onChange={(e) => setMultiplicador(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 />
               </div>
-            </div>
 
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={invertir}
-                onChange={(e) => setInvertir(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-2 focus:ring-purple-500"
-              />
-              <span className="text-sm text-gray-700">Invertir resultado (mejor cuando es menor)</span>
-            </label>
+              <div className="flex items-center">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={invertir}
+                    onChange={(e) => setInvertir(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-2 focus:ring-purple-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Invertir resultado</span>
+                </label>
+              </div>
+            </div>
           </div>
         )}
 
         {tipoCalculo === 'conteo' && (
-          <div className="p-4 bg-green-50 rounded-lg">
-            <p className="text-sm text-green-900 flex items-center gap-2 mb-3">
-              <Info className="w-5 h-5" />
-              <strong>Conteo:</strong> Cuenta la cantidad de items
-            </p>
-            <input
-              type="text"
-              value={targetConteo}
-              onChange={(e) => setTargetConteo(e.target.value)}
-              placeholder="Nombre del campo a contar (ej: reportes_presentados)"
-              className="w-full px-3 py-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-500"
-            />
+          <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+            <div className="flex items-start gap-2 mb-3">
+              <Info className="w-5 h-5 text-green-600 mt-0.5" />
+              <p className="text-sm text-green-900">
+                Cuenta el número de elementos que cumplen una condición.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Campo a Contar (Target) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                placeholder="Nombre del campo"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              />
+            </div>
           </div>
         )}
 
         {tipoCalculo === 'porcentaje_kpis_equipo' && (
-          <div className="p-4 bg-orange-50 rounded-lg">
-            <p className="text-sm text-orange-900">
-              <Info className="w-5 h-5 inline mr-2" />
-              <strong>% KPIs Equipo:</strong> Calcula (KPIs verdes / Total KPIs) × 100 del área
-            </p>
+          <div className="mt-4 p-4 bg-orange-50 rounded-lg border border-orange-200">
+            <div className="flex items-start gap-2">
+              <Info className="w-5 h-5 text-orange-600 mt-0.5" />
+              <p className="text-sm text-orange-900">
+                Se calcula automáticamente el porcentaje de KPIs completados por el equipo.
+              </p>
+            </div>
           </div>
         )}
 
         {tipoCalculo === 'dashboard_presentado' && (
-          <div className="p-4 bg-pink-50 rounded-lg">
-            <p className="text-sm text-pink-900">
-              <Info className="w-5 h-5 inline mr-2" />
-              <strong>Dashboard:</strong> Verifica si el dashboard fue presentado a tiempo
-            </p>
+          <div className="mt-4 p-4 bg-pink-50 rounded-lg border border-pink-200">
+            <div className="flex items-start gap-2">
+              <Info className="w-5 h-5 text-pink-600 mt-0.5" />
+              <p className="text-sm text-pink-900">
+                Verifica si el dashboard fue presentado en el periodo.
+              </p>
+            </div>
           </div>
         )}
       </div>
 
       {/* Configuración de Meta */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-blue-600" />
-          Configuración de Meta
-        </h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Configuración de Meta</h2>
 
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Meta */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Meta (Opcional)
-              </label>
-              <input
-                type="number"
-                value={meta}
-                onChange={(e) => setMeta(e.target.value ? Number(e.target.value) : '')}
-                placeholder="Ej: 95"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Meta */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Meta</label>
+            <input
+              type="number"
+              value={meta}
+              onChange={(e) => setMeta(e.target.value)}
+              placeholder="Ej: 90"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
 
-            {/* Operador */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Operador
-              </label>
-              <select
-                value={operadorMeta}
-                onChange={(e) => setOperadorMeta(e.target.value)}
-                disabled={!meta}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-              >
-                <option value=">">{'>'} Mayor que</option>
-                <option value=">=">{'>='} Mayor o igual</option>
-                <option value="=">= Igual a</option>
-                <option value="<=">{'<='} Menor o igual</option>
-                <option value="<">{'<'} Menor que</option>
-              </select>
-            </div>
+          {/* Operador */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Operador</label>
+            <select
+              value={operador}
+              onChange={(e) => setOperador(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value=">">&gt; Mayor que</option>
+              <option value=">=">&gt;= Mayor o igual</option>
+              <option value="=">= Igual</option>
+              <option value="<=">&lt;= Menor o igual</option>
+              <option value="<">&lt; Menor que</option>
+            </select>
+          </div>
 
-            {/* Unidad */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Unidad (Opcional)
-              </label>
-              <input
-                type="text"
-                value={unidad}
-                onChange={(e) => setUnidad(e.target.value)}
-                placeholder="%, $, unidades"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
+          {/* Unidad */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Unidad</label>
+            <select
+              value={unidad}
+              onChange={(e) => setUnidad(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="%">%</option>
+              <option value="$">$</option>
+              <option value="unidades">unidades</option>
+            </select>
           </div>
 
           {/* Tolerancia */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Tolerancia (%) - Umbral Amarillo
+              Tolerancia (%)
             </label>
             <input
               type="number"
               value={tolerancia}
-              onChange={(e) => setTolerancia(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => setTolerancia(e.target.value)}
               placeholder="Ej: 10"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
-            <p className="text-xs text-gray-500 mt-1">
-              Porcentaje de desviación permitido antes de marcar como rojo
-            </p>
+            <p className="text-xs text-gray-500 mt-1">Umbral para estado amarillo</p>
           </div>
 
-          {/* Grid: Criticidad, Periodicidad, Sentido */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Criticidad
-              </label>
-              <select
-                value={tipoCriticidad}
-                onChange={(e) => setTipoCriticidad(e.target.value as any)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="no_critico">No Crítico</option>
-                <option value="critico">Crítico</option>
-              </select>
-            </div>
+          {/* Criticidad */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Criticidad</label>
+            <select
+              value={criticidad}
+              onChange={(e) => setCriticidad(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="no_critico">No Crítico</option>
+              <option value="critico">Crítico</option>
+            </select>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Periodicidad
-              </label>
-              <select
-                value={periodicidad}
-                onChange={(e) => setPeriodicidad(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="mensual">Mensual</option>
-                <option value="trimestral">Trimestral</option>
-                <option value="semestral">Semestral</option>
-                <option value="anual">Anual</option>
-              </select>
-            </div>
+          {/* Periodicidad */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Periodicidad</label>
+            <select
+              value={periodicidad}
+              onChange={(e) => setPeriodicidad(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="mensual">Mensual</option>
+              <option value="trimestral">Trimestral</option>
+              <option value="semestral">Semestral</option>
+              <option value="anual">Anual</option>
+            </select>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Sentido
-              </label>
-              <select
-                value={sentido}
-                onChange={(e) => setSentido(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="mayor_mejor">Mayor es mejor</option>
-                <option value="menor_mejor">Menor es mejor</option>
-              </select>
-            </div>
+          {/* Sentido */}
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Sentido</label>
+            <select
+              value={sentido}
+              onChange={(e) => setSentido(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="Mayor es mejor">Mayor es mejor</option>
+              <option value="Menor es mejor">Menor es mejor</option>
+            </select>
           </div>
         </div>
       </div>
 
-      {/* Botones de Acción */}
-      <div className="flex items-center justify-end gap-4 pb-8">
+      {/* Botones */}
+      <div className="flex justify-end gap-3 pb-8">
         <button
           onClick={() => navigate('/kpis')}
-          disabled={submitting}
+          disabled={guardando}
           className="px-6 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
         >
           Cancelar
         </button>
         <button
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={guardando}
           className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {submitting ? (
+          {guardando ? (
             <>
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
               <span>Guardando...</span>
@@ -647,5 +759,6 @@ export default function GestionKPIsPage() {
         </button>
       </div>
     </div>
+
   );
 }

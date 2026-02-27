@@ -16,11 +16,13 @@ import {
 } from 'lucide-react';
 import { ordenesTrabajoService, type OrdenTrabajo, } from '../services/ordenes-trabajo.service';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 
 export default function DetalleOrdenPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { isJefe, isAdmin } = usePermissions();
     const [orden, setOrden] = useState<OrdenTrabajo | null>(null);
     const [loading, setLoading] = useState(true);
     const [tareaSeleccionada, setTareaSeleccionada] = useState<string | null>(null);
@@ -202,7 +204,7 @@ export default function DetalleOrdenPage() {
     const vencida = diasRestantes !== null && diasRestantes < 0;
     const urgente = diasRestantes !== null && diasRestantes <= 3 && diasRestantes >= 0;
     const esEmpleado = user?.id === orden.empleadoId;
-    const esJefe = user?.role === 'jefe' || user?.role === 'admin';
+    const puedeRevisar = isJefe || isAdmin;
 
     return (
         <div className="p-8 space-y-6">
@@ -404,7 +406,7 @@ export default function DetalleOrdenPage() {
                                                                     )}
                                                                 </>
                                                             )}
-                                                            {evidencia.status === 'pendiente_revision' && esJefe && (
+                                                            {evidencia.status === 'pendiente_revision' && puedeRevisar && (
                                                                 <div className="flex gap-2">
                                                                     <button
                                                                         onClick={() => handleRevisarEvidencia(evidencia.id, 'aprobada')}

@@ -16,4 +16,8 @@ export class UpdateAreaDto {
   @IsBoolean()
   @IsOptional()
   activa?: boolean;
+
+  @IsString()
+  @IsOptional()
+  areaPadreId?: string;
 }

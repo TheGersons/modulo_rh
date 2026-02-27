@@ -3,59 +3,96 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function seedAreas() {
-  console.log('🌱 Creando áreas...');
+  console.log('🌱 Creando estructura de áreas...');
 
-  const areas = [
+  const areasData = [
     {
-      nombre: 'Gerencia General',
-      descripcion: 'Dirección estratégica y toma de decisiones',
-    },
-    {
-      nombre: 'Área administrativa',
+      nombre: 'Administrativa',
       descripcion: 'Gestión administrativa, contable y financiera',
+      subAreas: [
+        'Gerencia',
+        'Administración',
+        'Flota Vehicular',
+        'ISO',
+        'SYSO',
+        'Contabilidad',
+        'Recursos Humanos',
+      ],
     },
     {
-      nombre: 'Área técnica',
-      descripcion: 'Operaciones técnicas y mantenimiento',
-    },
-    {
-      nombre: 'Área comercial',
+      nombre: 'Comercial',
       descripcion: 'Ventas y atención al cliente',
+      subAreas: [],
     },
     {
-      nombre: 'Área de compras internacionales',
-      descripcion: 'Gestión de importaciones y compras',
+      nombre: 'Proyectos',
+      descripcion: 'Gestión y ejecución de proyectos',
+      subAreas: [],
+    },
+    {
+      nombre: 'Técnica',
+      descripcion: 'Operaciones técnicas y mantenimiento',
+      subAreas: [],
+    },
+    {
+      nombre: 'Block Chain',
+      descripcion: 'Desarrollo e implementación de blockchain',
+      subAreas: [],
+    },
+    {
+      nombre: 'Áreas Gerenciales',
+      descripcion: 'Dirección estratégica y gerencia general',
+      subAreas: [],
     },
   ];
 
-  for (const area of areas) {
-    const areaExistente = await prisma.area.findFirst({
-      where: { nombre: area.nombre },
+  for (const areaData of areasData) {
+    // Verificar si ya existe
+    const existente = await prisma.area.findFirst({
+      where: { nombre: areaData.nombre, areaPadreId: null },
     });
 
-    if (areaExistente) {
-      console.log(`⏭️  "${area.nombre}" ya existe, saltando...`);
+    if (existente) {
+      console.log(`⏭️  "${areaData.nombre}" ya existe, saltando...`);
       continue;
     }
 
-    await prisma.area.create({
+    // Crear área principal
+    const areaPrincipal = await prisma.area.create({
       data: {
-        nombre: area.nombre,
-        descripcion: area.descripcion,
-        promedioGlobal: 0,
-        totalKpis: 0,
-        kpisRojos: 0,
-        porcentajeRojos: 0,
-        nivelRiesgo: 'BAJO',
-        ranking: 0,
+        nombre: areaData.nombre,
+        descripcion: areaData.descripcion,
         activa: true,
       },
     });
 
-    console.log(`✅ Área "${area.nombre}" creada`);
+    console.log(`✅ Área principal "${areaData.nombre}" creada`);
+
+    // Crear sub-áreas
+    for (const subAreaNombre of areaData.subAreas) {
+      const existeSubArea = await prisma.area.findFirst({
+        where: { nombre: subAreaNombre, areaPadreId: areaPrincipal.id },
+      });
+
+      if (existeSubArea) {
+        console.log(`  ⏭️  Sub-área "${subAreaNombre}" ya existe`);
+        continue;
+      }
+
+      await prisma.area.create({
+        data: {
+          nombre: subAreaNombre,
+          descripcion: `Sub-área de ${areaData.nombre}`,
+          areaPadreId: areaPrincipal.id,
+          activa: true,
+        },
+      });
+
+      console.log(`  ✅ Sub-área "${subAreaNombre}" creada`);
+    }
   }
 
-  console.log('🎉 Áreas creadas exitosamente');
+  console.log('🎉 Estructura de áreas completada');
   await prisma.$disconnect();
 }
 

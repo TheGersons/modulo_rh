@@ -137,21 +137,21 @@ export class EvaluacionesService {
           });
 
           // Crear detalle de evaluación
+          // resultado puede ser null si no hay datos; fallback a 0
+          const resultadoFinal = resultadoCalculo.resultado ?? 0;
+
           const detalle = await this.prisma.evaluacionDetalle.create({
             data: {
               evaluacionId: evaluacion.id,
               kpiId,
               ordenTrabajoId: ordenesKpi[0].id, // Referencia a la primera orden
-              resultadoNumerico: resultadoCalculo.resultado,
-              resultadoPorcentaje: resultadoCalculo.resultado,
-              brechaVsMeta: kpi.meta
-                ? resultadoCalculo.resultado - kpi.meta
-                : null,
+              resultadoNumerico: resultadoFinal,
+              resultadoPorcentaje: resultadoFinal,
+              brechaVsMeta: kpi.meta != null ? resultadoFinal - kpi.meta : null,
               estado: resultadoCalculo.estado,
               formulaUtilizada: JSON.stringify({
                 tipoCalculo: kpi.tipoCalculo,
                 valores,
-                detalleCalculo: resultadoCalculo.detalleCalculo,
               }),
               meta: kpi.meta,
               umbralAmarillo: kpi.umbralAmarillo,
@@ -367,7 +367,9 @@ export class EvaluacionesService {
           select: {
             nombre: true,
             apellido: true,
-            puesto: true,
+            puesto: {
+              select: { nombre: true },
+            },
             area: {
               select: {
                 nombre: true,
@@ -405,7 +407,9 @@ export class EvaluacionesService {
             id: true,
             nombre: true,
             apellido: true,
-            puesto: true,
+            puesto: {
+              select: { nombre: true },
+            },
             area: {
               select: {
                 nombre: true,

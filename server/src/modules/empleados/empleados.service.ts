@@ -67,7 +67,7 @@ export class EmpleadosService {
         password: hashedPassword,
         role: createEmpleadoDto.role,
         areaId: createEmpleadoDto.areaId,
-        puesto: createEmpleadoDto.puesto,
+        puestoId: createEmpleadoDto.puestoId,
         activo: createEmpleadoDto.activo ?? true,
       },
       include: {
@@ -77,8 +77,12 @@ export class EmpleadosService {
             nombre: true,
           },
         },
+        puesto: {
+          select: { id: true, nombre: true },
+        },
       },
     });
+
 
     // No retornar el password
     const { password, ...empleadoSinPassword } = empleado;
@@ -114,7 +118,8 @@ export class EmpleadosService {
         { nombre: { contains: filters.search } },
         { apellido: { contains: filters.search } },
         { email: { contains: filters.search } },
-        { puesto: { contains: filters.search } },
+        // puesto es relación, se busca por nombre del puesto
+        { puesto: { nombre: { contains: filters.search } } },
       ];
     }
 
@@ -223,7 +228,7 @@ export class EmpleadosService {
           { nombre: { contains: query } },
           { apellido: { contains: query } },
           { email: { contains: query } },
-          { puesto: { contains: query } },
+          { puesto: { nombre: { contains: query } } },
         ],
         activo: true,
       },
@@ -380,7 +385,9 @@ export class EmpleadosService {
             id: true,
             nombre: true,
             apellido: true,
-            puesto: true,
+            puesto: {
+              select: { nombre: true },
+            },
           },
         },
         detalles: {
@@ -422,7 +429,7 @@ export class EmpleadosService {
         empleado: {
           id: empleado.id,
           nombre: `${empleado.nombre} ${empleado.apellido}`,
-          puesto: empleado.puesto,
+          puesto: (empleado as any).puesto?.nombre || 'Sin asignar',
           area: empleado.area?.nombre,
         },
         estadisticas: {
@@ -474,7 +481,7 @@ export class EmpleadosService {
       empleado: {
         id: empleado.id,
         nombre: `${empleado.nombre} ${empleado.apellido}`,
-        puesto: empleado.puesto,
+        puesto: (empleado as any).puesto?.nombre || 'Sin asignar',
         area: empleado.area?.nombre,
       },
       estadisticas: {

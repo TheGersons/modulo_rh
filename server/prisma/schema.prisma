@@ -16,7 +16,6 @@ model User {
   apellido  String
   role      String   @default("empleado")
   areaId    String?
-  puesto    String?
   activo    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -32,6 +31,8 @@ model User {
   solicitudesTarea        SolicitudTarea[]   @relation("EmpleadoSolicitud")
   solicitudesEdicion      SolicitudEdicion[] @relation("SolicitanteEdicion")
   alertas                 Alerta[]           @relation("AlertasEmpleado")
+  puestoId                String?            @map("puesto_id")
+  puesto                  Puesto?            @relation("EmpleadoPuesto", fields: [puestoId], references: [id], onDelete: SetNull)
 
   @@index([areaId])
   @@index([email])
@@ -39,31 +40,39 @@ model User {
 }
 
 model Area {
-  id              String   @id @default(cuid())
-  nombre          String   @unique
-  descripcion     String?  @db.Text
-  jefeId          String?
-  promedioGlobal  Float    @default(0)
-  totalKpis       Int      @default(0)
-  kpisRojos       Int      @default(0)
-  porcentajeRojos Float    @default(0)
-  nivelRiesgo     String   @default("BAJO")
-  ranking         Int      @default(0)
-  comentarioRRHH  String?  @db.Text
-  accionSugerida  String?  @db.Text
+  id              String  @id @default(uuid())
+  nombre          String
+  descripcion     String?
+  jefeId          String? @map("jefe_id")
+  promedioGlobal  Float   @default(0) @map("promedio_global")
+  totalKpis       Int     @default(0) @map("total_kpis")
+  kpisRojos       Int     @default(0) @map("kpis_rojos")
+  porcentajeRojos Float   @default(0) @map("porcentaje_rojos")
+  nivelRiesgo     String  @default("BAJO") @map("nivel_riesgo")
+  ranking         Int     @default(0)
+  comentarioRRHH  String? @map("comentario_rrhh")
+  accionSugerida  String? @map("accion_sugerida")
   responsable     String?
-  activa          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  activa          Boolean @default(true)
 
-  // Relaciones
-  jefe      User?    @relation("AreaJefe", fields: [jefeId], references: [id])
-  empleados User[]   @relation("AreaEmpleados")
-  kpis      KPI[]
-  alertas   Alerta[]
+  // ⭐ NUEVA: Auto-referencia para jerarquía
+  areaPadreId String? @map("area_padre_id")
+  areaPadre   Area?   @relation("AreaJerarquia", fields: [areaPadreId], references: [id], onDelete: SetNull)
+  subAreas    Area[]  @relation("AreaJerarquia")
 
-  @@index([jefeId])
-  @@index([activa])
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relaciones existentes
+  jefe           User?          @relation("AreaJefe", fields: [jefeId], references: [id], onDelete: SetNull)
+  empleados      User[]         @relation("AreaEmpleados")
+  kpis           KPI[]
+  evaluaciones   Evaluacion[]
+  ordenesTrabajo OrdenTrabajo[]
+  alertas        Alerta[]
+  puestos        Puesto[]
+
+  @@map("areas")
 }
 
 model KPI {
@@ -71,7 +80,6 @@ model KPI {
   key         String  @unique
   area        String
   areaId      String
-  puesto      String?
   indicador   String
   descripcion String? @db.Text
 
@@ -100,10 +108,12 @@ model KPI {
   areaRelacion       Area                @relation(fields: [areaId], references: [id], onDelete: Cascade)
   ordenesTrabajoKPI  OrdenTrabajo[]
   evaluacionDetalles EvaluacionDetalle[]
+  puestoId           String?             @map("puesto_id")
+  puesto             Puesto?             @relation(fields: [puestoId], references: [id], onDelete: SetNull)
 
   @@index([areaId])
   @@index([activo])
-  @@index([puesto])
+  @@index([puestoId])
   @@index([tipoCalculo])
   @@index([tipoCriticidad])
 }
@@ -155,6 +165,8 @@ model OrdenTrabajo {
   revision           RevisionJefe?
   solicitudesTarea   SolicitudTarea[]
   solicitudesEdicion SolicitudEdicion[]
+  area               Area?              @relation(fields: [areaId], references: [id])
+  areaId             String?
 
   @@index([kpiId])
   @@index([empleadoId])
@@ -329,6 +341,8 @@ model Evaluacion {
   evaluador User                @relation("Evaluador", fields: [evaluadorId], references: [id])
   detalles  EvaluacionDetalle[]
   alertas   Alerta[]
+  area      Area?               @relation(fields: [areaId], references: [id])
+  areaId    String?
 
   @@unique([empleadoId, periodo, anio])
   @@index([empleadoId])
@@ -399,4 +413,23 @@ model Alerta {
   @@index([status])
   @@index([nivel])
   @@index([tipo])
+}
+
+model Puesto {
+  id          String  @id @default(uuid())
+  nombre      String
+  descripcion String?
+  areaId      String  @map("area_id")
+  activo      Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  area      Area   @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  empleados User[] @relation("EmpleadoPuesto")
+  kpis      KPI[]
+
+  @@unique([nombre, areaId]) // Un puesto único por área
+  @@map("puestos")
 }

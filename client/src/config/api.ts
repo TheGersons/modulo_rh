@@ -50,6 +50,7 @@ export const API_ENDPOINTS = {
     `/estadisticas/empleado/${empleadoId}`,
   estadisticasTendencias: "/estadisticas/tendencias",
   estadisticasRankings: "/estadisticas/rankings",
+  estadisticasDashboard: "/estadisticas/dashboard",
 
   // Alertas
   alertas: "/alertas",

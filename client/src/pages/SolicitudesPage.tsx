@@ -14,8 +14,8 @@ import {
     ThumbsDown,
 } from 'lucide-react';
 import { ordenesTrabajoService } from '../services/ordenes-trabajo.service';
-import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/layout/Layout';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface SolicitudTarea {
     id: string;
@@ -65,7 +65,7 @@ interface SolicitudEdicion {
 
 export default function SolicitudesPage() {
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { can } = usePermissions();
     const [tipoVista, setTipoVista] = useState<'tareas' | 'ediciones'>('tareas');
     const [filtroStatus, setFiltroStatus] = useState<string>('pendiente');
 
@@ -191,7 +191,7 @@ export default function SolicitudesPage() {
     };
 
     const solicitudesMostrar = tipoVista === 'tareas' ? solicitudesTarea : solicitudesEdicion;
-    const esJefe = user?.role === 'jefe' || user?.role === 'admin';
+    const puedeAprobar = can('aprobar_solicitud');
 
     if (loading) {
         return (
@@ -365,7 +365,7 @@ export default function SolicitudesPage() {
                                             </div>
                                         </div>
 
-                                        {solicitud.status === 'pendiente' && esJefe && (
+                                        {solicitud.status === 'pendiente' && puedeAprobar && (
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => abrirModal(solicitud, 'aprobar')}
@@ -451,7 +451,7 @@ export default function SolicitudesPage() {
                                             </div>
                                         </div>
 
-                                        {solicitud.status === 'pendiente' && esJefe && (
+                                        {solicitud.status === 'pendiente' && puedeAprobar && (
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={() => abrirModal(solicitud, 'aprobar')}

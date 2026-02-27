@@ -10,6 +10,7 @@ import { AlertasModule } from './modules/alertas/alertas.module';
 import { OrdenesTrabajoModule } from './modules/ordenes-trabajo/ordenes-trabajo.module';
 // import { PlanesAccionModule } from './modules/planes-accion/planes-accion.module'; // ← COMENTAR
 import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
+import { PuestosModule } from './modules/puestos/puestos.module';
 import { PrismaService } from './common/database/prisma.service';
 
 @Module({
@@ -22,6 +23,7 @@ import { PrismaService } from './common/database/prisma.service';
     KpisModule,
     EmpleadosModule,
     EvaluacionesModule,
+    PuestosModule,
     // ValidacionesModule, // ← COMENTADO
     EstadisticasModule,
     AlertasModule,

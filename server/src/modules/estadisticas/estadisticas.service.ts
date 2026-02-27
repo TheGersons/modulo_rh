@@ -12,7 +12,10 @@ export class EstadisticasService {
     const [
       totalEmpleados,
       totalAreas,
+      areasPrincipales,
+      subAreas,
       totalKpis,
+      totalPuestos,
       totalOrdenes,
       ordenesActivas,
       ordenesCompletadas,
@@ -24,11 +27,22 @@ export class EstadisticasService {
       // Empleados
       this.prisma.user.count({ where: { activo: true } }),
 
-      // Áreas
+      // Áreas totales
       this.prisma.area.count({ where: { activa: true } }),
+
+      // Áreas principales (sin padre)
+      this.prisma.area.count({ where: { activa: true, areaPadreId: null } }),
+
+      // Sub-áreas (con padre)
+      this.prisma.area.count({
+        where: { activa: true, areaPadreId: { not: null } },
+      }),
 
       // KPIs
       this.prisma.kPI.count({ where: { activo: true } }),
+
+      // Puestos
+      this.prisma.puesto.count({ where: { activo: true } }),
 
       // Órdenes totales
       this.prisma.ordenTrabajo.count(),
@@ -87,9 +101,14 @@ export class EstadisticasService {
       },
       areas: {
         total: totalAreas,
+        principales: areasPrincipales,
+        subAreas: subAreas,
       },
       kpis: {
         total: totalKpis,
+      },
+      puestos: {
+        total: totalPuestos,
       },
       ordenes: {
         total: totalOrdenes,
@@ -258,6 +277,12 @@ export class EstadisticasService {
             nombre: true,
           },
         },
+        puesto: {
+          // ← AGREGAR
+          select: {
+            nombre: true,
+          },
+        },
       },
     });
 
@@ -320,7 +345,7 @@ export class EstadisticasService {
       empleado: {
         id: empleado.id,
         nombre: `${empleado.nombre} ${empleado.apellido}`,
-        puesto: empleado.puesto,
+        puesto: empleado.puesto?.nombre || 'Sin asignar', // ← CORREGIDO
         area: empleado.area?.nombre || 'Sin área',
       },
       ordenes: {
@@ -356,7 +381,12 @@ export class EstadisticasService {
         id: true,
         nombre: true,
         apellido: true,
-        puesto: true,
+        puesto: {
+          // ← CORREGIDO: era string, ahora es relación
+          select: {
+            nombre: true,
+          },
+        },
         ordenesTrabajoRecibidas: {
           where: {
             status: { in: ['pendiente', 'en_proceso'] },
@@ -369,7 +399,7 @@ export class EstadisticasService {
       .map((emp) => ({
         empleadoId: emp.id,
         empleado: `${emp.nombre} ${emp.apellido}`,
-        puesto: emp.puesto,
+        puesto: emp.puesto?.nombre || 'Sin asignar', // ← CORREGIDO
         ordenesActivas: emp.ordenesTrabajoRecibidas.length,
       }))
       .sort((a, b) => b.ordenesActivas - a.ordenesActivas);
@@ -476,5 +506,94 @@ export class EstadisticasService {
         cantidad: item._count,
       })),
     };
+  }
+
+  // ============================================
+  // RANKING DE ÁREAS POR DESEMPEÑO
+  // ============================================
+  async getRankingAreas() {
+    // Obtener solo áreas principales (sin padre) activas
+    const areasPrincipales = await this.prisma.area.findMany({
+      where: {
+        activa: true,
+        areaPadreId: null, // Solo áreas principales
+      },
+      include: {
+        subAreas: {
+          select: { id: true },
+        },
+        _count: {
+          select: {
+            empleados: true,
+          },
+        },
+      },
+    });
+
+    const ranking: {
+      nombre: string;
+      promedio: number;
+      empleados: number;
+      kpisRojos: number;
+      subAreasCount: number;
+    }[] = [];
+
+    for (const area of areasPrincipales) {
+      // IDs del área principal + sub-áreas
+      const areasIds = [area.id];
+      if (area.subAreas && area.subAreas.length > 0) {
+        areasIds.push(...area.subAreas.map((sub) => sub.id));
+      }
+
+      // Contar empleados (área + sub-áreas)
+      const totalEmpleados = await this.prisma.user.count({
+        where: {
+          areaId: { in: areasIds },
+          activo: true,
+        },
+      });
+
+      // Obtener evaluaciones cerradas del año actual
+      const evaluaciones = await this.prisma.evaluacion.findMany({
+        where: {
+          empleado: {
+            areaId: { in: areasIds },
+          },
+          anio: new Date().getFullYear(),
+          status: 'cerrada',
+        },
+        select: {
+          promedioGeneral: true,
+          kpisRojos: true,
+        },
+      });
+
+      // Calcular promedio general del área
+      let promedioArea = 0;
+      if (evaluaciones.length > 0) {
+        const suma = evaluaciones.reduce<number>(
+          (acc, ev) => acc + (ev.promedioGeneral ?? 0),
+          0,
+        );
+        promedioArea = suma / evaluaciones.length;
+      }
+
+      // Contar KPIs rojos totales
+      const totalKpisRojos = evaluaciones.reduce<number>(
+        (acc, ev) => acc + ev.kpisRojos,
+        0,
+      );
+
+      ranking.push({
+        nombre: area.nombre,
+        promedio: Math.round(promedioArea * 100) / 100,
+        empleados: totalEmpleados,
+        kpisRojos: totalKpisRojos,
+        subAreasCount: area.subAreas?.length ?? 0,
+      });
+    }
+
+    // Ordenar por promedio descendente
+    return ranking.sort((a, b) => b.promedio - a.promedio);
   }
 }
