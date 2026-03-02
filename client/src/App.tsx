@@ -1,25 +1,24 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import PrivateRoute from './components/auth/PrivateRoute';
+import Layout from './components/layout/Layout';
+
+// Pages
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/Dashboard';
 import KPIsPage from './pages/KPIsPage';
-import EvaluarEmpleadosPage from './pages/EvaluarEmpleadosPage';
-import FormularioEvaluacionPage from './pages/FormularioEvaluacionPage';
-import DetalleEvaluacionPage from './pages/DetalleEvaluacionPage';
 import MisEvaluacionesPage from './pages/MisEvaluacionesPage';
-import ReportesPage from './pages/ReportesPage';
+import DetalleEvaluacionPage from './pages/DetalleEvaluacionPage';
 import EmpleadosPage from './pages/EmpleadosPage';
 import ConfiguracionPage from './pages/ConfiguracionPage';
-import EditarPlanAccionPage from './pages/EditarPlanAccionPage';
-import DetallePlanAccionPage from './pages/DetallePlanAccionPage';
-import PlanesAccionPage from './pages/PlanesAccionPage';
-import Layout from './components/layout/Layout';
 import GestionKPIsPage from './pages/GestionKPIsPage';
-
-function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
-}
+import OrdenesTrabajoPage from './pages/OrdenesTrabajoPage';
+import DetalleOrdenPage from './pages/DetalleOrdenPage';
+import CrearOrdenPage from './pages/CrearOrdenPage';
+import SolicitudesPage from './pages/SolicitudesPage';
+import CerrarPeriodoPage from './pages/CerrarPeriodoPage';
+import AreasPage from './pages/AreasPage';
+import PuestosPage from './pages/PuestosPage';
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -29,90 +28,176 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={
-        <PublicRoute>
-          <LoginPage />
-        </PublicRoute>
-      } />
-      <Route path="/dashboard" element={
-        <PrivateRoute>
-          <DashboardPage />
-        </PrivateRoute>
-      } />
-      <Route path="/kpis" element={
-        <PrivateRoute>
-          <KPIsPage />
-        </PrivateRoute>
-      } />
-      <Route path="/kpis/evaluar" element={
-        <PrivateRoute>
-          <EvaluarEmpleadosPage />
-        </PrivateRoute>
-      } />
-      <Route path="/kpis/evaluar/:empleadoId" element={
-        <PrivateRoute>
-          <FormularioEvaluacionPage />
-        </PrivateRoute>
-      } />
-      <Route path="/kpis/mis-evaluaciones" element={
-        <PrivateRoute>
-          <MisEvaluacionesPage />
-        </PrivateRoute>
-      } />
-      <Route path="/kpis/mis-evaluaciones/:evaluacionId" element={
-        <PrivateRoute>
-          <DetalleEvaluacionPage />
-        </PrivateRoute>
-      } />
-      <Route path="/kpis/planes-accion" element={
-        <PrivateRoute>
-          <Layout>
-            <div className="p-8">
-              <PlanesAccionPage />
-            </div>
-          </Layout>
-        </PrivateRoute>} />
-      <Route path="/kpis/planes-accion/:id" element={
-        <PrivateRoute>
-          <Layout>
-            <div className="p-8">
-              <DetallePlanAccionPage />
-            </div>
-          </Layout>
-        </PrivateRoute>} />
-      <Route path="/kpis/planes-accion/:id/editar" element={
-        <PrivateRoute>
-          <Layout>
-            <div className="p-8">
-              <EditarPlanAccionPage />
-            </div>
-          </Layout>
-        </PrivateRoute>} />
-      <Route path="/configuracion/kpis" element={
-        <PrivateRoute>
-          <Layout>
-            <div className="p-8">
-              <GestionKPIsPage />
-            </div>
-          </Layout>
-        </PrivateRoute>
-      } />
-      <Route path="/kpis/reportes" element={
-        <PrivateRoute>
-          <ReportesPage />
-        </PrivateRoute>
-      } />
-      <Route path="/empleados" element={
-        <PrivateRoute>
-          <EmpleadosPage />
-        </PrivateRoute>
-      } />
-      <Route path="/configuracion" element={
-        <PrivateRoute>
-          <ConfiguracionPage />
-        </PrivateRoute>
-      } />
+      {/* Public Routes */}
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <LoginPage />
+          </PublicRoute>
+        }
+      />
+
+      {/* Private Routes - Todos los roles */}
+      <Route
+        path="/dashboard"
+        element={
+          <PrivateRoute>
+
+            <DashboardPage />
+
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/kpis"
+        element={
+          <PrivateRoute>
+            <KPIsPage />
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/ordenes"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <OrdenesTrabajoPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/ordenes/:id"
+        element={
+          <PrivateRoute>
+
+            <DetalleOrdenPage />
+
+          </PrivateRoute>
+        }
+      />
+
+      {/* Crear Orden - TODOS pueden */}
+      <Route
+        path="/ordenes/crear"
+        element={
+          <PrivateRoute allowedRoles={['admin', 'jefe', 'empleado', 'rrhh']}>
+
+            <CrearOrdenPage />
+
+          </PrivateRoute>
+        }
+      />
+
+      {/* Solicitudes - Solo admin y jefe pueden aprobar */}
+      <Route
+        path="/solicitudes"
+        element={
+          <PrivateRoute>
+
+            <SolicitudesPage />
+
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/kpis/mis-evaluaciones"
+        element={
+          <PrivateRoute>
+
+            <MisEvaluacionesPage />
+
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/kpis/mis-evaluaciones/:evaluacionId"
+        element={
+          <PrivateRoute>
+
+            <DetalleEvaluacionPage />
+
+          </PrivateRoute>
+        }
+      />
+
+      {/* Cerrar Periodo - Solo admin y RRHH */}
+      <Route
+        path="/evaluaciones/cerrar-periodo"
+        element={
+          <PrivateRoute allowedRoles={['admin', 'rrhh']}>
+            <Layout>
+              <CerrarPeriodoPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+
+      {/* Empleados - Todos pueden ver, solo admin y RRHH gestionan */}
+      <Route
+        path="/empleados"
+        element={
+          <PrivateRoute>
+
+            <EmpleadosPage />
+
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/puestos"
+        element={
+          <PrivateRoute>
+            <PuestosPage />
+          </PrivateRoute>
+        }
+      />
+
+      {/* Configuración - Todos pueden ver */}
+      <Route
+        path="/configuracion"
+        element={
+          <PrivateRoute>
+
+            <ConfiguracionPage />
+
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/configuracion/areas"
+        element={
+          <PrivateRoute allowedRoles={['admin', 'rrhh']}>
+            <AreasPage />
+          </PrivateRoute>
+        }
+      />
+
+      {/* Gestión de KPIs - Solo admin y jefe */}
+      <Route
+        path="/configuracion/kpis"
+        element={
+          <PrivateRoute allowedRoles={['admin', 'RRHH']}>
+            <Layout>
+              <div className="p-8">
+                <GestionKPIsPage />
+              </div>
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+
+      {/* Redirect */}
       <Route path="/" element={<Navigate to="/dashboard" />} />
+      <Route path="*" element={<Navigate to="/dashboard" />} />
     </Routes>
   );
 }

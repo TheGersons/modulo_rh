@@ -1,7 +1,17 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { KpisService } from './kpis.service';
 import { CreateKpiDto } from './dto/create-kpi.dto';
 import { UpdateKpiDto } from './dto/update-kpi.dto';
+import { CalcularKpiDto } from './dto/calcular-kpi.dto';
 
 @Controller('kpis')
 export class KpisController {
@@ -17,29 +27,14 @@ export class KpisController {
     @Query('areaId') areaId?: string,
     @Query('puesto') puesto?: string,
     @Query('activo') activo?: string,
+    @Query('tipoCriticidad') tipoCriticidad?: string,
   ) {
-    const filters: any = {};
-
-    if (areaId) filters.areaId = areaId;
-    if (puesto) filters.puesto = puesto;
-    if (activo !== undefined) filters.activo = activo === 'true';
-
-    return this.kpisService.findAll(filters);
-  }
-
-  @Get('key/:key')
-  findByKey(@Param('key') key: string) {
-    return this.kpisService.findByKey(key);
-  }
-
-  @Get('area/:areaId')
-  findByArea(@Param('areaId') areaId: string) {
-    return this.kpisService.findByArea(areaId);
-  }
-
-  @Get('puesto/:puesto')
-  findByPuesto(@Param('puesto') puesto: string) {
-    return this.kpisService.findByPuesto(puesto);
+    return this.kpisService.findAll({
+      areaId,
+      puesto,
+      activo: activo === 'true' ? true : activo === 'false' ? false : undefined,
+      tipoCriticidad,
+    });
   }
 
   @Get(':id')
@@ -47,19 +42,9 @@ export class KpisController {
     return this.kpisService.findOne(id);
   }
 
-  @Get(':id/estadisticas')
-  getEstadisticas(@Param('id') id: string) {
-    return this.kpisService.getEstadisticas(id);
-  }
-
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateKpiDto: UpdateKpiDto) {
     return this.kpisService.update(id, updateKpiDto);
-  }
-
-  @Patch(':id/toggle')
-  toggleActivo(@Param('id') id: string) {
-    return this.kpisService.toggleActivo(id);
   }
 
   @Delete(':id')
@@ -67,8 +52,23 @@ export class KpisController {
     return this.kpisService.remove(id);
   }
 
-  @Post('reordenar')
-  reordenar(@Body() body: { areaId: string; orden: { id: string; orden: number }[] }) {
-    return this.kpisService.reordenar(body.areaId, body.orden);
+  @Patch(':id/toggle')
+  toggle(@Param('id') id: string) {
+    return this.kpisService.toggle(id);
+  }
+
+  @Post('calcular')
+  calcular(@Body() calcularDto: CalcularKpiDto) {
+    return this.kpisService.calcularResultado(calcularDto);
+  }
+
+  @Post('validar-formula')
+  validarFormula(
+    @Body() body: { formulaCalculo: string; tipoCalculo: string },
+  ) {
+    return this.kpisService.validarFormula(
+      body.formulaCalculo,
+      body.tipoCalculo,
+    );
   }
 }

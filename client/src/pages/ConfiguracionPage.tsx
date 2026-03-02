@@ -1,323 +1,356 @@
 import { useState } from 'react';
 import Layout from '../components/layout/Layout';
+import { usePermissions } from '../hooks/usePermissions';
 import {
   Settings,
-  Building,
-  Target,
-  Users,
   Bell,
+  User,
+  Moon,
+  Sun,
+  Globe,
+  Mail,
+  Smartphone,
+  Shield,
+  Key,
   Lock,
-  Calendar,
   Save,
-  Plus,
-  Edit,
-  Trash2,
-  AlertCircle,
+  CheckCircle,
 } from 'lucide-react';
 
 export default function ConfiguracionPage() {
-  const [activeTab, setActiveTab] = useState('areas');
+  const { isAdmin, isRRHH } = usePermissions();
+  const [guardando, setGuardando] = useState(false);
+  const [guardadoExitoso, setGuardadoExitoso] = useState(false);
 
-  const tabs = [
-    { id: 'areas', label: 'Áreas', icon: Building },
-    { id: 'kpis', label: 'KPIs', icon: Target },
-    { id: 'periodos', label: 'Periodos', icon: Calendar },
-    { id: 'notificaciones', label: 'Notificaciones', icon: Bell },
-    { id: 'usuarios', label: 'Usuarios', icon: Users },
-    { id: 'seguridad', label: 'Seguridad', icon: Lock },
-  ];
+  // Preferencias de usuario
+  const [notificacionesEmail, setNotificacionesEmail] = useState(true);
+  const [notificacionesPush, setNotificacionesPush] = useState(true);
+  const [notificacionesOrden, setNotificacionesOrden] = useState(true);
+  const [notificacionesEvaluacion, setNotificacionesEvaluacion] = useState(true);
+  const [notificacionesKpiRojo, setNotificacionesKpiRojo] = useState(true);
+  const [resumenSemanal, setResumenSemanal] = useState(false);
 
-  // Datos de ejemplo
-  const [areas, setAreas] = useState([
-    { id: '1', nombre: 'Gerencia', jefe: 'Carlos Méndez', empleados: 2, activa: true },
-    { id: '2', nombre: 'Administrativa', jefe: 'Ana García', empleados: 2, activa: true },
-    { id: '3', nombre: 'Técnica', jefe: 'Luis Torres', empleados: 2, activa: true },
-  ]);
+  const [idioma, setIdioma] = useState('es');
+  const [tema, setTema] = useState<'light' | 'dark'>('light');
 
-  const [kpis, setKpis] = useState([
-    { id: '1', nombre: 'Cumplimiento de Objetivos', area: 'Gerencia', meta: 90, activo: true },
-    { id: '2', nombre: 'Satisfacción de Stakeholders', area: 'Gerencia', meta: 85, activo: true },
-    { id: '3', nombre: 'Tiempo de Reclutamiento', area: 'Administrativa', meta: 30, activo: true },
-  ]);
+  const handleGuardar = async () => {
+    setGuardando(true);
 
-  const renderAreas = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Gestión de Áreas</h2>
-          <p className="text-gray-600 mt-1">Configura las áreas organizacionales</p>
-        </div>
-        <button className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors">
-          <Plus className="w-5 h-5" />
-          Nueva Área
-        </button>
-      </div>
+    // Simular guardado
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Área</th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Jefe</th>
-              <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase">Empleados</th>
-              <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase">Estado</th>
-              <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {areas.map((area) => (
-              <tr key={area.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 font-semibold text-gray-900">{area.nombre}</td>
-                <td className="px-6 py-4 text-gray-600">{area.jefe}</td>
-                <td className="px-6 py-4 text-center text-gray-900">{area.empleados}</td>
-                <td className="px-6 py-4 text-center">
-                  <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${
-                    area.activa ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {area.activa ? 'Activa' : 'Inactiva'}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center justify-center gap-2">
-                    <button className="p-2 hover:bg-blue-50 rounded-lg text-blue-600">
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button className="p-2 hover:bg-red-50 rounded-lg text-red-600">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+    setGuardando(false);
+    setGuardadoExitoso(true);
 
-  const renderKPIs = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Catálogo de KPIs</h2>
-          <p className="text-gray-600 mt-1">Define los KPIs por área</p>
-        </div>
-        <button className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors">
-          <Plus className="w-5 h-5" />
-          Nuevo KPI
-        </button>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">KPI</th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase">Área</th>
-              <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase">Meta</th>
-              <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase">Estado</th>
-              <th className="px-6 py-4 text-center text-xs font-bold text-gray-600 uppercase">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {kpis.map((kpi) => (
-              <tr key={kpi.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 font-semibold text-gray-900">{kpi.nombre}</td>
-                <td className="px-6 py-4 text-gray-600">{kpi.area}</td>
-                <td className="px-6 py-4 text-center font-bold text-blue-600">{kpi.meta}%</td>
-                <td className="px-6 py-4 text-center">
-                  <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${
-                    kpi.activo ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {kpi.activo ? 'Activo' : 'Inactivo'}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center justify-center gap-2">
-                    <button className="p-2 hover:bg-blue-50 rounded-lg text-blue-600">
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button className="p-2 hover:bg-red-50 rounded-lg text-red-600">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-
-  const renderPeriodos = () => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Configuración de Periodos</h2>
-        <p className="text-gray-600 mt-1">Define los periodos de evaluación</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Año Actual</h3>
-          <select className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 outline-none font-semibold">
-            <option>2026</option>
-            <option>2025</option>
-          </select>
-        </div>
-
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Tipos de Periodo</h3>
-          <div className="space-y-2">
-            <label className="flex items-center gap-3">
-              <input type="checkbox" defaultChecked className="w-5 h-5 rounded border-2" />
-              <span className="font-semibold text-gray-900">Mensual</span>
-            </label>
-            <label className="flex items-center gap-3">
-              <input type="checkbox" defaultChecked className="w-5 h-5 rounded border-2" />
-              <span className="font-semibold text-gray-900">Trimestral</span>
-            </label>
-            <label className="flex items-center gap-3">
-              <input type="checkbox" className="w-5 h-5 rounded border-2" />
-              <span className="font-semibold text-gray-900">Semestral</span>
-            </label>
-            <label className="flex items-center gap-3">
-              <input type="checkbox" className="w-5 h-5 rounded border-2" />
-              <span className="font-semibold text-gray-900">Anual</span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <button className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors">
-        <Save className="w-5 h-5" />
-        Guardar Configuración
-      </button>
-    </div>
-  );
-
-  const renderNotificaciones = () => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Notificaciones</h2>
-        <p className="text-gray-600 mt-1">Configura las alertas del sistema</p>
-      </div>
-
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-4">
-        <label className="flex items-start gap-4 p-4 hover:bg-gray-50 rounded-xl cursor-pointer">
-          <input type="checkbox" defaultChecked className="w-5 h-5 mt-1 rounded border-2" />
-          <div>
-            <p className="font-semibold text-gray-900">Nueva evaluación recibida</p>
-            <p className="text-sm text-gray-600">Notificar al empleado cuando recibe una evaluación</p>
-          </div>
-        </label>
-
-        <label className="flex items-start gap-4 p-4 hover:bg-gray-50 rounded-xl cursor-pointer">
-          <input type="checkbox" defaultChecked className="w-5 h-5 mt-1 rounded border-2" />
-          <div>
-            <p className="font-semibold text-gray-900">Validación pendiente</p>
-            <p className="text-sm text-gray-600">Recordatorio de evaluaciones sin validar</p>
-          </div>
-        </label>
-
-        <label className="flex items-start gap-4 p-4 hover:bg-gray-50 rounded-xl cursor-pointer">
-          <input type="checkbox" defaultChecked className="w-5 h-5 mt-1 rounded border-2" />
-          <div>
-            <p className="font-semibold text-gray-900">KPIs críticos</p>
-            <p className="text-sm text-gray-600">Alertar cuando un KPI entra en estado rojo</p>
-          </div>
-        </label>
-
-        <label className="flex items-start gap-4 p-4 hover:bg-gray-50 rounded-xl cursor-pointer">
-          <input type="checkbox" className="w-5 h-5 mt-1 rounded border-2" />
-          <div>
-            <p className="font-semibold text-gray-900">Resumen semanal</p>
-            <p className="text-sm text-gray-600">Enviar resumen de KPIs cada semana</p>
-          </div>
-        </label>
-      </div>
-
-      <button className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors">
-        <Save className="w-5 h-5" />
-        Guardar Preferencias
-      </button>
-    </div>
-  );
-
-  const renderPlaceholder = (title: string) => (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
-        <p className="text-gray-600 mt-1">Esta sección está en desarrollo</p>
-      </div>
-
-      <div className="bg-blue-50 rounded-2xl p-8 border-2 border-blue-200 text-center">
-        <AlertCircle className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-        <p className="text-blue-900 font-semibold">Próximamente</p>
-        <p className="text-blue-700 text-sm mt-2">Esta funcionalidad estará disponible pronto</p>
-      </div>
-    </div>
-  );
-
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'areas':
-        return renderAreas();
-      case 'kpis':
-        return renderKPIs();
-      case 'periodos':
-        return renderPeriodos();
-      case 'notificaciones':
-        return renderNotificaciones();
-      case 'usuarios':
-        return renderPlaceholder('Gestión de Usuarios');
-      case 'seguridad':
-        return renderPlaceholder('Configuración de Seguridad');
-      default:
-        return null;
-    }
+    setTimeout(() => setGuardadoExitoso(false), 3000);
   };
 
   return (
     <Layout>
-      <div className="p-8 space-y-8">
+      <div className="p-8 max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
             <Settings className="w-8 h-8 text-blue-600" />
-            Configuración
+            Configuración Personal
           </h1>
-          <p className="text-gray-600 mt-1">
-            Configura el sistema de gestión de KPIs
-          </p>
+          <p className="text-gray-600 mt-1">Personaliza tu experiencia en el sistema</p>
         </div>
 
-        {/* Tabs */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="flex overflow-x-auto">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-6 py-4 font-semibold whitespace-nowrap border-b-2 transition-colors ${
-                    activeTab === tab.id
-                      ? 'border-blue-600 text-blue-600 bg-blue-50'
-                      : 'border-transparent text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <Icon className="w-5 h-5" />
-                  {tab.label}
-                </button>
-              );
-            })}
+        {/* Mensaje de éxito */}
+        {guardadoExitoso && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
+            <CheckCircle className="w-5 h-5 text-green-600" />
+            <p className="text-green-900 font-medium">Configuración guardada exitosamente</p>
+          </div>
+        )}
+
+        {/* Info de permisos - Solo visible para admin/RRHH */}
+        {(isAdmin || isRRHH) && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="flex items-center gap-2">
+              <Shield className="w-5 h-5 text-blue-600" />
+              <p className="text-sm text-blue-900">
+                <strong>Permisos elevados:</strong> Tienes acceso a funciones administrativas del sistema
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Perfil */}
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-3 bg-blue-50 rounded-lg">
+              <User className="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Perfil</h2>
+              <p className="text-sm text-gray-600">Información de tu cuenta</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nombre completo</label>
+              <input
+                type="text"
+                placeholder="Tu nombre"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Correo electrónico</label>
+              <input
+                type="email"
+                placeholder="tu@email.com"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Teléfono</label>
+              <input
+                type="tel"
+                placeholder="+504 1234-5678"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Content */}
-        <div>
-          {renderContent()}
+        {/* Notificaciones */}
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-3 bg-yellow-50 rounded-lg">
+              <Bell className="w-6 h-6 text-yellow-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Notificaciones</h2>
+              <p className="text-sm text-gray-600">Gestiona cómo quieres recibir alertas</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* Canales */}
+            <div className="pb-4 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Canales de Notificación</h3>
+              <div className="space-y-3">
+                <label className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    <Mail className="w-5 h-5 text-gray-600" />
+                    <div>
+                      <p className="font-medium text-gray-900">Email</p>
+                      <p className="text-sm text-gray-600">Recibir notificaciones por correo</p>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={notificacionesEmail}
+                    onChange={(e) => setNotificacionesEmail(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
+                  <div className="flex items-center gap-3">
+                    <Smartphone className="w-5 h-5 text-gray-600" />
+                    <div>
+                      <p className="font-medium text-gray-900">Notificaciones Push</p>
+                      <p className="text-sm text-gray-600">Alertas en el navegador</p>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={notificacionesPush}
+                    onChange={(e) => setNotificacionesPush(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Tipos de notificaciones */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Tipos de Notificaciones</h3>
+              <div className="space-y-3">
+                <label className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
+                  <div>
+                    <p className="font-medium text-gray-900">Órdenes de trabajo</p>
+                    <p className="text-sm text-gray-600">Nuevas asignaciones y actualizaciones</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={notificacionesOrden}
+                    onChange={(e) => setNotificacionesOrden(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
+                  <div>
+                    <p className="font-medium text-gray-900">Evaluaciones</p>
+                    <p className="text-sm text-gray-600">Cuando se genera una nueva evaluación</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={notificacionesEvaluacion}
+                    onChange={(e) => setNotificacionesEvaluacion(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
+                  <div>
+                    <p className="font-medium text-gray-900">KPIs críticos</p>
+                    <p className="text-sm text-gray-600">Alerta cuando un KPI está en rojo</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={notificacionesKpiRojo}
+                    onChange={(e) => setNotificacionesKpiRojo(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg cursor-pointer">
+                  <div>
+                    <p className="font-medium text-gray-900">Resumen semanal</p>
+                    <p className="text-sm text-gray-600">Reporte de desempeño cada semana</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={resumenSemanal}
+                    onChange={(e) => setResumenSemanal(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Preferencias de la aplicación */}
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-3 bg-purple-50 rounded-lg">
+              <Settings className="w-6 h-6 text-purple-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Preferencias</h2>
+              <p className="text-sm text-gray-600">Personaliza la interfaz del sistema</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* Idioma */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <Globe className="w-4 h-4 inline mr-2" />
+                Idioma
+              </label>
+              <select
+                value={idioma}
+                onChange={(e) => setIdioma(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="es">Español</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+
+            {/* Tema */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">Tema</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setTema('light')}
+                  className={`p-4 border-2 rounded-lg transition-all ${tema === 'light'
+                      ? 'border-blue-600 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                >
+                  <Sun className={`w-6 h-6 mx-auto mb-2 ${tema === 'light' ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <p className="font-medium text-gray-900">Claro</p>
+                </button>
+
+                <button
+                  onClick={() => setTema('dark')}
+                  className={`p-4 border-2 rounded-lg transition-all ${tema === 'dark'
+                      ? 'border-blue-600 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                >
+                  <Moon className={`w-6 h-6 mx-auto mb-2 ${tema === 'dark' ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <p className="font-medium text-gray-900">Oscuro</p>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Seguridad */}
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-3 bg-red-50 rounded-lg">
+              <Shield className="w-6 h-6 text-red-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Seguridad</h2>
+              <p className="text-sm text-gray-600">Gestiona la seguridad de tu cuenta</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200">
+              <div className="flex items-center gap-3">
+                <Key className="w-5 h-5 text-gray-600" />
+                <div className="text-left">
+                  <p className="font-medium text-gray-900">Cambiar contraseña</p>
+                  <p className="text-sm text-gray-600">Actualiza tu contraseña periódicamente</p>
+                </div>
+              </div>
+              <span className="text-blue-600 text-sm font-medium">Cambiar →</span>
+            </button>
+
+            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200">
+              <div className="flex items-center gap-3">
+                <Lock className="w-5 h-5 text-gray-600" />
+                <div className="text-left">
+                  <p className="font-medium text-gray-900">Autenticación de dos factores</p>
+                  <p className="text-sm text-gray-600">Agrega una capa extra de seguridad</p>
+                </div>
+              </div>
+              <span className="text-gray-400 text-sm">Próximamente</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Botón guardar */}
+        <div className="flex justify-end gap-3 pb-8">
+          <button
+            onClick={() => window.history.back()}
+            className="px-6 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleGuardar}
+            disabled={guardando}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {guardando ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <span>Guardando...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-5 h-5" />
+                <span>Guardar Cambios</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
     </Layout>

@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CreateKpiDto } from './dto/create-kpi.dto';
 import { UpdateKpiDto } from './dto/update-kpi.dto';
@@ -11,55 +16,94 @@ export class KpisService {
   // CREAR KPI
   // ============================================
   async create(createKpiDto: CreateKpiDto) {
-    // Validar que el key no exista
-    const existeKey = await this.prisma.kPI.findUnique({
-      where: { key: createKpiDto.key },
-    });
-
-    if (existeKey) {
-      throw new ConflictException(`Ya existe un KPI con el key "${createKpiDto.key}"`);
-    }
-
-    // Validar que el área exista
+    // Validar que el área existe
     const area = await this.prisma.area.findUnique({
       where: { id: createKpiDto.areaId },
     });
 
     if (!area) {
-      throw new NotFoundException(`No se encontró el área con ID ${createKpiDto.areaId}`);
+      throw new NotFoundException(
+        `Área con ID ${createKpiDto.areaId} no encontrada`,
+      );
     }
 
-    // Validar que meta y tolerancia sean coherentes
-    this.validarMetaYTolerancia(createKpiDto.meta, createKpiDto.tolerancia, createKpiDto.sentido);
+    // Validar puesto si se especifica
+    if (createKpiDto.puestoId) {
+      const puesto = await this.prisma.puesto.findUnique({
+        where: { id: createKpiDto.puestoId },
+      });
 
-    // Calcular umbral amarillo
-    const umbralAmarillo = this.calcularUmbralAmarillo(
-      createKpiDto.meta,
-      createKpiDto.tolerancia,
-      createKpiDto.sentido,
-    );
+      if (!puesto) {
+        throw new NotFoundException(
+          `Puesto con ID ${createKpiDto.puestoId} no encontrado`,
+        );
+      }
 
-    // Crear KPI
+      // Validar que el puesto pertenezca al área o su área padre
+      if (puesto.areaId !== createKpiDto.areaId) {
+        const areaPuesto = await this.prisma.area.findUnique({
+          where: { id: puesto.areaId },
+          include: { areaPadre: true },
+        });
+
+        const esCompatible =
+          areaPuesto?.areaPadreId === createKpiDto.areaId ||
+          areaPuesto?.id === createKpiDto.areaId;
+
+        if (!esCompatible) {
+          throw new BadRequestException(
+            'El puesto no pertenece al área seleccionada',
+          );
+        }
+      }
+    }
+
+    // Validar que la key es única
+    const kpiExistente = await this.prisma.kPI.findUnique({
+      where: { key: createKpiDto.key },
+    });
+
+    if (kpiExistente) {
+      throw new ConflictException(
+        `Ya existe un KPI con la key ${createKpiDto.key}`,
+      );
+    }
+
+    // Validar formulaCalculo es JSON válido
+    try {
+      JSON.parse(createKpiDto.formulaCalculo);
+    } catch (error) {
+      throw new BadRequestException('formulaCalculo debe ser un JSON válido');
+    }
+
+    // Calcular umbralAmarillo si hay meta y tolerancia
+    let umbralAmarillo = createKpiDto.umbralAmarillo;
+    if (createKpiDto.meta && createKpiDto.tolerancia && !umbralAmarillo) {
+      if (createKpiDto.sentido === 'Mayor es mejor') {
+        umbralAmarillo = createKpiDto.meta + createKpiDto.tolerancia;
+      } else {
+        umbralAmarillo = createKpiDto.meta - createKpiDto.tolerancia;
+      }
+    }
+
+    // Preparar data sin el campo 'puesto' (string)
+    const { puesto, ...dataWithoutPuesto } = createKpiDto as any;
+
     const kpi = await this.prisma.kPI.create({
       data: {
-        key: createKpiDto.key,
-        area: createKpiDto.area,
-        areaId: createKpiDto.areaId,
-        puesto: createKpiDto.puesto,
-        indicador: createKpiDto.indicador,
-        descripcion: createKpiDto.descripcion,
-        formula: createKpiDto.formula,
-        meta: createKpiDto.meta,
-        tolerancia: createKpiDto.tolerancia,
+        ...dataWithoutPuesto,
         umbralAmarillo,
-        periodicidad: createKpiDto.periodicidad,
-        sentido: createKpiDto.sentido,
-        unidad: createKpiDto.unidad,
-        orden: createKpiDto.orden ?? 0,
-        activo: createKpiDto.activo ?? true,
+        tipoCriticidad: createKpiDto.tipoCriticidad || 'no_critico',
+        operadorMeta: createKpiDto.operadorMeta || '=',
       },
       include: {
         areaRelacion: {
+          select: {
+            id: true,
+            nombre: true,
+          },
+        },
+        puesto: {
           select: {
             id: true,
             nombre: true,
@@ -72,22 +116,21 @@ export class KpisService {
   }
 
   // ============================================
-  // LISTAR TODOS LOS KPIs
+  // LISTAR KPIs
   // ============================================
-  async findAll(filters?: { areaId?: string; puesto?: string; activo?: boolean }) {
+  async findAll(filters?: {
+    areaId?: string;
+    puestoId?: string;
+    puesto?: string;
+    activo?: boolean;
+    tipoCriticidad?: string;
+  }) {
     const where: any = {};
 
-    if (filters?.areaId) {
-      where.areaId = filters.areaId;
-    }
-
-    if (filters?.puesto) {
-      where.puesto = filters.puesto;
-    }
-
-    if (filters?.activo !== undefined) {
-      where.activo = filters.activo;
-    }
+    if (filters?.areaId) where.areaId = filters.areaId;
+    if (filters?.puestoId) where.puestoId = filters.puestoId;
+    if (filters?.activo !== undefined) where.activo = filters.activo;
+    if (filters?.tipoCriticidad) where.tipoCriticidad = filters.tipoCriticidad;
 
     const kpis = await this.prisma.kPI.findMany({
       where,
@@ -96,17 +139,29 @@ export class KpisService {
           select: {
             id: true,
             nombre: true,
+            areaPadre: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
+          },
+        },
+        puesto: {
+          select: {
+            id: true,
+            nombre: true,
           },
         },
       },
-      orderBy: [{ areaId: 'asc' }, { orden: 'asc' }],
+      orderBy: [{ orden: 'asc' }, { key: 'asc' }],
     });
 
     return kpis;
   }
 
   // ============================================
-  // OBTENER UN KPI POR ID
+  // OBTENER KPI POR ID
   // ============================================
   async findOne(id: string) {
     const kpi = await this.prisma.kPI.findUnique({
@@ -116,25 +171,25 @@ export class KpisService {
           select: {
             id: true,
             nombre: true,
+            areaPadre: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
           },
         },
-        evaluacionDetalles: {
+        puesto: {
           select: {
             id: true,
-            resultadoNumerico: true,
-            resultadoPorcentaje: true,
-            estado: true,
-          },
-          take: 10,
-          orderBy: {
-            createdAt: 'desc',
+            nombre: true,
           },
         },
       },
     });
 
     if (!kpi) {
-      throw new NotFoundException(`No se encontró el KPI con ID ${id}`);
+      throw new NotFoundException(`KPI con ID ${id} no encontrado`);
     }
 
     return kpi;
@@ -153,44 +208,68 @@ export class KpisService {
             nombre: true,
           },
         },
+        puesto: {
+          select: {
+            id: true,
+            nombre: true,
+          },
+        },
       },
     });
 
     if (!kpi) {
-      throw new NotFoundException(`No se encontró el KPI con key "${key}"`);
+      throw new NotFoundException(`KPI con key ${key} no encontrado`);
     }
 
     return kpi;
   }
 
   // ============================================
-  // OBTENER KPIs POR ÁREA
+  // ACTUALIZAR KPI
   // ============================================
-  async findByArea(areaId: string) {
-    const area = await this.prisma.area.findUnique({
-      where: { id: areaId },
-    });
+  async update(id: string, updateKpiDto: UpdateKpiDto) {
+    await this.findOne(id);
 
-    if (!area) {
-      throw new NotFoundException(`No se encontró el área con ID ${areaId}`);
+    // Validar puesto si se especifica
+    if (updateKpiDto.puestoId) {
+      const puesto = await this.prisma.puesto.findUnique({
+        where: { id: updateKpiDto.puestoId },
+      });
+
+      if (!puesto) {
+        throw new NotFoundException(
+          `Puesto con ID ${updateKpiDto.puestoId} no encontrado`,
+        );
+      }
     }
 
-    const kpis = await this.prisma.kPI.findMany({
-      where: { areaId, activo: true },
-      orderBy: { orden: 'asc' },
-    });
+    // Validar formulaCalculo si se proporciona
+    if (updateKpiDto.formulaCalculo) {
+      try {
+        JSON.parse(updateKpiDto.formulaCalculo);
+      } catch (error) {
+        throw new BadRequestException('formulaCalculo debe ser un JSON válido');
+      }
+    }
 
-    return kpis;
-  }
+    // Recalcular umbralAmarillo si se actualizan meta o tolerancia
+    let umbralAmarillo = updateKpiDto.umbralAmarillo;
+    if (updateKpiDto.meta && updateKpiDto.tolerancia && !umbralAmarillo) {
+      if (updateKpiDto.sentido === 'Mayor es mejor') {
+        umbralAmarillo = updateKpiDto.meta + updateKpiDto.tolerancia;
+      } else {
+        umbralAmarillo = updateKpiDto.meta - updateKpiDto.tolerancia;
+      }
+    }
 
-  // ============================================
-  // OBTENER KPIs POR PUESTO
-  // ============================================
-  async findByPuesto(puesto: string) {
-    const kpis = await this.prisma.kPI.findMany({
-      where: {
-        OR: [{ puesto }, { puesto: null }],
-        activo: true,
+    // Preparar data sin el campo 'puesto' (string)
+    const { puesto, ...dataWithoutPuesto } = updateKpiDto as any;
+
+    const kpi = await this.prisma.kPI.update({
+      where: { id },
+      data: {
+        ...dataWithoutPuesto,
+        umbralAmarillo,
       },
       include: {
         areaRelacion: {
@@ -199,61 +278,7 @@ export class KpisService {
             nombre: true,
           },
         },
-      },
-      orderBy: [{ areaId: 'asc' }, { orden: 'asc' }],
-    });
-
-    return kpis;
-  }
-
-  // ============================================
-  // ACTUALIZAR KPI
-  // ============================================
-  async update(id: string, updateKpiDto: UpdateKpiDto) {
-    // Verificar que el KPI existe
-    const kpiExistente = await this.findOne(id);
-
-    // Si se actualiza el key, validar que no exista otro con ese key
-    if (updateKpiDto.key && updateKpiDto.key !== kpiExistente.key) {
-      const existeKey = await this.prisma.kPI.findUnique({
-        where: { key: updateKpiDto.key },
-      });
-
-      if (existeKey) {
-        throw new ConflictException(`Ya existe un KPI con el key "${updateKpiDto.key}"`);
-      }
-    }
-
-    // Si se actualiza el área, validar que exista
-    if (updateKpiDto.areaId && updateKpiDto.areaId !== kpiExistente.areaId) {
-      const area = await this.prisma.area.findUnique({
-        where: { id: updateKpiDto.areaId },
-      });
-
-      if (!area) {
-        throw new NotFoundException(`No se encontró el área con ID ${updateKpiDto.areaId}`);
-      }
-    }
-
-    // Si se actualizan meta, tolerancia o sentido, recalcular umbral
-    let umbralAmarillo = kpiExistente.umbralAmarillo;
-    const meta = updateKpiDto.meta ?? kpiExistente.meta;
-    const tolerancia = updateKpiDto.tolerancia ?? kpiExistente.tolerancia;
-    const sentido = updateKpiDto.sentido ?? kpiExistente.sentido;
-
-    if (updateKpiDto.meta || updateKpiDto.tolerancia || updateKpiDto.sentido) {
-      this.validarMetaYTolerancia(meta, tolerancia, sentido);
-      umbralAmarillo = this.calcularUmbralAmarillo(meta, tolerancia, sentido);
-    }
-
-    const kpi = await this.prisma.kPI.update({
-      where: { id },
-      data: {
-        ...updateKpiDto,
-        umbralAmarillo,
-      },
-      include: {
-        areaRelacion: {
+        puesto: {
           select: {
             id: true,
             nombre: true,
@@ -269,176 +294,319 @@ export class KpisService {
   // ELIMINAR KPI
   // ============================================
   async remove(id: string) {
-    // Verificar que el KPI existe
     await this.findOne(id);
 
-    // Verificar que no tenga evaluaciones asociadas
-    const evaluaciones = await this.prisma.evaluacionDetalle.count({
+    // Verificar que no esté siendo usado en evaluaciones
+    const enUso = await this.prisma.evaluacionDetalle.count({
       where: { kpiId: id },
     });
 
-    if (evaluaciones > 0) {
+    if (enUso > 0) {
       throw new BadRequestException(
-        `No se puede eliminar el KPI porque tiene ${evaluaciones} evaluación(es) asociada(s). Considere desactivarlo en su lugar.`,
+        `No se puede eliminar el KPI porque está siendo usado en ${enUso} evaluación(es)`,
       );
     }
 
-    await this.prisma.kPI.delete({
-      where: { id },
-    });
-
+    await this.prisma.kPI.delete({ where: { id } });
     return { message: 'KPI eliminado exitosamente' };
   }
 
   // ============================================
-  // DESACTIVAR/ACTIVAR KPI
+  // OBTENER KPIs POR EMPLEADO
   // ============================================
-  async toggleActivo(id: string) {
-    const kpi = await this.findOne(id);
-
-    const kpiActualizado = await this.prisma.kPI.update({
-      where: { id },
-      data: { activo: !kpi.activo },
+  async getKpisPorEmpleado(empleadoId: string) {
+    const empleado = await this.prisma.user.findUnique({
+      where: { id: empleadoId },
+      include: {
+        area: true,
+        puesto: true,
+      },
     });
 
-    return {
-      message: `KPI ${kpiActualizado.activo ? 'activado' : 'desactivado'} exitosamente`,
-      kpi: kpiActualizado,
-    };
-  }
+    if (!empleado) {
+      throw new NotFoundException('Empleado no encontrado');
+    }
 
-  // ============================================
-  // OBTENER ESTADÍSTICAS DE UN KPI
-  // ============================================
-  async getEstadisticas(id: string) {
-    const kpi = await this.findOne(id);
+    // Si el empleado no tiene área asignada, no puede tener KPIs
+    if (!empleado.areaId) {
+      return [];
+    }
 
-    // Obtener todas las evaluaciones de este KPI
-    const evaluaciones = await this.prisma.evaluacionDetalle.findMany({
-      where: { kpiId: id },
+    // Construir condiciones OR dinámicamente para evitar pasar null a Prisma
+    const orConditions: { areaId: string; puestoId?: string | null }[] = [
+      // KPIs generales del área (sin puesto específico)
+      { areaId: empleado.areaId, puestoId: null },
+    ];
+
+    // Solo agregar filtro de puesto si el empleado tiene uno asignado
+    if (empleado.puestoId) {
+      orConditions.push({
+        areaId: empleado.areaId,
+        puestoId: empleado.puestoId,
+      });
+    }
+
+    // Buscar KPIs del área y puesto del empleado
+    const kpis = await this.prisma.kPI.findMany({
+      where: {
+        OR: orConditions,
+        activo: true,
+      },
       include: {
-        evaluacion: {
+        areaRelacion: {
           select: {
-            periodo: true,
-            anio: true,
-            status: true,
+            id: true,
+            nombre: true,
+          },
+        },
+        puesto: {
+          select: {
+            id: true,
+            nombre: true,
           },
         },
       },
+      orderBy: { orden: 'asc' },
     });
 
-    if (evaluaciones.length === 0) {
-      return {
-        kpi: {
-          id: kpi.id,
-          key: kpi.key,
-          indicador: kpi.indicador,
-          meta: kpi.meta,
+    return kpis;
+  }
+
+  // ============================================
+  // OBTENER KPIs POR ÁREA (incluye sub-áreas)
+  // ============================================
+  async getKpisPorArea(areaId: string) {
+    const area = await this.prisma.area.findUnique({
+      where: { id: areaId },
+      include: {
+        subAreas: {
+          select: { id: true },
         },
-        estadisticas: {
-          totalEvaluaciones: 0,
-          promedioResultado: 0,
-          verdes: 0,
-          amarillos: 0,
-          rojos: 0,
-          porcentajeVerdes: 0,
-          porcentajeAmarillos: 0,
-          porcentajeRojos: 0,
-        },
-      };
+      },
+    });
+
+    if (!area) {
+      throw new NotFoundException('Área no encontrada');
     }
 
-    // Calcular estadísticas
-    const totalEvaluaciones = evaluaciones.length;
-    const sumaResultados = evaluaciones.reduce((acc, e) => acc + e.resultadoPorcentaje, 0);
-    const promedioResultado = sumaResultados / totalEvaluaciones;
+    // Incluir área y sub-áreas
+    const areasIds = [areaId];
+    if (area.subAreas && area.subAreas.length > 0) {
+      areasIds.push(...area.subAreas.map((sub) => sub.id));
+    }
 
-    const verdes = evaluaciones.filter(e => e.estado === 'verde').length;
-    const amarillos = evaluaciones.filter(e => e.estado === 'amarillo').length;
-    const rojos = evaluaciones.filter(e => e.estado === 'rojo').length;
+    const kpis = await this.prisma.kPI.findMany({
+      where: {
+        areaId: { in: areasIds },
+        activo: true,
+      },
+      include: {
+        areaRelacion: {
+          select: {
+            id: true,
+            nombre: true,
+          },
+        },
+        puesto: {
+          select: {
+            id: true,
+            nombre: true,
+          },
+        },
+      },
+      orderBy: { orden: 'asc' },
+    });
+
+    return kpis;
+  }
+
+  // ============================================
+  // TOGGLE ACTIVO/INACTIVO
+  // ============================================
+  async toggle(id: string) {
+    const kpi = await this.findOne(id);
+
+    const updated = await this.prisma.kPI.update({
+      where: { id },
+      data: { activo: !kpi.activo },
+      include: {
+        areaRelacion: {
+          select: { id: true, nombre: true },
+        },
+        puesto: {
+          select: { id: true, nombre: true },
+        },
+      },
+    });
+
+    return updated;
+  }
+
+  // ============================================
+  // CALCULAR RESULTADO DE UN KPI
+  // ============================================
+  async calcularResultado(dto: {
+    kpiId: string;
+    valores: Record<string, any>;
+  }) {
+    const kpi = await this.findOne(dto.kpiId);
+
+    let formula: any;
+    try {
+      formula = JSON.parse(kpi.formulaCalculo);
+    } catch {
+      throw new BadRequestException(
+        'formulaCalculo del KPI no es un JSON válido',
+      );
+    }
+
+    let resultado: number | null = null;
+
+    switch (kpi.tipoCalculo) {
+      case 'binario': {
+        // Espera { valor: 0 | 1 }
+        resultado = dto.valores['valor'] ?? 0;
+        break;
+      }
+      case 'division': {
+        // Espera { numerador: number, denominador: number }
+        const numerador = Number(
+          dto.valores[formula.numerador] ?? dto.valores['numerador'] ?? 0,
+        );
+        const denominador = Number(
+          dto.valores[formula.denominador] ?? dto.valores['denominador'] ?? 1,
+        );
+        if (denominador === 0)
+          throw new BadRequestException('El denominador no puede ser 0');
+        resultado = (numerador / denominador) * 100;
+        break;
+      }
+      case 'conteo': {
+        // Espera { cantidad: number }
+        resultado = Number(dto.valores['cantidad'] ?? 0);
+        break;
+      }
+      case 'porcentaje_kpis_equipo': {
+        // Espera { kpisVerdes: number, totalKpis: number }
+        const kpisVerdes = Number(dto.valores['kpisVerdes'] ?? 0);
+        const totalKpis = Number(dto.valores['totalKpis'] ?? 1);
+        if (totalKpis === 0)
+          throw new BadRequestException('totalKpis no puede ser 0');
+        resultado = (kpisVerdes / totalKpis) * 100;
+        break;
+      }
+      case 'dashboard_presentado': {
+        // Espera { presentado: boolean }
+        resultado = dto.valores['presentado'] ? 1 : 0;
+        break;
+      }
+      default: {
+        // Tipo personalizado: retorna los valores tal cual
+        resultado = Number(dto.valores['resultado'] ?? 0);
+      }
+    }
+
+    // Determinar estado según meta y umbrales
+    let estado: 'verde' | 'amarillo' | 'rojo' | null = null;
+    if (kpi.meta !== null && kpi.meta !== undefined && resultado !== null) {
+      const cumpleMeta = this.evaluarMeta(
+        resultado,
+        kpi.meta,
+        kpi.operadorMeta ?? '=',
+      );
+      if (cumpleMeta) {
+        estado = 'verde';
+      } else if (
+        kpi.umbralAmarillo !== null &&
+        kpi.umbralAmarillo !== undefined
+      ) {
+        const cumpleAmarillo = this.evaluarMeta(
+          resultado,
+          kpi.umbralAmarillo,
+          kpi.operadorMeta ?? '=',
+        );
+        estado = cumpleAmarillo ? 'amarillo' : 'rojo';
+      } else {
+        estado = 'rojo';
+      }
+    }
 
     return {
-      kpi: {
-        id: kpi.id,
-        key: kpi.key,
-        indicador: kpi.indicador,
-        meta: kpi.meta,
-        area: kpi.area,
-      },
-      estadisticas: {
-        totalEvaluaciones,
-        promedioResultado: Math.round(promedioResultado * 100) / 100,
-        verdes,
-        amarillos,
-        rojos,
-        porcentajeVerdes: Math.round((verdes / totalEvaluaciones) * 10000) / 100,
-        porcentajeAmarillos: Math.round((amarillos / totalEvaluaciones) * 10000) / 100,
-        porcentajeRojos: Math.round((rojos / totalEvaluaciones) * 10000) / 100,
-      },
-      ultimasEvaluaciones: evaluaciones.slice(0, 5).map(e => ({
-        periodo: e.evaluacion.periodo,
-        anio: e.evaluacion.anio,
-        resultado: e.resultadoNumerico,
-        porcentaje: e.resultadoPorcentaje,
-        estado: e.estado,
-      })),
+      kpiId: kpi.id,
+      key: kpi.key,
+      indicador: kpi.indicador,
+      resultado,
+      estado,
+      meta: kpi.meta,
+      umbralAmarillo: kpi.umbralAmarillo,
     };
   }
 
   // ============================================
-  // MÉTODOS AUXILIARES
+  // VALIDAR FORMULA DE CALCULO
   // ============================================
-
-  private validarMetaYTolerancia(meta: number, tolerancia: number, sentido: string) {
-    if (meta <= 0) {
-      throw new BadRequestException('La meta debe ser mayor a 0');
+  async validarFormula(formulaCalculo: string, tipoCalculo: string) {
+    // Validar que sea JSON válido
+    let formula: any;
+    try {
+      formula = JSON.parse(formulaCalculo);
+    } catch {
+      throw new BadRequestException('formulaCalculo debe ser un JSON válido');
     }
 
-    if (sentido === 'Mayor es mejor' && tolerancia > 0) {
-      throw new BadRequestException(
-        'Para KPIs donde "Mayor es mejor", la tolerancia debe ser negativa (ej: -5)',
-      );
+    const errores: string[] = [];
+
+    switch (tipoCalculo) {
+      case 'division':
+        if (!formula.numerador)
+          errores.push('Falta el campo "numerador" en la fórmula');
+        if (!formula.denominador)
+          errores.push('Falta el campo "denominador" en la fórmula');
+        break;
+      case 'binario':
+      case 'conteo':
+      case 'dashboard_presentado':
+      case 'porcentaje_kpis_equipo':
+        // No requieren campos específicos en la fórmula
+        break;
+      case 'personalizado':
+        if (!formula.descripcion)
+          errores.push(
+            'Se recomienda incluir "descripcion" en fórmulas personalizadas',
+          );
+        break;
+      default:
+        errores.push(`Tipo de cálculo desconocido: ${tipoCalculo}`);
     }
 
-    if (sentido === 'Menor es mejor' && tolerancia < 0) {
-      throw new BadRequestException(
-        'Para KPIs donde "Menor es mejor", la tolerancia debe ser positiva (ej: +5)',
-      );
-    }
+    return {
+      valido: errores.length === 0,
+      errores,
+      formulaParsed: formula,
+    };
   }
 
-  private calcularUmbralAmarillo(meta: number, tolerancia: number, sentido: string): number {
-    if (sentido === 'Mayor es mejor') {
-      // Ej: meta = 90, tolerancia = -5 → umbral = 85
-      return meta + tolerancia;
-    } else {
-      // Ej: meta = 30, tolerancia = +5 → umbral = 35
-      return meta + tolerancia;
-    }
-  }
-
   // ============================================
-  // REORDENAR KPIs DE UN ÁREA
+  // HELPER: Evaluar si resultado cumple la meta
   // ============================================
-  async reordenar(areaId: string, orden: { id: string; orden: number }[]) {
-    const area = await this.prisma.area.findUnique({
-      where: { id: areaId },
-    });
-
-    if (!area) {
-      throw new NotFoundException(`No se encontró el área con ID ${areaId}`);
+  private evaluarMeta(
+    resultado: number,
+    meta: number,
+    operador: string,
+  ): boolean {
+    switch (operador) {
+      case '>':
+        return resultado > meta;
+      case '>=':
+        return resultado >= meta;
+      case '=':
+        return resultado === meta;
+      case '<=':
+        return resultado <= meta;
+      case '<':
+        return resultado < meta;
+      default:
+        return false;
     }
-
-    // Actualizar el orden de cada KPI
-    const updates = orden.map(item =>
-      this.prisma.kPI.update({
-        where: { id: item.id },
-        data: { orden: item.orden },
-      }),
-    );
-
-    await Promise.all(updates);
-
-    return { message: 'KPIs reordenados exitosamente' };
   }
 }

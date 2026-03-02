@@ -1,30 +1,34 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { PrismaService } from './common/database/prisma.service';
-import { AreasModule } from './modules/areas/areas.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AreasModule } from './modules/areas/areas.module';
 import { KpisModule } from './modules/kpis/kpis.module';
 import { EmpleadosModule } from './modules/empleados/empleados.module';
-import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
-import { ValidacionesModule } from './modules/validaciones/validaciones.module';
+// import { ValidacionesModule } from './modules/validaciones/validaciones.module'; // ← COMENTAR
 import { EstadisticasModule } from './modules/estadisticas/estadisticas.module';
 import { AlertasModule } from './modules/alertas/alertas.module';
-import { PlanesAccionModule } from './modules/planes-accion/planes-accion.module';
+import { OrdenesTrabajoModule } from './modules/ordenes-trabajo/ordenes-trabajo.module';
+// import { PlanesAccionModule } from './modules/planes-accion/planes-accion.module'; // ← COMENTAR
+import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
+import { PuestosModule } from './modules/puestos/puestos.module';
+import { PrismaService } from './common/database/prisma.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    AreasModule,
     AuthModule,
+    AreasModule,
     KpisModule,
     EmpleadosModule,
     EvaluacionesModule,
-    ValidacionesModule,
+    PuestosModule,
+    // ValidacionesModule, // ← COMENTADO
     EstadisticasModule,
     AlertasModule,
-    PlanesAccionModule,
+    OrdenesTrabajoModule,
+    // PlanesAccionModule, // ← COMENTADO
   ],
   providers: [PrismaService],
 })

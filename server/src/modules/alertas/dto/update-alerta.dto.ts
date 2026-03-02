@@ -1,16 +1,12 @@
-import { IsString, IsIn, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsIn } from 'class-validator';
 
 export class UpdateAlertaDto {
   @IsString()
   @IsOptional()
-  @IsIn(['pendiente', 'en_proceso', 'resuelta', 'descartada'])
+  @IsIn(['activa', 'en_proceso', 'resuelta'])
   status?: string;
 
   @IsString()
   @IsOptional()
-  accionTomada?: string;
-
-  @IsString()
-  @IsOptional()
-  responsableId?: string;
+  responsable?: string;
 }

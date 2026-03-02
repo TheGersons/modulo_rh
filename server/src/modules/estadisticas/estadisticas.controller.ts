@@ -1,33 +1,42 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { EstadisticasService } from './estadisticas.service';
 
 @Controller('estadisticas')
 export class EstadisticasController {
   constructor(private readonly estadisticasService: EstadisticasService) {}
 
-  @Get('globales')
-  getGlobales() {
-    return this.estadisticasService.getGlobales();
+  @Get('dashboard')
+  getDashboard() {
+    return this.estadisticasService.getDashboardGlobal();
   }
 
-  @Get('area/:areaId')
-  getByArea(@Param('areaId') areaId: string) {
-    return this.estadisticasService.getByArea(areaId);
+  @Get('area')
+  getEstadisticasArea(@Query('areaId') areaId: string) {
+    return this.estadisticasService.getEstadisticasArea(areaId);
   }
 
-  @Get('empleado/:empleadoId')
-  getByEmpleado(@Param('empleadoId') empleadoId: string) {
-    return this.estadisticasService.getByEmpleado(empleadoId);
+  @Get('empleado')
+  getEstadisticasEmpleado(@Query('empleadoId') empleadoId: string) {
+    return this.estadisticasService.getEstadisticasEmpleado(empleadoId);
+  }
+
+  @Get('carga-laboral')
+  getCargaLaboral(@Query('areaId') areaId?: string) {
+    return this.estadisticasService.getCargaLaboral(areaId);
   }
 
   @Get('tendencias')
-  getTendencias(@Query('meses') meses?: string) {
-    const mesesNum = meses ? parseInt(meses) : 6;
-    return this.estadisticasService.getTendencias(mesesNum);
+  getTendencias(@Query('areaId') areaId?: string) {
+    return this.estadisticasService.getTendencias(areaId);
   }
 
-  @Get('rankings')
-  getRankings() {
-    return this.estadisticasService.getRankings();
+  @Get('kpis-resumen')
+  getResumenKpis() {
+    return this.estadisticasService.getResumenPorTipoKpi();
+  }
+
+  @Get('ranking-areas')
+  getRankingAreas() {
+    return this.estadisticasService.getRankingAreas();
   }
 }
