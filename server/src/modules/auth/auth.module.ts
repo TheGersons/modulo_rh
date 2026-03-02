@@ -1,10 +1,26 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { PrismaService } from '../../common/database/prisma.service';
+import { JwtStrategy } from './strategies/jwt.strategy';
+import { PrismaService } from 'src/common/database/prisma.service';
+import { ScheduleModule } from '@nestjs/schedule';
+import { AuthCron } from './auth.cron';
 
 @Module({
+  imports: [
+    ScheduleModule.forRoot(),
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.register({
+      secret:
+        process.env.JWT_SECRET ||
+        'tu-secreto-super-seguro-cambiar-en-produccion',
+      signOptions: { expiresIn: '15m' }, // Token válido por 15 minutos
+    }),
+  ],
   controllers: [AuthController],
-  providers: [AuthService, PrismaService]
+  providers: [AuthService, JwtStrategy, PrismaService, AuthCron],
+  exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

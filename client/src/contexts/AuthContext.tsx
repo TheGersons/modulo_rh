@@ -1,55 +1,111 @@
-import { createContext, useContext, useState, type ReactNode, useEffect } from 'react';
-import type { User, AuthContextType } from '../types';
+import { createContext, useContext, useState, type ReactNode, useEffect, useRef } from 'react';
+import apiClient from '../services/api.service';
+
+interface User {
+  id: string;
+  email: string;
+  role: string;
+  nombre: string;
+  apellido?: string;
+  areaId?: string;
+}
+
+interface AuthContextType {
+  user: User | null;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  isAuthenticated: boolean;
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const refreshIntervalRef = useRef<number | null>(null); // ← CAMBIAR de NodeJS.Timeout a number
 
-  // Verificar si hay sesión guardada al cargar
   useEffect(() => {
+    const accessToken = localStorage.getItem('accessToken');
+    const refreshToken = localStorage.getItem('refreshToken');
     const savedUser = localStorage.getItem('user');
-    if (savedUser) {
+
+    if (accessToken && refreshToken && savedUser) {
+      apiClient.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
       setUser(JSON.parse(savedUser));
       setIsAuthenticated(true);
+      setupTokenRefresh();
     }
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
   }, []);
 
-  const login = async (email: string, password: string) => {
-    try {
-      const response = await fetch('http://localhost:3000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (data.success && data.user) {
-        const userData: User = {
-          id: data.user.id,
-          email: data.user.email,
-          role: data.user.role,
-          nombre: data.user.nombre,
-          areaId: data.user.areaId,
-        };
-        
-        setUser(userData);
-        setIsAuthenticated(true);
-        localStorage.setItem('user', JSON.stringify(userData));
-      } else {
-        throw new Error(data.message || 'Error en el login');
+  const setupTokenRefresh = () => {
+    // Refrescar token cada 12 minutos (antes de que expire a los 15)
+    refreshIntervalRef.current = window.setInterval(async () => { // ← CAMBIAR setInterval a window.setInterval
+      try {
+        await refreshAccessToken();
+      } catch (error) {
+        console.error('Error al refrescar token:', error);
+        logout();
       }
-    } catch (error) {
-      throw error;
+    }, 12 * 60 * 1000); // 12 minutos
+  };
+
+  const refreshAccessToken = async () => {
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (!refreshToken) throw new Error('No refresh token');
+
+    const response = await apiClient.post('/auth/refresh', { refreshToken });
+
+    if (response.data.success && response.data.accessToken) {
+      const newAccessToken = response.data.accessToken;
+      localStorage.setItem('accessToken', newAccessToken);
+      apiClient.defaults.headers.common['Authorization'] = `Bearer ${newAccessToken}`;
+    } else {
+      throw new Error('Failed to refresh token');
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    setIsAuthenticated(false);
-    localStorage.removeItem('user');
+  const login = async (email: string, password: string) => {
+    const response = await apiClient.post('/auth/login', { email, password });
+
+    if (response.data.success && response.data.accessToken) {
+      const { accessToken, refreshToken, user: userData } = response.data;
+
+      localStorage.setItem('accessToken', accessToken);
+      localStorage.setItem('refreshToken', refreshToken);
+      localStorage.setItem('user', JSON.stringify(userData));
+
+      apiClient.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+
+      setUser(userData);
+      setIsAuthenticated(true);
+      setupTokenRefresh();
+    } else {
+      throw new Error(response.data.message || 'Error en el login');
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await apiClient.post('/auth/logout');
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+    } finally {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
+      delete apiClient.defaults.headers.common['Authorization'];
+      setUser(null);
+      setIsAuthenticated(false);
+    }
   };
 
   return (

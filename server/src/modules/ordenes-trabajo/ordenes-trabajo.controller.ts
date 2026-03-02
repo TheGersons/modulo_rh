@@ -6,7 +6,8 @@ import {
   Patch,
   Param,
   Query,
-  Delete,
+  UseGuards,
+  Request,
 } from '@nestjs/common';
 import { OrdenesTrabajoService } from './ordenes-trabajo.service';
 import { CreateOrdenTrabajoDto } from './dto/create-orden-trabajo.dto';
@@ -19,23 +20,25 @@ import { SolicitarTareaDto } from './dto/solicitar-tarea.dto';
 import { ResponderSolicitudTareaDto } from './dto/responder-solicitud-tarea.dto';
 import { SolicitarEdicionDto } from './dto/solicitar-edicion.dto';
 import { ResponderSolicitudEdicionDto } from './dto/responder-solicitud-edicion.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('ordenes-trabajo')
+@UseGuards(JwtAuthGuard)
 export class OrdenesTrabajoController {
   constructor(private readonly ordenesService: OrdenesTrabajoService) {}
 
   @Post()
-  create(@Body() createDto: CreateOrdenTrabajoDto) {
-    // TODO: Obtener creadorId del token JWT
-    const creadorId = 'temp-creator-id';
+  create(@Body() createDto: CreateOrdenTrabajoDto, @Request() req) {
+    const creadorId = req.user.userId; // ← USAR ID DEL TOKEN
     return this.ordenesService.create(createDto, creadorId);
   }
 
   @Post('bulk')
   createBulk(
     @Body() body: { orden: CreateOrdenTrabajoDto; empleadoIds: string[] },
+    @Request() req,
   ) {
-    const creadorId = 'temp-creator-id';
+    const creadorId = req.user.userId; // ← USAR ID DEL TOKEN
     return this.ordenesService.createBulk(
       body.orden,
       body.empleadoIds,
@@ -132,9 +135,9 @@ export class OrdenesTrabajoController {
   revisarEvidencia(
     @Param('id') id: string,
     @Body() revisarDto: RevisarEvidenciaDto,
+    @Request() req,
   ) {
-    // TODO: Obtener jefeId del token JWT
-    const jefeId = 'temp-jefe-id';
+    const jefeId = req.user.userId; // ← USAR ID DEL TOKEN
     return this.ordenesService.revisarEvidencia(id, revisarDto, jefeId);
   }
 
@@ -164,9 +167,8 @@ export class OrdenesTrabajoController {
   }
 
   @Post('solicitudes-tarea')
-  solicitarTarea(@Body() solicitarDto: SolicitarTareaDto) {
-    // TODO: Obtener empleadoId del token JWT
-    const empleadoId = 'temp-empleado-id';
+  solicitarTarea(@Body() solicitarDto: SolicitarTareaDto, @Request() req) {
+    const empleadoId = req.user.userId; // ← USAR ID DEL TOKEN
     return this.ordenesService.solicitarTarea(solicitarDto, empleadoId);
   }
 
@@ -195,9 +197,8 @@ export class OrdenesTrabajoController {
   // SOLICITUDES DE EDICIÓN
   // ============================================
   @Post('solicitudes-edicion')
-  solicitarEdicion(@Body() solicitarDto: SolicitarEdicionDto) {
-    // TODO: Obtener solicitanteId del token JWT
-    const solicitanteId = 'temp-solicitante-id';
+  solicitarEdicion(@Body() solicitarDto: SolicitarEdicionDto, @Request() req) {
+    const solicitanteId = req.user.userId; // ← USAR ID DEL TOKEN
     return this.ordenesService.solicitarEdicion(solicitarDto, solicitanteId);
   }
 

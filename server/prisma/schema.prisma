@@ -33,6 +33,7 @@ model User {
   alertas                 Alerta[]           @relation("AlertasEmpleado")
   puestoId                String?            @map("puesto_id")
   puesto                  Puesto?            @relation("EmpleadoPuesto", fields: [puestoId], references: [id], onDelete: SetNull)
+  sessions                Session[]
 
   @@index([areaId])
   @@index([email])
@@ -432,4 +433,23 @@ model Puesto {
 
   @@unique([nombre, areaId]) // Un puesto único por área
   @@map("puestos")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  accessToken  String   @unique @map("access_token")
+  refreshToken String   @unique @map("refresh_token")
+  deviceInfo   String?  @map("device_info")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  expiresAt    DateTime @map("expires_at") // Para refresh token (1 hora)
+  createdAt    DateTime @default(now()) @map("created_at")
+  lastActivity DateTime @default(now()) @map("last_activity")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
 }

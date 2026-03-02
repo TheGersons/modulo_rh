@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { KpisService } from './kpis.service';
 import { KpisController } from './kpis.controller';
 import { PrismaService } from '../../common/database/prisma.service';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
+  imports: [AuthModule],
   controllers: [KpisController],
   providers: [KpisService, PrismaService],
   exports: [KpisService],

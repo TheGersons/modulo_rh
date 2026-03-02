@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../components/layout/Layout';
+import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
+import { empleadosService } from '../services/empleados.service';
 import {
   Settings,
   Bell,
@@ -15,14 +18,40 @@ import {
   Lock,
   Save,
   CheckCircle,
+  AlertCircle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 export default function ConfiguracionPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const { isAdmin, isRRHH } = usePermissions();
+
+  const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [guardadoExitoso, setGuardadoExitoso] = useState(false);
+  const [error, setError] = useState('');
 
-  // Preferencias de usuario
+  // Datos del usuario actual
+  const [empleado, setEmpleado] = useState<any>(null);
+
+  // Perfil
+  const [nombre, setNombre] = useState('');
+  const [apellido, setApellido] = useState('');
+  const [email, setEmail] = useState('');
+  const [telefono, setTelefono] = useState('');
+
+  // Cambiar contraseña
+  const [showCambiarPassword, setShowCambiarPassword] = useState(false);
+  const [passwordActual, setPasswordActual] = useState('');
+  const [passwordNueva, setPasswordNueva] = useState('');
+  const [passwordConfirmar, setPasswordConfirmar] = useState('');
+  const [showPasswordActual, setShowPasswordActual] = useState(false);
+  const [showPasswordNueva, setShowPasswordNueva] = useState(false);
+  const [showPasswordConfirmar, setShowPasswordConfirmar] = useState(false);
+
+  // Notificaciones (localStorage)
   const [notificacionesEmail, setNotificacionesEmail] = useState(true);
   const [notificacionesPush, setNotificacionesPush] = useState(true);
   const [notificacionesOrden, setNotificacionesOrden] = useState(true);
@@ -30,20 +59,141 @@ export default function ConfiguracionPage() {
   const [notificacionesKpiRojo, setNotificacionesKpiRojo] = useState(true);
   const [resumenSemanal, setResumenSemanal] = useState(false);
 
+  // Preferencias (localStorage)
   const [idioma, setIdioma] = useState('es');
   const [tema, setTema] = useState<'light' | 'dark'>('light');
 
-  const handleGuardar = async () => {
+  useEffect(() => {
+    cargarDatos();
+    cargarPreferencias();
+  }, [user]);
+
+  const cargarDatos = async () => {
+    console.log('🔍 USER COMPLETO:', user);
+    if (!user?.id) return;
+
+    try {
+      setLoading(true);
+      console.log('📡 Buscando empleado con ID:', user.id);
+      const data = await empleadosService.getById(user.id);
+      setEmpleado(data);
+      setNombre(data.nombre);
+      setApellido(data.apellido);
+      setEmail(data.email);
+      setTelefono(data.telefono || '');
+    } catch (error) {
+      console.error('Error al cargar datos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cargarPreferencias = () => {
+    // Cargar desde localStorage
+    const prefs = localStorage.getItem('user_preferences');
+    if (prefs) {
+      const parsed = JSON.parse(prefs);
+      setNotificacionesEmail(parsed.notificacionesEmail ?? true);
+      setNotificacionesPush(parsed.notificacionesPush ?? true);
+      setNotificacionesOrden(parsed.notificacionesOrden ?? true);
+      setNotificacionesEvaluacion(parsed.notificacionesEvaluacion ?? true);
+      setNotificacionesKpiRojo(parsed.notificacionesKpiRojo ?? true);
+      setResumenSemanal(parsed.resumenSemanal ?? false);
+      setIdioma(parsed.idioma ?? 'es');
+      setTema(parsed.tema ?? 'light');
+    }
+  };
+
+  const handleGuardarPerfil = async () => {
+    if (!user?.id) return;
+
+    setError('');
     setGuardando(true);
 
-    // Simular guardado
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      await empleadosService.update(user.id, {
+        nombre: nombre.trim(),
+        apellido: apellido.trim(),
+        email: email.trim(),
+        telefono: telefono.trim() || undefined,
+      });
 
-    setGuardando(false);
-    setGuardadoExitoso(true);
+      // Guardar preferencias en localStorage
+      const preferencias = {
+        notificacionesEmail,
+        notificacionesPush,
+        notificacionesOrden,
+        notificacionesEvaluacion,
+        notificacionesKpiRojo,
+        resumenSemanal,
+        idioma,
+        tema,
+      };
+      localStorage.setItem('user_preferences', JSON.stringify(preferencias));
 
-    setTimeout(() => setGuardadoExitoso(false), 3000);
+      setGuardadoExitoso(true);
+      setTimeout(() => setGuardadoExitoso(false), 3000);
+    } catch (error: any) {
+      console.error('Error al guardar:', error);
+      setError(error.response?.data?.message || 'Error al guardar los cambios');
+    } finally {
+      setGuardando(false);
+    }
   };
+
+  const handleCambiarPassword = async () => {
+    if (!user?.id) return;
+
+    setError('');
+
+    // Validaciones
+    if (!passwordActual || !passwordNueva || !passwordConfirmar) {
+      setError('Todos los campos de contraseña son requeridos');
+      return;
+    }
+
+    if (passwordNueva.length < 6) {
+      setError('La nueva contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+
+    if (passwordNueva !== passwordConfirmar) {
+      setError('Las contraseñas no coinciden');
+      return;
+    }
+
+    setGuardando(true);
+
+    try {
+      await empleadosService.update(user.id, {
+        password: passwordNueva,
+      });
+
+      alert('Contraseña actualizada exitosamente');
+      setShowCambiarPassword(false);
+      setPasswordActual('');
+      setPasswordNueva('');
+      setPasswordConfirmar('');
+    } catch (error: any) {
+      console.error('Error al cambiar contraseña:', error);
+      setError(error.response?.data?.message || 'Error al cambiar la contraseña');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Cargando configuración...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -65,7 +215,15 @@ export default function ConfiguracionPage() {
           </div>
         )}
 
-        {/* Info de permisos - Solo visible para admin/RRHH */}
+        {/* Mensaje de error */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600" />
+            <p className="text-red-900 font-medium">{error}</p>
+          </div>
+        )}
+
+        {/* Info de permisos */}
         {(isAdmin || isRRHH) && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <div className="flex items-center gap-2">
@@ -90,32 +248,63 @@ export default function ConfiguracionPage() {
           </div>
 
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nombre completo</label>
-              <input
-                type="text"
-                placeholder="Tu nombre"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nombre</label>
+                <input
+                  type="text"
+                  disabled={true}
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Apellido</label>
+                <input
+                  type="text"
+                  disabled={true}
+                  value={apellido}
+                  onChange={(e) => setApellido(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Correo electrónico</label>
               <input
                 type="email"
-                placeholder="tu@email.com"
+                disabled={true}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Teléfono</label>
-              <input
-                type="tel"
-                placeholder="+504 1234-5678"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
+            {/* Info adicional */}
+            {empleado && (
+              <div className="pt-4 border-t border-gray-200">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-600">Área:</p>
+                    <p className="font-medium text-gray-900">{empleado.area?.nombre || 'Sin área'}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600">Puesto:</p>
+                    <p className="font-medium text-gray-900">{empleado.puesto?.nombre || 'Sin puesto'}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600">Rol:</p>
+                    <p className="font-medium text-gray-900 capitalize">{empleado.role}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600">DNI:</p>
+                    <p className="font-medium text-gray-900">{empleado.dni || 'No registrado'}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -147,7 +336,7 @@ export default function ConfiguracionPage() {
                   <input
                     type="checkbox"
                     checked={notificacionesEmail}
-                    onChange={(e) => setNotificacionesEmail(e.target.checked)}
+                    onChange={/*(e) => setNotificacionesEmail(e.target.checked)*/ () => { }}
                     className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
                   />
                 </label>
@@ -163,14 +352,14 @@ export default function ConfiguracionPage() {
                   <input
                     type="checkbox"
                     checked={notificacionesPush}
-                    onChange={(e) => setNotificacionesPush(e.target.checked)}
+                    onChange={/*(e) => setNotificacionesPush(e.target.checked)*/ () => { }}
                     className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
                   />
                 </label>
               </div>
             </div>
 
-            {/* Tipos de notificaciones */}
+            {/* Tipos */}
             <div>
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Tipos de Notificaciones</h3>
               <div className="space-y-3">
@@ -182,7 +371,7 @@ export default function ConfiguracionPage() {
                   <input
                     type="checkbox"
                     checked={notificacionesOrden}
-                    onChange={(e) => setNotificacionesOrden(e.target.checked)}
+                    onChange={/*(e) => setNotificacionesOrden(e.target.checked)*/ () => { }}
                     className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
                   />
                 </label>
@@ -195,8 +384,8 @@ export default function ConfiguracionPage() {
                   <input
                     type="checkbox"
                     checked={notificacionesEvaluacion}
-                    onChange={(e) => setNotificacionesEvaluacion(e.target.checked)}
-                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    onChange={/*(e) => setNotificacionesEvaluacion(e.target.checked)*/ () => { }}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500 disabled:bg-blue-500 "
                   />
                 </label>
 
@@ -208,7 +397,7 @@ export default function ConfiguracionPage() {
                   <input
                     type="checkbox"
                     checked={notificacionesKpiRojo}
-                    onChange={(e) => setNotificacionesKpiRojo(e.target.checked)}
+                    onChange={/*(e) => setNotificacionesKpiRojo(e.target.checked)*/ () => { }}
                     className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
                   />
                 </label>
@@ -221,7 +410,7 @@ export default function ConfiguracionPage() {
                   <input
                     type="checkbox"
                     checked={resumenSemanal}
-                    onChange={(e) => setResumenSemanal(e.target.checked)}
+                    onChange={/*(e) => setResumenSemanal(e.target.checked)*/ () => { }}
                     className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
                   />
                 </label>
@@ -230,7 +419,7 @@ export default function ConfiguracionPage() {
           </div>
         </div>
 
-        {/* Preferencias de la aplicación */}
+        {/* Preferencias */}
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-3 bg-purple-50 rounded-lg">
@@ -255,7 +444,7 @@ export default function ConfiguracionPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="es">Español</option>
-                <option value="en">English</option>
+                <option value="en">English (Próximamente)</option>
               </select>
             </div>
 
@@ -265,9 +454,7 @@ export default function ConfiguracionPage() {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => setTema('light')}
-                  className={`p-4 border-2 rounded-lg transition-all ${tema === 'light'
-                      ? 'border-blue-600 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                  className={`p-4 border-2 rounded-lg transition-all ${tema === 'light' ? 'border-blue-600 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
                     }`}
                 >
                   <Sun className={`w-6 h-6 mx-auto mb-2 ${tema === 'light' ? 'text-blue-600' : 'text-gray-400'}`} />
@@ -276,13 +463,12 @@ export default function ConfiguracionPage() {
 
                 <button
                   onClick={() => setTema('dark')}
-                  className={`p-4 border-2 rounded-lg transition-all ${tema === 'dark'
-                      ? 'border-blue-600 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                    }`}
+                  disabled
+                  className="p-4 border-2 rounded-lg transition-all border-gray-200 opacity-50 cursor-not-allowed"
                 >
-                  <Moon className={`w-6 h-6 mx-auto mb-2 ${tema === 'dark' ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <Moon className="w-6 h-6 mx-auto mb-2 text-gray-400" />
                   <p className="font-medium text-gray-900">Oscuro</p>
+                  <p className="text-xs text-gray-500 mt-1">Próximamente</p>
                 </button>
               </div>
             </div>
@@ -302,40 +488,128 @@ export default function ConfiguracionPage() {
           </div>
 
           <div className="space-y-3">
-            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200">
-              <div className="flex items-center gap-3">
-                <Key className="w-5 h-5 text-gray-600" />
-                <div className="text-left">
-                  <p className="font-medium text-gray-900">Cambiar contraseña</p>
-                  <p className="text-sm text-gray-600">Actualiza tu contraseña periódicamente</p>
+            {!showCambiarPassword ? (
+              <button
+                onClick={() => setShowCambiarPassword(true)}
+                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200"
+              >
+                <div className="flex items-center gap-3">
+                  <Key className="w-5 h-5 text-gray-600" />
+                  <div className="text-left">
+                    <p className="font-medium text-gray-900">Cambiar contraseña</p>
+                    <p className="text-sm text-gray-600">Actualiza tu contraseña periódicamente</p>
+                  </div>
                 </div>
-              </div>
-              <span className="text-blue-600 text-sm font-medium">Cambiar →</span>
-            </button>
+                <span className="text-blue-600 text-sm font-medium">Cambiar →</span>
+              </button>
+            ) : (
+              <div className="p-4 border border-gray-200 rounded-lg space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900">Cambiar Contraseña</h3>
+                  <button
+                    onClick={() => {
+                      setShowCambiarPassword(false);
+                      setPasswordActual('');
+                      setPasswordNueva('');
+                      setPasswordConfirmar('');
+                      setError('');
+                    }}
+                    className="text-sm text-gray-600 hover:text-gray-900"
+                  >
+                    Cancelar
+                  </button>
+                </div>
 
-            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200">
-              <div className="flex items-center gap-3">
-                <Lock className="w-5 h-5 text-gray-600" />
-                <div className="text-left">
-                  <p className="font-medium text-gray-900">Autenticación de dos factores</p>
-                  <p className="text-sm text-gray-600">Agrega una capa extra de seguridad</p>
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Contraseña Actual <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type={showPasswordActual ? 'text' : 'password'}
+                    value={passwordActual}
+                    onChange={(e) => setPasswordActual(e.target.value)}
+                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordActual(!showPasswordActual)}
+                    className="absolute right-3 top-10 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPasswordActual ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
                 </div>
+
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nueva Contraseña <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type={showPasswordNueva ? 'text' : 'password'}
+                    value={passwordNueva}
+                    onChange={(e) => setPasswordNueva(e.target.value)}
+                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordNueva(!showPasswordNueva)}
+                    className="absolute right-3 top-10 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPasswordNueva ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Confirmar Contraseña <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type={showPasswordConfirmar ? 'text' : 'password'}
+                    value={passwordConfirmar}
+                    onChange={(e) => setPasswordConfirmar(e.target.value)}
+                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordConfirmar(!showPasswordConfirmar)}
+                    className="absolute right-3 top-10 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPasswordConfirmar ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+
+                <button
+                  onClick={handleCambiarPassword}
+                  disabled={guardando}
+                  className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  {guardando ? 'Cambiando...' : 'Cambiar Contraseña'}
+                </button>
               </div>
-              <span className="text-gray-400 text-sm">Próximamente</span>
-            </button>
+            )}
+
+            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-center gap-3">
+                <Lock className="w-5 h-5 text-gray-400" />
+                <div className="text-left">
+                  <p className="font-medium text-gray-700">Autenticación de dos factores</p>
+                  <p className="text-sm text-gray-500">Agrega una capa extra de seguridad</p>
+                </div>
+                <span className="ml-auto text-gray-400 text-sm">Próximamente</span>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Botón guardar */}
         <div className="flex justify-end gap-3 pb-8">
           <button
-            onClick={() => window.history.back()}
+            onClick={() => navigate('/dashboard')}
             className="px-6 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
           >
             Cancelar
           </button>
           <button
-            onClick={handleGuardar}
+            onClick={handleGuardarPerfil}
             disabled={guardando}
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >

@@ -12,8 +12,11 @@ import { KpisService } from './kpis.service';
 import { CreateKpiDto } from './dto/create-kpi.dto';
 import { UpdateKpiDto } from './dto/update-kpi.dto';
 import { CalcularKpiDto } from './dto/calcular-kpi.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { UseGuards } from '@nestjs/common';
 
 @Controller('kpis')
+@UseGuards(JwtAuthGuard)
 export class KpisController {
   constructor(private readonly kpisService: KpisService) {}
 

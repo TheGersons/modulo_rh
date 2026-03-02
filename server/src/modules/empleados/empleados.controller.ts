@@ -1,11 +1,23 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { EmpleadosService } from './empleados.service';
 import { CreateEmpleadoDto } from './dto/create-empleado.dto';
 import { UpdateEmpleadoDto } from './dto/update-empleado.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { UseGuards } from '@nestjs/common';
 
 @Controller('empleados')
+@UseGuards(JwtAuthGuard)
 export class EmpleadosController {
-  constructor(private readonly empleadosService: EmpleadosService) { }
+  constructor(private readonly empleadosService: EmpleadosService) {}
 
   @Post()
   create(@Body() createEmpleadoDto: CreateEmpleadoDto) {
@@ -60,7 +72,10 @@ export class EmpleadosController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateEmpleadoDto: UpdateEmpleadoDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateEmpleadoDto: UpdateEmpleadoDto,
+  ) {
     return this.empleadosService.update(id, updateEmpleadoDto);
   }
 

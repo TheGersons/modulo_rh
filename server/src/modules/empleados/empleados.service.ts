@@ -83,7 +83,6 @@ export class EmpleadosService {
       },
     });
 
-
     // No retornar el password
     const { password, ...empleadoSinPassword } = empleado;
     return empleadoSinPassword;
@@ -100,55 +99,44 @@ export class EmpleadosService {
   }) {
     const where: any = {};
 
-    if (filters?.areaId) {
-      where.areaId = filters.areaId;
-    }
-
-    if (filters?.role) {
-      where.role = filters.role;
-    }
-
-    if (filters?.activo !== undefined) {
-      where.activo = filters.activo;
-    }
-
+    if (filters?.areaId) where.areaId = filters.areaId;
+    if (filters?.role) where.role = filters.role;
+    if (filters?.activo !== undefined) where.activo = filters.activo;
     if (filters?.search) {
       where.OR = [
-        { dni: { contains: filters.search } },
-        { nombre: { contains: filters.search } },
-        { apellido: { contains: filters.search } },
-        { email: { contains: filters.search } },
-        // puesto es relación, se busca por nombre del puesto
-        { puesto: { nombre: { contains: filters.search } } },
+        { nombre: { contains: filters.search, mode: 'insensitive' } },
+        { apellido: { contains: filters.search, mode: 'insensitive' } },
+        { email: { contains: filters.search, mode: 'insensitive' } },
       ];
     }
 
-    const empleados = await this.prisma.user.findMany({
+    return this.prisma.user.findMany({
       where,
       include: {
         area: {
           select: {
             id: true,
             nombre: true,
+            areaPadreId: true,
+            areaPadre: {
+              select: {
+                id: true,
+                nombre: true,
+              },
+            },
           },
         },
-        _count: {
+        puesto: {
           select: {
-            evaluacionesRecibidas: true,
-            evaluacionesCreadas: true,
+            id: true,
+            nombre: true,
           },
         },
       },
-      orderBy: [{ apellido: 'asc' }, { nombre: 'asc' }],
+      orderBy: { nombre: 'asc' },
     });
-
-    // No retornar passwords
-    return empleados.map(({ password, ...empleado }) => empleado);
   }
 
-  // ============================================
-  // OBTENER UN EMPLEADO POR ID
-  // ============================================
   async findOne(id: string) {
     const empleado = await this.prisma.user.findUnique({
       where: { id },
