@@ -43,9 +43,7 @@ function AppRoutes() {
         path="/dashboard"
         element={
           <PrivateRoute>
-
             <DashboardPage />
-
           </PrivateRoute>
         }
       />
@@ -74,9 +72,7 @@ function AppRoutes() {
         path="/ordenes/:id"
         element={
           <PrivateRoute>
-
             <DetalleOrdenPage />
-
           </PrivateRoute>
         }
       />
@@ -86,9 +82,7 @@ function AppRoutes() {
         path="/ordenes/crear"
         element={
           <PrivateRoute allowedRoles={['admin', 'jefe', 'empleado', 'rrhh']}>
-
             <CrearOrdenPage />
-
           </PrivateRoute>
         }
       />
@@ -98,9 +92,7 @@ function AppRoutes() {
         path="/solicitudes"
         element={
           <PrivateRoute>
-
             <SolicitudesPage />
-
           </PrivateRoute>
         }
       />
@@ -109,9 +101,7 @@ function AppRoutes() {
         path="/kpis/mis-evaluaciones"
         element={
           <PrivateRoute>
-
             <MisEvaluacionesPage />
-
           </PrivateRoute>
         }
       />
@@ -120,9 +110,7 @@ function AppRoutes() {
         path="/kpis/mis-evaluaciones/:evaluacionId"
         element={
           <PrivateRoute>
-
             <DetalleEvaluacionPage />
-
           </PrivateRoute>
         }
       />
@@ -144,9 +132,7 @@ function AppRoutes() {
         path="/empleados"
         element={
           <PrivateRoute>
-
             <EmpleadosPage />
-
           </PrivateRoute>
         }
       />
@@ -165,9 +151,7 @@ function AppRoutes() {
         path="/configuracion"
         element={
           <PrivateRoute>
-
             <ConfiguracionPage />
-
           </PrivateRoute>
         }
       />
