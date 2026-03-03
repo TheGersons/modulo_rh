@@ -69,4 +69,59 @@ export const kpisService = {
     );
     return response.data;
   },
+  getMisKpis: async () => {
+    const response = await apiClient.get(`${API_ENDPOINTS.kpis}/mis-kpis`);
+    return response.data;
+  },
+
+  getMisEvidencias: async (periodo?: string) => {
+    const url = periodo
+      ? `${API_ENDPOINTS.kpis}/mis-evidencias?periodo=${periodo}`
+      : `${API_ENDPOINTS.kpis}/mis-evidencias`;
+    const response = await apiClient.get(url);
+    return response.data;
+  },
+
+  subirEvidencia: async (data: {
+    kpiId: string;
+    archivoUrl: string;
+    tipo: string;
+    nombre: string;
+    tamanio?: number;
+    valorNumerico?: number;
+    nota?: string;
+    periodo?: string;
+  }) => {
+    const response = await apiClient.post(
+      `${API_ENDPOINTS.kpis}/evidencias`,
+      data,
+    );
+    return response.data;
+  },
+
+  revisarEvidencia: async (
+    id: string,
+    data: { status: string; motivoRechazo?: string },
+  ) => {
+    const response = await apiClient.post(
+      `${API_ENDPOINTS.kpis}/evidencias/${id}/revisar`,
+      data,
+    );
+    return response.data;
+  },
+
+  apelarEvidencia: async (id: string, apelacion: string) => {
+    const response = await apiClient.post(
+      `${API_ENDPOINTS.kpis}/evidencias/${id}/apelar`,
+      { apelacion },
+    );
+    return response.data;
+  },
+
+  getEvidenciasPendientes: async () => {
+    const response = await apiClient.get(
+      `${API_ENDPOINTS.kpis}/pendientes-revision`,
+    );
+    return response.data;
+  },
 };

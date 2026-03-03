@@ -609,4 +609,142 @@ export class KpisService {
         return false;
     }
   }
+
+  async subirEvidenciaKPI(dto: {
+    kpiId: string;
+    empleadoId: string;
+    periodo: string;
+    archivoUrl: string;
+    tipo: string;
+    nombre: string;
+    tamanio?: number;
+    valorNumerico?: number;
+    nota?: string;
+  }) {
+    const kpi = await this.prisma.kPI.findUnique({ where: { id: dto.kpiId } });
+    if (!kpi) throw new NotFoundException('KPI no encontrado');
+
+    const intentosPrevios = await this.prisma.evidenciaKPI.count({
+      where: {
+        kpiId: dto.kpiId,
+        empleadoId: dto.empleadoId,
+        periodo: dto.periodo,
+      },
+    });
+
+    return this.prisma.evidenciaKPI.create({
+      data: {
+        ...dto,
+        intento: intentosPrevios + 1,
+        status: 'pendiente_revision',
+      },
+      include: {
+        kpi: { select: { id: true, key: true, indicador: true } },
+        empleado: { select: { id: true, nombre: true, apellido: true } },
+      },
+    });
+  }
+
+  async getMisEvidencias(empleadoId: string, periodo: string) {
+    const evidencias = await this.prisma.evidenciaKPI.findMany({
+      where: { empleadoId, periodo },
+      orderBy: { createdAt: 'asc' },
+    });
+    const agrupadas: Record<string, any[]> = {};
+    for (const ev of evidencias) {
+      if (!agrupadas[ev.kpiId]) agrupadas[ev.kpiId] = [];
+      agrupadas[ev.kpiId].push(ev);
+    }
+    return agrupadas;
+  }
+
+  async revisarEvidenciaKPI(
+    evidenciaId: string,
+    jefeId: string,
+    dto: { status: 'aprobada' | 'rechazada'; motivoRechazo?: string },
+  ) {
+    const ev = await this.prisma.evidenciaKPI.findUnique({
+      where: { id: evidenciaId },
+    });
+    if (!ev) throw new NotFoundException('Evidencia no encontrada');
+    if (dto.status === 'rechazada' && !dto.motivoRechazo)
+      throw new BadRequestException('Se requiere motivo de rechazo');
+    return this.prisma.evidenciaKPI.update({
+      where: { id: evidenciaId },
+      data: {
+        status: dto.status,
+        motivoRechazo: dto.motivoRechazo,
+        revisadoPor: jefeId,
+        fechaRevision: new Date(),
+      },
+      include: {
+        kpi: { select: { id: true, key: true, indicador: true } },
+        empleado: { select: { id: true, nombre: true, apellido: true } },
+      },
+    });
+  }
+
+  async apelarEvidenciaKPI(evidenciaId: string, apelacion: string) {
+    const ev = await this.prisma.evidenciaKPI.findUnique({
+      where: { id: evidenciaId },
+    });
+    if (!ev) throw new NotFoundException('Evidencia no encontrada');
+    if (ev.status !== 'rechazada')
+      throw new BadRequestException(
+        'Solo se puede apelar evidencias rechazadas',
+      );
+    if (ev.apelacion) throw new BadRequestException('Ya existe una apelacion');
+    return this.prisma.evidenciaKPI.update({
+      where: { id: evidenciaId },
+      data: { apelacion, fechaApelacion: new Date() },
+    });
+  }
+
+  async responderApelacionKPI(
+    evidenciaId: string,
+    respuesta: string,
+    confirmaRechazo: boolean,
+  ) {
+    const ev = await this.prisma.evidenciaKPI.findUnique({
+      where: { id: evidenciaId },
+    });
+    if (!ev) throw new NotFoundException('Evidencia no encontrada');
+    if (!ev.apelacion) throw new BadRequestException('Sin apelacion pendiente');
+    return this.prisma.evidenciaKPI.update({
+      where: { id: evidenciaId },
+      data: {
+        respuestaApelacion: respuesta,
+        status: confirmaRechazo ? 'rechazada' : 'aprobada',
+      },
+    });
+  }
+
+  async getEvidenciasPendientesKPI(jefeId: string) {
+    const areaJefe = await this.prisma.area.findFirst({
+      where: { jefeId },
+      include: { subAreas: { select: { id: true } } },
+    });
+    if (!areaJefe) return [];
+    const areaIds = [areaJefe.id, ...areaJefe.subAreas.map((s) => s.id)];
+    return this.prisma.evidenciaKPI.findMany({
+      where: {
+        status: 'pendiente_revision',
+        empleado: { areaId: { in: areaIds } },
+      },
+      include: {
+        kpi: {
+          select: {
+            id: true,
+            key: true,
+            indicador: true,
+            tipoCriticidad: true,
+          },
+        },
+        empleado: {
+          select: { id: true, nombre: true, apellido: true, areaId: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
 }

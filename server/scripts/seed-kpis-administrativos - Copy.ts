@@ -2,69 +2,40 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// ─── Helper central: aplica connect syntax en todos los KPIs ───
-async function crearKPIs(
-  kpis: Array<{
-    key: string;
-    indicador: string;
-    areaId: string;
-    puestoId: string;
-    tipoCalculo: string;
-    formulaCalculo: string;
-    meta: number;
-    unidad: string;
-    periodicidad: string;
-    sentido: string;
-    activo: boolean;
-  }>,
-) {
-  for (const kpiData of kpis) {
-    const existente = await prisma.kPI.findUnique({
-      where: { key: kpiData.key },
-    });
-    if (existente) {
-      console.log(`  ⏭️  KPI ${kpiData.key} ya existe`);
-    } else {
-      const { areaId, puestoId, ...data } = kpiData;
-      const { nombre: areaNombre } = await prisma.area.findUniqueOrThrow({ where: { id: areaId } });
-      await prisma.kPI.create({
-        data: {
-          ...data,
-          area: areaNombre,
-          areaId,
-          puestoId,
-        },
-      });
-      console.log(`  ✅ KPI ${kpiData.key} creado`);
-    }
-  }
-}
-
 async function seedKPIsAdministrativos() {
   console.log('🎯 Iniciando seed de KPIs Administrativos...\n');
 
+  // Obtener área Administrativa
   const areaAdministrativa = await prisma.area.findFirst({
     where: { nombre: 'Administrativa', areaPadreId: null },
   });
-  if (!areaAdministrativa)
+
+  if (!areaAdministrativa) {
     throw new Error('❌ No se encontró el área Administrativa');
+  }
+
   console.log(`✅ Área Administrativa encontrada: ${areaAdministrativa.id}\n`);
 
-  // ── GERENCIA ──────────────────────────────────────────────────
+  // ==============================================
+  // SUB-ÁREA: GERENCIA
+  // ==============================================
   console.log('📁 Procesando KPIs de Gerencia...');
+
   const subAreaGerencia = await prisma.area.findFirst({
     where: { nombre: 'Gerencia', areaPadreId: areaAdministrativa.id },
   });
+
   if (!subAreaGerencia) {
     console.log('⚠️  Sub-área Gerencia no encontrada, saltando...\n');
   } else {
     const puestoGerenciaAdmin = await prisma.puesto.findFirst({
       where: { nombre: 'Gerencia Administrativa', areaId: subAreaGerencia.id },
     });
+
     if (!puestoGerenciaAdmin) {
       console.log('⚠️  Puesto "Gerencia Administrativa" no encontrado\n');
     } else {
-      await crearKPIs([
+      const kpisGerencia = [
         {
           key: 'GER-FIN-001',
           indicador: 'Uso del sistema interbanca confiable',
@@ -72,6 +43,7 @@ async function seedKPIsAdministrativos() {
           puestoId: puestoGerenciaAdmin.id,
           tipoCalculo: 'porcentaje',
           formulaCalculo: JSON.stringify({
+            tipo: 'porcentaje',
             descripcion: 'Transacciones documentadas y sin errores',
           }),
           meta: 100,
@@ -87,6 +59,7 @@ async function seedKPIsAdministrativos() {
           puestoId: puestoGerenciaAdmin.id,
           tipoCalculo: 'formula',
           formulaCalculo: JSON.stringify({
+            tipo: 'formula',
             descripcion: '(Gasto real / Presupuesto aprobado) × 100',
           }),
           meta: 95,
@@ -102,6 +75,7 @@ async function seedKPIsAdministrativos() {
           puestoId: puestoGerenciaAdmin.id,
           tipoCalculo: 'porcentaje',
           formulaCalculo: JSON.stringify({
+            tipo: 'porcentaje',
             descripcion: 'Reportes del incidentes',
           }),
           meta: 100,
@@ -117,6 +91,7 @@ async function seedKPIsAdministrativos() {
           puestoId: puestoGerenciaAdmin.id,
           tipoCalculo: 'binario',
           formulaCalculo: JSON.stringify({
+            tipo: 'binario',
             descripcion: 'Presentación de análisis de riesgos mensual',
           }),
           meta: 100,
@@ -131,7 +106,10 @@ async function seedKPIsAdministrativos() {
           areaId: subAreaGerencia.id,
           puestoId: puestoGerenciaAdmin.id,
           tipoCalculo: 'porcentaje',
-          formulaCalculo: JSON.stringify({ descripcion: '100% de KPIs verde' }),
+          formulaCalculo: JSON.stringify({
+            tipo: 'porcentaje',
+            descripcion: '100% de KPIs verde',
+          }),
           meta: 90,
           unidad: '%',
           periodicidad: 'mensual',
@@ -145,6 +123,7 @@ async function seedKPIsAdministrativos() {
           puestoId: puestoGerenciaAdmin.id,
           tipoCalculo: 'porcentaje',
           formulaCalculo: JSON.stringify({
+            tipo: 'porcentaje',
             descripcion: 'Dashboards de KPIs de las áreas',
           }),
           meta: 95,
@@ -153,27 +132,49 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
-      console.log('✅ KPIs de Gerencia completados\n');
+      ];
+
+      for (const kpiData of kpisGerencia) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpiData.key },
+        });
+
+        if (existente) {
+          console.log(`  ⏭️  KPI ${kpiData.key} ya existe`);
+        } else {
+          await prisma.kPI.create({
+            data: { ...kpiData, area: subAreaGerencia.nombre },
+          });
+          console.log(`  ✅ KPI ${kpiData.key} creado`);
+        }
+      }
+
+      console.log(`✅ KPIs de Gerencia completados\n`);
     }
   }
 
-  // ── ADMINISTRACIÓN ────────────────────────────────────────────
+  // ==============================================
+  // SUB-ÁREA: ADMINISTRACIÓN
+  // ==============================================
   console.log('📁 Procesando KPIs de Administración...');
+
   const subAreaAdministracion = await prisma.area.findFirst({
     where: { nombre: 'Administración', areaPadreId: areaAdministrativa.id },
   });
+
   if (!subAreaAdministracion) {
     console.log('⚠️  Sub-área Administración no encontrada, saltando...\n');
   } else {
+    // PUESTO: Analista Financiero
     const puestoAnalistaFinanciero = await prisma.puesto.findFirst({
       where: {
         nombre: 'Analista Financiero',
         areaId: subAreaAdministracion.id,
       },
     });
+
     if (puestoAnalistaFinanciero) {
-      await crearKPIs([
+      const kpisAnalistaFinanciero = [
         {
           key: 'ADM-FIN-001',
           indicador: 'Exactitud proyección flujo',
@@ -400,17 +401,31 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisAnalistaFinanciero) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaAdministracion.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Encargado de Asuntos Legales
     const puestoAsuntosLegales = await prisma.puesto.findFirst({
       where: {
         nombre: 'Encargado de Asuntos Legales',
         areaId: subAreaAdministracion.id,
       },
     });
+
     if (puestoAsuntosLegales) {
-      await crearKPIs([
+      const kpisAsuntosLegales = [
         {
           key: 'ADM-LEG-001',
           indicador: 'Gestión de Contratos',
@@ -502,17 +517,31 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisAsuntosLegales) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaAdministracion.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Encargado de Logística
     const puestoLogistica = await prisma.puesto.findFirst({
       where: {
         nombre: 'Encargado de Logística',
         areaId: subAreaAdministracion.id,
       },
     });
+
     if (puestoLogistica) {
-      await crearKPIs([
+      const kpisLogistica = [
         {
           key: 'ADM-LOG-001',
           indicador: 'Cumplimiento de atención logística',
@@ -607,17 +636,31 @@ async function seedKPIsAdministrativos() {
           sentido: 'Menor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisLogistica) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaAdministracion.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Auxiliar de Mantenimiento Plantel
     const puestoMantenimientoPlantel = await prisma.puesto.findFirst({
       where: {
         nombre: 'Auxiliar de Mantenimiento Plantel',
         areaId: subAreaAdministracion.id,
       },
     });
+
     if (puestoMantenimientoPlantel) {
-      await crearKPIs([
+      const kpisMantenimientoPlantel = [
         {
           key: 'ADM-MAN-001',
           indicador: 'Cumplimiento del mantenimiento preventivo',
@@ -661,16 +704,33 @@ async function seedKPIsAdministrativos() {
           sentido: 'Menor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisMantenimientoPlantel) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaAdministracion.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
-    console.log('✅ KPIs de Administración completados\n');
+
+    console.log(`✅ KPIs de Administración completados\n`);
   }
 
-  // ── FLOTA VEHICULAR ───────────────────────────────────────────
+  // ==============================================
+  // SUB-ÁREA: FLOTA VEHICULAR
+  // ==============================================
   console.log('📁 Procesando KPIs de Flota Vehicular...');
+
   const subAreaFlotaVehicular = await prisma.area.findFirst({
     where: { nombre: 'Flota Vehicular', areaPadreId: areaAdministrativa.id },
   });
+
   if (!subAreaFlotaVehicular) {
     console.log('⚠️  Sub-área Flota Vehicular no encontrada, saltando...\n');
   } else {
@@ -680,8 +740,9 @@ async function seedKPIsAdministrativos() {
         areaId: subAreaFlotaVehicular.id,
       },
     });
+
     if (puestoEncargadoFlota) {
-      await crearKPIs([
+      const kpisFlota = [
         {
           key: 'FLO-MAN-001',
           indicador: 'Registro de presupuesto de mantenimiento Preventivo',
@@ -816,7 +877,7 @@ async function seedKPIsAdministrativos() {
           puestoId: puestoEncargadoFlota.id,
           tipoCalculo: 'tiempo',
           formulaCalculo: JSON.stringify({
-            descripcion: 'Tiempo de entrega del vehículo en reparaciones mayor',
+            descripcion: 'Tiempo de entrega del vehículo en reparaciones menor',
           }),
           meta: 15,
           unidad: 'días',
@@ -870,19 +931,37 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
-      console.log('✅ KPIs de Flota Vehicular completados\n');
+      ];
+
+      for (const kpi of kpisFlota) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaFlotaVehicular.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
+
+      console.log(`✅ KPIs de Flota Vehicular completados\n`);
     }
   }
 
-  // ── ISO ───────────────────────────────────────────────────────
+  // ==============================================
+  // SUB-ÁREA: ISO
+  // ==============================================
   console.log('📁 Procesando KPIs de ISO...');
+
   const subAreaISO = await prisma.area.findFirst({
     where: { nombre: 'ISO', areaPadreId: areaAdministrativa.id },
   });
+
   if (!subAreaISO) {
     console.log('⚠️  Sub-área ISO no encontrada, saltando...\n');
   } else {
+    // PUESTO: Oficial ISO / Gestor de Procesos
     const puestoOficialISO = await prisma.puesto.findFirst({
       where: {
         OR: [
@@ -891,8 +970,9 @@ async function seedKPIsAdministrativos() {
         ],
       },
     });
+
     if (puestoOficialISO) {
-      await crearKPIs([
+      const kpisOficialISO = [
         {
           key: 'ISO-CER-001',
           indicador:
@@ -1110,14 +1190,28 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisOficialISO) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaISO.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Auxiliar ISO
     const puestoAuxiliarISO = await prisma.puesto.findFirst({
       where: { nombre: 'Auxiliar ISO', areaId: subAreaISO.id },
     });
+
     if (puestoAuxiliarISO) {
-      await crearKPIs([
+      const kpisAuxiliarISO = [
         {
           key: 'ISO-AUX-001',
           indicador: 'Documentación SGC actualizada',
@@ -1181,27 +1275,46 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisAuxiliarISO) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaISO.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
-    console.log('✅ KPIs de ISO completados\n');
+
+    console.log(`✅ KPIs de ISO completados\n`);
   }
 
-  // ── SYSO ──────────────────────────────────────────────────────
+  // ==============================================
+  // SUB-ÁREA: SYSO
+  // ==============================================
   console.log('📁 Procesando KPIs de SYSO...');
+
   const subAreaSYSO = await prisma.area.findFirst({
     where: { nombre: 'SYSO', areaPadreId: areaAdministrativa.id },
   });
+
   if (!subAreaSYSO) {
     console.log('⚠️  Sub-área SYSO no encontrada, saltando...\n');
   } else {
+    // PUESTO: Oficial de SYSO Unidades de Negocio
     const puestoSYSOUnidades = await prisma.puesto.findFirst({
       where: {
         nombre: 'Oficial de SYSO Unidades de Negocio',
         areaId: subAreaSYSO.id,
       },
     });
+
     if (puestoSYSOUnidades) {
-      await crearKPIs([
+      const kpisSYSOUnidades = [
         {
           key: 'SYS-UNI-001',
           indicador: 'Auditorías de Formularios llenados de SYSO por trabajo',
@@ -1277,14 +1390,28 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisSYSOUnidades) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaSYSO.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Oficial de SYSO Proyectos
     const puestoSYSOProyectos = await prisma.puesto.findFirst({
       where: { nombre: 'Oficial de SYSO Proyectos', areaId: subAreaSYSO.id },
     });
+
     if (puestoSYSOProyectos) {
-      await crearKPIs([
+      const kpisSYSOProyectos = [
         {
           key: 'SYS-PRO-001',
           indicador: 'Ocurrencia de accidentes graves/mortales',
@@ -1307,7 +1434,7 @@ async function seedKPIsAdministrativos() {
           puestoId: puestoSYSOProyectos.id,
           tipoCalculo: 'conteo',
           formulaCalculo: JSON.stringify({
-            descripcion: '# de accidentes ocurridos menores',
+            descripcion: '# de accidentes ocurridos graves/mortales',
           }),
           meta: 0,
           unidad: 'accidentes',
@@ -1405,24 +1532,43 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisSYSOProyectos) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaSYSO.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
-    console.log('✅ KPIs de SYSO completados\n');
+
+    console.log(`✅ KPIs de SYSO completados\n`);
   }
 
-  // ── CONTABILIDAD ──────────────────────────────────────────────
+  // ==============================================
+  // SUB-ÁREA: CONTABILIDAD
+  // ==============================================
   console.log('📁 Procesando KPIs de Contabilidad...');
+
   const subAreaContabilidad = await prisma.area.findFirst({
     where: { nombre: 'Contabilidad', areaPadreId: areaAdministrativa.id },
   });
+
   if (!subAreaContabilidad) {
     console.log('⚠️  Sub-área Contabilidad no encontrada, saltando...\n');
   } else {
+    // PUESTO: Contador General
     const puestoContadorGeneral = await prisma.puesto.findFirst({
       where: { nombre: 'Contador General', areaId: subAreaContabilidad.id },
     });
+
     if (puestoContadorGeneral) {
-      await crearKPIs([
+      const kpisContadorGeneral = [
         {
           key: 'CON-GEN-001',
           indicador:
@@ -1543,17 +1689,31 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisContadorGeneral) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaContabilidad.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Auditor de Viáticos/Inventario
     const puestoAuditor = await prisma.puesto.findFirst({
       where: {
         nombre: 'Auditor de Viáticos/Inventario',
         areaId: subAreaContabilidad.id,
       },
     });
+
     if (puestoAuditor) {
-      await crearKPIs([
+      const kpisAuditor = [
         {
           key: 'CON-AUD-001',
           indicador: 'Control y Existencia de Activos Fijos',
@@ -1629,14 +1789,28 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisAuditor) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaContabilidad.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Contador Jr.
     const puestoContadorJr = await prisma.puesto.findFirst({
       where: { nombre: 'Contador Jr.', areaId: subAreaContabilidad.id },
     });
+
     if (puestoContadorJr) {
-      await crearKPIs([
+      const kpisContadorJr = [
         {
           key: 'CON-JR-001',
           indicador: 'Ejecución de la actividad contable sin reprocesos',
@@ -1698,14 +1872,28 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisContadorJr) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaContabilidad.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Auxiliar Contable
     const puestoAuxiliarContable = await prisma.puesto.findFirst({
       where: { nombre: 'Auxiliar Contable', areaId: subAreaContabilidad.id },
     });
+
     if (puestoAuxiliarContable) {
-      await crearKPIs([
+      const kpisAuxiliarContable = [
         {
           key: 'CON-AUX-001',
           indicador: 'Ejecución de la actividad contable sin reprocesos',
@@ -1767,19 +1955,37 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisAuxiliarContable) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaContabilidad.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
-    console.log('✅ KPIs de Contabilidad completados\n');
+
+    console.log(`✅ KPIs de Contabilidad completados\n`);
   }
 
-  // ── RECURSOS HUMANOS ──────────────────────────────────────────
+  // ==============================================
+  // SUB-ÁREA: RECURSOS HUMANOS
+  // ==============================================
   console.log('📁 Procesando KPIs de Recursos Humanos...');
+
   const subAreaRRHH = await prisma.area.findFirst({
     where: { nombre: 'Recursos Humanos', areaPadreId: areaAdministrativa.id },
   });
+
   if (!subAreaRRHH) {
     console.log('⚠️  Sub-área Recursos Humanos no encontrada, saltando...\n');
   } else {
+    // PUESTO: Asistente de Recursos Humanos / Recepción
     const puestoAsistenteRRHH = await prisma.puesto.findFirst({
       where: {
         OR: [
@@ -1788,8 +1994,9 @@ async function seedKPIsAdministrativos() {
         ],
       },
     });
+
     if (puestoAsistenteRRHH) {
-      await crearKPIs([
+      const kpisAsistenteRRHH = [
         {
           key: 'RRHH-ASI-001',
           indicador:
@@ -1853,14 +2060,28 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisAsistenteRRHH) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaRRHH.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Encargada de Limpieza
     const puestoLimpieza = await prisma.puesto.findFirst({
       where: { nombre: 'Encargada de Limpieza', areaId: subAreaRRHH.id },
     });
+
     if (puestoLimpieza) {
-      await crearKPIs([
+      const kpisLimpieza = [
         {
           key: 'RRHH-LIM-001',
           indicador: 'Cumplimiento de limpieza',
@@ -1891,14 +2112,28 @@ async function seedKPIsAdministrativos() {
           sentido: 'Menor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisLimpieza) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaRRHH.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Encargado de Reclutamiento
     const puestoReclutamiento = await prisma.puesto.findFirst({
       where: { nombre: 'Encargado de Reclutamiento', areaId: subAreaRRHH.id },
     });
+
     if (puestoReclutamiento) {
-      await crearKPIs([
+      const kpisReclutamiento = [
         {
           key: 'RRHH-REC-001',
           indicador: 'Tiempo de cobertura de vacantes',
@@ -1978,17 +2213,31 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisReclutamiento) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaRRHH.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Generalista de Recursos Humanos
     const puestoGeneralista = await prisma.puesto.findFirst({
       where: {
         nombre: 'Generalista de Recursos Humanos',
         areaId: subAreaRRHH.id,
       },
     });
+
     if (puestoGeneralista) {
-      await crearKPIs([
+      const kpisGeneralista = [
         {
           key: 'RRHH-GEN-001',
           indicador: 'Procesos disciplinarios gestionados en plazo',
@@ -2100,14 +2349,28 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisGeneralista) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaRRHH.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
+    // PUESTO: Gestor de Recursos Humanos
     const puestoGestor = await prisma.puesto.findFirst({
       where: { nombre: 'Gestor de Recursos Humanos', areaId: subAreaRRHH.id },
     });
+
     if (puestoGestor) {
-      await crearKPIs([
+      const kpisGestor = [
         {
           key: 'RRHH-GES-001',
           indicador: 'Ejecución del plan de cultura organizacional',
@@ -2248,10 +2511,22 @@ async function seedKPIsAdministrativos() {
           sentido: 'Mayor es mejor',
           activo: true,
         },
-      ]);
+      ];
+
+      for (const kpi of kpisGestor) {
+        const existente = await prisma.kPI.findUnique({
+          where: { key: kpi.key },
+        });
+        if (!existente) {
+          await prisma.kPI.create({ data: { ...kpi, area: subAreaRRHH.nombre } });
+          console.log(`  ✅ KPI ${kpi.key} creado`);
+        } else {
+          console.log(`  ⏭️  KPI ${kpi.key} ya existe`);
+        }
+      }
     }
 
-    console.log('✅ KPIs de Recursos Humanos completados\n');
+    console.log(`✅ KPIs de Recursos Humanos completados\n`);
   }
 
   console.log('🎉 Seed de KPIs Administrativos completado!\n');

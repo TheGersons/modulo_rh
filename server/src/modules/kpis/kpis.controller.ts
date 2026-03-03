@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   Query,
+  Request,
 } from '@nestjs/common';
 import { KpisService } from './kpis.service';
 import { CreateKpiDto } from './dto/create-kpi.dto';
@@ -20,10 +21,14 @@ import { UseGuards } from '@nestjs/common';
 export class KpisController {
   constructor(private readonly kpisService: KpisService) {}
 
+  // ── POST sin parámetro ─────────────────────────────────────
+
   @Post()
   create(@Body() createKpiDto: CreateKpiDto) {
     return this.kpisService.create(createKpiDto);
   }
+
+  // ── GET con paths fijos (DEBEN ir antes de :id) ────────────
 
   @Get()
   findAll(
@@ -40,10 +45,32 @@ export class KpisController {
     });
   }
 
+  @Get('mis-kpis')
+  getMisKpis(@Request() req) {
+    return this.kpisService.getKpisPorEmpleado(req.user.userId);
+  }
+
+  @Get('mis-evidencias')
+  getMisEvidencias(@Request() req, @Query('periodo') periodo?: string) {
+    return this.kpisService.getMisEvidencias(
+      req.user.userId,
+      periodo ?? getPeriodoActual(),
+    );
+  }
+
+  @Get('pendientes-revision')
+  getEvidenciasPendientes(@Request() req) {
+    return this.kpisService.getEvidenciasPendientesKPI(req.user.userId);
+  }
+
+  // ── GET con parámetro (siempre al final de los GETs) ───────
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.kpisService.findOne(id);
   }
+
+  // ── PATCH / DELETE ─────────────────────────────────────────
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateKpiDto: UpdateKpiDto) {
@@ -60,6 +87,8 @@ export class KpisController {
     return this.kpisService.toggle(id);
   }
 
+  // ── POST con paths fijos ───────────────────────────────────
+
   @Post('calcular')
   calcular(@Body() calcularDto: CalcularKpiDto) {
     return this.kpisService.calcularResultado(calcularDto);
@@ -74,4 +103,62 @@ export class KpisController {
       body.tipoCalculo,
     );
   }
+
+  // ── EVIDENCIAS KPI ─────────────────────────────────────────
+
+  @Post('evidencias')
+  subirEvidencia(
+    @Body()
+    body: {
+      kpiId: string;
+      periodo?: string;
+      archivoUrl: string;
+      tipo: string;
+      nombre: string;
+      tamanio?: number;
+      valorNumerico?: number;
+      nota?: string;
+    },
+    @Request() req,
+  ) {
+    return this.kpisService.subirEvidenciaKPI({
+      ...body,
+      empleadoId: req.user.userId,
+      periodo: body.periodo ?? getPeriodoActual(),
+    });
+  }
+
+  @Post('evidencias/:id/revisar')
+  revisarEvidencia(
+    @Param('id') id: string,
+    @Body() body: { status: 'aprobada' | 'rechazada'; motivoRechazo?: string },
+    @Request() req,
+  ) {
+    return this.kpisService.revisarEvidenciaKPI(id, req.user.userId, body);
+  }
+
+  @Post('evidencias/:id/apelar')
+  apelarEvidencia(
+    @Param('id') id: string,
+    @Body() body: { apelacion: string },
+  ) {
+    return this.kpisService.apelarEvidenciaKPI(id, body.apelacion);
+  }
+
+  @Post('evidencias/:id/responder-apelacion')
+  responderApelacion(
+    @Param('id') id: string,
+    @Body() body: { respuesta: string; confirmaRechazo: boolean },
+  ) {
+    return this.kpisService.responderApelacionKPI(
+      id,
+      body.respuesta,
+      body.confirmaRechazo,
+    );
+  }
+}
+
+function getPeriodoActual(): string {
+  const now = new Date();
+  return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
 }

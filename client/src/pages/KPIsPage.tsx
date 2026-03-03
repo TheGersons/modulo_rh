@@ -22,7 +22,7 @@ interface KPI {
   key: string;
   area: string;
   areaId: string;
-  puesto?: string;
+  puesto?: string | { id: string; nombre: string };
   indicador: string;
   descripcion?: string;
   tipoCalculo: string;
@@ -43,6 +43,7 @@ interface KPI {
 interface Area {
   id: string;
   nombre: string;
+  areaPadreId?: string | null;
 }
 
 export default function KPIsPage() {
@@ -54,16 +55,22 @@ export default function KPIsPage() {
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
-  const [filtroArea, setFiltroArea] = useState<string>('todas');
+  const [filtroArea, _setFiltroArea] = useState<string>('todas');
   const [filtroCriticidad, setFiltroCriticidad] = useState<string>('todas');
   const [filtroTipo, setFiltroTipo] = useState<string>('todos');
   const [filtroEstado, setFiltroEstado] = useState<boolean | undefined>(undefined);
+  const [filtroAreaPadre, setFiltroAreaPadre] = useState<string>('todas');
+  const [filtroSubArea, setFiltroSubArea] = useState<string>('todas');
 
   // Paginación
   const [paginaActual, setPaginaActual] = useState(1);
   const [kpisPorPagina] = useState(10);
 
   const puedeGestionarKpis = can('gestionar_kpis');
+  const areasPadre = areas.filter((a) => !a.areaPadreId);
+  const subAreasFiltradas = filtroAreaPadre === 'todas'
+    ? []
+    : areas.filter((a) => a.areaPadreId === filtroAreaPadre);
 
   useEffect(() => {
     cargarDatos();
@@ -72,6 +79,10 @@ export default function KPIsPage() {
   useEffect(() => {
     setPaginaActual(1);
   }, [searchTerm, filtroArea, filtroCriticidad, filtroTipo, filtroEstado]);
+
+  useEffect(() => {
+    setPaginaActual(1);
+  }, [searchTerm, filtroAreaPadre, filtroSubArea, filtroCriticidad, filtroTipo, filtroEstado]);
 
   const cargarDatos = async () => {
     try {
@@ -142,7 +153,11 @@ export default function KPIsPage() {
       kpi.key.toLowerCase().includes(searchTerm.toLowerCase()) ||
       kpi.indicador.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchArea = filtroArea === 'todas' || kpi.areaId === filtroArea;
+    const matchArea =
+      filtroAreaPadre === 'todas' ||
+      (filtroSubArea !== 'todas'
+        ? kpi.areaId === filtroSubArea
+        : subAreasFiltradas.some((sa) => sa.id === kpi.areaId));
     const matchCriticidad = filtroCriticidad === 'todas' || kpi.tipoCriticidad === filtroCriticidad;
     const matchTipo = filtroTipo === 'todos' || kpi.tipoCalculo === filtroTipo;
     const matchEstado = filtroEstado === undefined || kpi.activo === filtroEstado;
@@ -242,7 +257,7 @@ export default function KPIsPage() {
 
         {/* Filtros */}
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
             {/* Búsqueda */}
             <div className="lg:col-span-2 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -255,16 +270,36 @@ export default function KPIsPage() {
               />
             </div>
 
-            {/* Área */}
+            {/* Área padre */}
             <select
-              value={filtroArea}
-              onChange={(e) => setFiltroArea(e.target.value)}
+              value={filtroAreaPadre}
+              onChange={(e) => {
+                setFiltroAreaPadre(e.target.value);
+                setFiltroSubArea('todas'); // reset sub-área al cambiar padre
+              }}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="todas">Todas las áreas</option>
-              {areas.map((area) => (
+              {areasPadre.map((area) => (
                 <option key={area.id} value={area.id}>
                   {area.nombre}
+                </option>
+              ))}
+            </select>
+
+            {/* Sub-área */}
+            <select
+              value={filtroSubArea}
+              onChange={(e) => setFiltroSubArea(e.target.value)}
+              disabled={filtroAreaPadre === 'todas'}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+            >
+              <option value="todas">
+                {filtroAreaPadre === 'todas' ? 'Selecciona un área' : 'Todas las sub-áreas'}
+              </option>
+              {subAreasFiltradas.map((sa) => (
+                <option key={sa.id} value={sa.id}>
+                  {sa.nombre}
                 </option>
               ))}
             </select>
@@ -392,12 +427,16 @@ export default function KPIsPage() {
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                           <div>
                             <p className="text-gray-500">Área</p>
-                            <p className="font-medium text-gray-900">{kpi.areaRelacion?.nombre || kpi.area}</p>
+                            <p className="font-medium text-gray-900">
+                              {kpi.areaRelacion?.nombre || (typeof kpi.area === 'object' ? (kpi.area as any)?.nombre : kpi.area)}
+                            </p>
                           </div>
                           {kpi.puesto && (
                             <div>
                               <p className="text-gray-500">Puesto</p>
-                              <p className="font-medium text-gray-900">{kpi.puesto}</p>
+                              <p className="font-medium text-gray-900">
+                                {typeof kpi.puesto === 'object' ? kpi.puesto?.nombre : kpi.puesto}
+                              </p>
                             </div>
                           )}
                           <div>

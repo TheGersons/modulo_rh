@@ -110,6 +110,34 @@ export default function CrearOrdenPage() {
     setEmpleadosFiltrados(filtrados);
   }, [filtroArea, filtroSubArea, empleados, areas]);
 
+  // Filtrar KPIs según empleados seleccionados y filtros de área
+  useEffect(() => {
+    if (empleadosSeleccionados.length === 0 && filtroArea === 'todas') {
+      setKpisFiltrados(kpis);
+      return;
+    }
+
+    // Obtener las áreas y puestos de los empleados seleccionados
+    const empleadosActivos = empleadosSeleccionados.length > 0
+      ? empleados.filter((e) => empleadosSeleccionados.includes(e.id))
+      : empleadosFiltrados;
+
+    const areaIds = [...new Set(empleadosActivos.map((e) => e.area?.id).filter(Boolean))];
+    const puestoIds = [...new Set(empleadosActivos.map((e) => e.puesto?.id).filter(Boolean))];
+
+    const filtrados = kpis.filter((kpi) => {
+      // KPI sin área ni puesto específico = aplica a todos
+      if (!kpi.areaRelacion && !kpi.puestoRelacion) return true;
+      // KPI de área que coincide con algún empleado seleccionado
+      if (kpi.areaRelacion && areaIds.includes(kpi.areaRelacion.id)) return true;
+      // KPI de puesto que coincide con algún empleado seleccionado
+      if (kpi.puestoRelacion && puestoIds.includes(kpi.puestoRelacion.id)) return true;
+      return false;
+    });
+
+    setKpisFiltrados(filtrados.length > 0 ? filtrados : kpis);
+  }, [empleadosSeleccionados, filtroArea, filtroSubArea, kpis, empleados, empleadosFiltrados]);
+
   const cargarDatos = async () => {
     try {
       setLoading(true);
@@ -137,6 +165,7 @@ export default function CrearOrdenPage() {
         ? prev.filter((id) => id !== empleadoId)
         : [...prev, empleadoId]
     );
+    setKpiId('');
   };
 
   const seleccionarTodos = () => {
@@ -195,6 +224,12 @@ export default function CrearOrdenPage() {
         cantidadTareas: 1,
         fechaLimite: new Date(fechaLimite).toISOString(),
         tipoOrden: 'kpi_sistema',
+        tareas: [
+          {
+            descripcion: descripcion.trim(),
+            orden: 1,
+          },
+        ],
       };
 
       if (empleadosSeleccionados.length === 1) {

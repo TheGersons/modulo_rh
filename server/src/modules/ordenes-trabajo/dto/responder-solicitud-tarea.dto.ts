@@ -1,4 +1,4 @@
-import { IsString, IsIn, IsOptional } from 'class-validator';
+import { IsString, IsIn, IsOptional, IsDateString } from 'class-validator';
 
 export class ResponderSolicitudTareaDto {
   @IsString()
@@ -8,4 +8,8 @@ export class ResponderSolicitudTareaDto {
   @IsString()
   @IsOptional()
   motivoRechazo?: string;
+
+  @IsDateString()
+  @IsOptional()
+  nuevaFechaLimite?: string;
 }

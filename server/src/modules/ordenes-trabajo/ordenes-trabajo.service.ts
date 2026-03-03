@@ -756,10 +756,14 @@ export class OrdenesTrabajoService {
       },
     });
 
-    await this.alertasService.alertaSolicitudTareaPendiente(
-      solicitud,
-      solicitud.ordenTrabajo,
-    );
+    try {
+      await this.alertasService.alertaSolicitudTareaPendiente(
+        solicitud,
+        solicitud.ordenTrabajo,
+      );
+    } catch (error) {
+      console.warn('Error al enviar alerta de solicitud tarea:', error.message);
+    }
 
     return solicitud;
   }
@@ -835,6 +839,13 @@ export class OrdenesTrabajoService {
         fechaRespuesta: new Date(),
       },
     });
+
+    if (responderDto.status === 'aprobada' && responderDto.nuevaFechaLimite) {
+      await this.prisma.ordenTrabajo.update({
+        where: { id: solicitud.ordenTrabajoId },
+        data: { fechaLimite: new Date(responderDto.nuevaFechaLimite) },
+      });
+    }
 
     // Si fue aprobada, crear la tarea
     if (responderDto.status === 'aprobada') {

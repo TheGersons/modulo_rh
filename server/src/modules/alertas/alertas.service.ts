@@ -343,10 +343,12 @@ export class AlertasService {
 
   // Solicitud de tarea pendiente
   async alertaSolicitudTareaPendiente(solicitud: any, orden: any) {
-    const empleado = await this.prisma.user.findUnique({
-      where: { id: orden.empleadoId },
-      select: { areaId: true, nombre: true, apellido: true },
-    });
+    const empleado =
+      solicitud.empleado ??
+      (await this.prisma.user.findUnique({
+        where: { id: solicitud.empleadoId },
+        select: { areaId: true, nombre: true, apellido: true },
+      }));
 
     if (!empleado?.areaId) return;
 

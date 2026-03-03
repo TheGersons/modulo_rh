@@ -1,4 +1,10 @@
-import { IsString, IsEmail, IsOptional, IsBoolean, IsIn } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsOptional,
+  IsBoolean,
+  IsIn,
+} from 'class-validator';
 
 export class UpdateEmpleadoDto {
   @IsString()
@@ -32,7 +38,7 @@ export class UpdateEmpleadoDto {
 
   @IsString()
   @IsOptional()
-  puesto?: string;
+  puestoId?: string;
 
   @IsBoolean()
   @IsOptional()

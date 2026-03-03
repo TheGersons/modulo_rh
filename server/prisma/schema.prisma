@@ -34,6 +34,9 @@ model User {
   puestoId                String?            @map("puesto_id")
   puesto                  Puesto?            @relation("EmpleadoPuesto", fields: [puestoId], references: [id], onDelete: SetNull)
   sessions                Session[]
+  evidenciaKPIs           EvidenciaKPI[]
+  evidenciasKPISubidas    EvidenciaKPI[]     @relation("EvidenciasKPIEmpleado")
+  evidenciasKPIRevisadas  EvidenciaKPI[]     @relation("EvidenciasKPIRevisor")
 
   @@index([areaId])
   @@index([email])
@@ -111,6 +114,7 @@ model KPI {
   evaluacionDetalles EvaluacionDetalle[]
   puestoId           String?             @map("puesto_id")
   puesto             Puesto?             @relation(fields: [puestoId], references: [id], onDelete: SetNull)
+  evidenciaKPIs      EvidenciaKPI[]
 
   @@index([areaId])
   @@index([activo])
@@ -452,4 +456,50 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+model EvidenciaKPI {
+  id         String @id @default(cuid())
+  kpiId      String @map("kpi_id")
+  empleadoId String @map("empleado_id")
+  periodo    String // "2026-03"
+
+  archivoUrl    String  @map("archivo_url")
+  tipo          String // "imagen", "pdf", "video", "documento"
+  nombre        String
+  tamanio       Int?
+  valorNumerico Float?  @map("valor_numerico")
+  nota          String? @db.Text
+
+  intento Int @default(1)
+
+  status        String  @default("pendiente_revision")
+  // "pendiente_revision" | "aprobada" | "rechazada"
+  motivoRechazo String? @map("motivo_rechazo") @db.Text
+
+  // Apelación
+  apelacion          String?   @db.Text
+  respuestaApelacion String?   @map("respuesta_apelacion") @db.Text
+  fechaApelacion     DateTime? @map("fecha_apelacion")
+
+  esFueraDeTiempo Boolean   @default(false) @map("es_fuera_de_tiempo")
+  fechaSubida     DateTime  @default(now()) @map("fecha_subida")
+  revisadoPor     String?   @map("revisado_por")
+  fechaRevision   DateTime? @map("fecha_revision")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  kpi      KPI     @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  empleado User    @relation("EvidenciasKPIEmpleado", fields: [empleadoId], references: [id])
+  revisor  User?   @relation("EvidenciasKPIRevisor", fields: [revisadoPor], references: [id])
+  user     User?   @relation(fields: [userId], references: [id])
+  userId   String?
+
+  @@index([kpiId])
+  @@index([empleadoId])
+  @@index([periodo])
+  @@index([status])
+  @@map("evidencias_kpi")
 }

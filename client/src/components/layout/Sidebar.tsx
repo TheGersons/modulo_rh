@@ -44,12 +44,30 @@ export default function Sidebar() {
             icon: Target,
             label: 'KPIs',
             submenu: [
-                { icon: Target, label: 'Vista General', path: '/kpis', exact: true },
+                {
+                    icon: Target,
+                    label: 'Vista General',
+                    path: '/kpis',
+                    exact: true,
+                    allowedRoles: ['admin', 'jefe', 'rrhh'],
+                },
+                {
+                    icon: ClipboardCheck,
+                    label: 'Mis KPIs',
+                    path: '/mis-kpis',
+                    exact: true
+                },
+                {
+                    icon: ClipboardCheck,
+                    label: 'Revisión de Evidencias',
+                    path: '/revision-evidencias',
+                    allowedRoles: ['admin', 'jefe', 'rrhh']
+                },
                 {
                     icon: Edit,
                     label: 'Gestionar KPIs',
                     path: '/configuracion/kpis',
-                    allowedRoles: ['admin', 'jefe'],
+                    allowedRoles: ['admin', 'rrhh'],
                 },
             ],
         },
@@ -57,13 +75,25 @@ export default function Sidebar() {
             icon: Briefcase,
             label: 'Órdenes de Trabajo',
             submenu: [
-                { icon: Briefcase, label: 'Ver Órdenes', path: '/ordenes', exact: true },
+                {
+                    icon: Briefcase,
+                    label: 'Ver Órdenes',    // admin/jefe/rrhh ven todas
+                    path: '/ordenes',
+                    exact: true,
+                    allowedRoles: ['admin', 'jefe', 'rrhh'],
+                },
+                {
+                    icon: ClipboardCheck,
+                    label: 'Mis Órdenes',   // empleado ve las suyas
+                    path: '/mis-ordenes',
+                    exact: true,
+                },
                 { icon: Plus, label: 'Nueva Orden', path: '/ordenes/crear' },
                 {
                     icon: Inbox,
                     label: 'Solicitudes',
                     path: '/solicitudes',
-                    allowedRoles: ['admin', 'jefe'],
+                    allowedRoles: ['admin', 'jefe', 'empleado', 'rrhh'],
                 },
             ],
         },
@@ -87,6 +117,7 @@ export default function Sidebar() {
             label: 'Empleados',
             path: '/empleados',
             exact: true,
+            allowedRoles: ['admin', 'rrhh'],
         },
         {
             icon: Settings,
@@ -109,7 +140,7 @@ export default function Sidebar() {
                     icon: Settings,
                     label: 'Preferencias',
                     path: '/configuracion',
-                    exact: true, // IMPORTANTE: evita que /configuracion active /configuracion/areas
+                    exact: true,
                 },
             ],
         },
@@ -217,8 +248,8 @@ export default function Sidebar() {
                             <button
                                 onClick={() => handleNavigation(item)}
                                 className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${highlighted
-                                        ? 'bg-white text-blue-700 shadow-lg'
-                                        : 'text-blue-100 hover:bg-blue-600/30'
+                                    ? 'bg-white text-blue-700 shadow-lg'
+                                    : 'text-blue-100 hover:bg-blue-600/30'
                                     }`}
                             >
                                 <div className="flex items-center gap-3">
@@ -233,8 +264,8 @@ export default function Sidebar() {
                                     {item.badge && (
                                         <span
                                             className={`px-2 py-1 text-xs font-bold rounded-full ${highlighted
-                                                    ? 'bg-blue-100 text-blue-700'
-                                                    : 'bg-blue-600 text-white'
+                                                ? 'bg-blue-100 text-blue-700'
+                                                : 'bg-blue-600 text-white'
                                                 }`}
                                         >
                                             {item.badge}
@@ -261,8 +292,8 @@ export default function Sidebar() {
                                                 key={subItem.label}
                                                 onClick={() => subItem.path && navigate(subItem.path)}
                                                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 ${isSubActive
-                                                        ? 'bg-blue-600 text-white shadow-md'
-                                                        : 'text-blue-200 hover:bg-blue-600/20 hover:text-white'
+                                                    ? 'bg-blue-600 text-white shadow-md'
+                                                    : 'text-blue-200 hover:bg-blue-600/20 hover:text-white'
                                                     }`}
                                             >
                                                 <SubIcon

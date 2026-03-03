@@ -284,12 +284,14 @@ export const ordenesTrabajoService = {
     id: string,
     status: "aprobada" | "rechazada",
     motivoRechazo?: string,
+    fechaLimite?: string,
   ): Promise<any> => {
     const response = await apiClient.post(
       API_ENDPOINTS.solicitudTareaResponder(id),
       {
         status,
         motivoRechazo,
+        fechaLimite,
       },
     );
     return response.data;

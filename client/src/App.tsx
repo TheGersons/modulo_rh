@@ -19,6 +19,10 @@ import SolicitudesPage from './pages/SolicitudesPage';
 import CerrarPeriodoPage from './pages/CerrarPeriodoPage';
 import AreasPage from './pages/AreasPage';
 import PuestosPage from './pages/PuestosPage';
+import MisOrdenesPage from './pages/MisOrdenesPage';
+import DetalleOrdenEmpleadoPage from './pages/DetalleOrdenEmpleadoPage';
+import MisKPIsPage from './pages/MisKpisPage';
+import RevisionEvidenciasPage from './pages/RevisionEvidenciasPage';
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -51,7 +55,7 @@ function AppRoutes() {
       <Route
         path="/kpis"
         element={
-          <PrivateRoute>
+          <PrivateRoute allowedRoles={['admin', 'jefe', 'rrhh']}>
             <KPIsPage />
           </PrivateRoute>
         }
@@ -60,7 +64,7 @@ function AppRoutes() {
       <Route
         path="/ordenes"
         element={
-          <PrivateRoute>
+          <PrivateRoute >
             <Layout>
               <OrdenesTrabajoPage />
             </Layout>
@@ -131,7 +135,7 @@ function AppRoutes() {
       <Route
         path="/empleados"
         element={
-          <PrivateRoute>
+          <PrivateRoute allowedRoles={['admin', 'rrhh']}>
             <EmpleadosPage />
           </PrivateRoute>
         }
@@ -140,7 +144,7 @@ function AppRoutes() {
       <Route
         path="/puestos"
         element={
-          <PrivateRoute>
+          <PrivateRoute allowedRoles={['admin', 'rrhh']}>
             <PuestosPage />
           </PrivateRoute>
         }
@@ -165,6 +169,26 @@ function AppRoutes() {
         }
       />
 
+      // Mis Órdenes - vista del empleado
+      <Route
+        path="/mis-ordenes"
+        element={
+          <PrivateRoute>
+            <MisOrdenesPage />
+          </PrivateRoute>
+        }
+      />
+
+// Detalle de mi orden - empleado sube evidencias
+      <Route
+        path="/mis-ordenes/:id"
+        element={
+          <PrivateRoute>
+            <DetalleOrdenEmpleadoPage />
+          </PrivateRoute>
+        }
+      />
+
       {/* Gestión de KPIs - Solo admin y jefe */}
       <Route
         path="/configuracion/kpis"
@@ -178,6 +202,20 @@ function AppRoutes() {
           </PrivateRoute>
         }
       />
+      <Route
+        path="/mis-kpis"
+        element={
+          <PrivateRoute>
+            <MisKPIsPage />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/revision-evidencias"
+        element={
+          <PrivateRoute allowedRoles={['admin', 'RRHH', 'jefe']}>
+            <RevisionEvidenciasPage />
+          </PrivateRoute>} />
 
       {/* Redirect */}
       <Route path="/" element={<Navigate to="/dashboard" />} />
