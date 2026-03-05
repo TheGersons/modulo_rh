@@ -12,6 +12,7 @@ import {
     Plus,
     Edit,
     Building,
+    Lock,
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -30,7 +31,7 @@ interface MenuItem {
 export default function Sidebar() {
     const navigate = useNavigate();
     const location = useLocation();
-    const { can, isAdmin, isRRHH } = usePermissions();
+    const { userRole } = usePermissions();
     const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
 
     const menuItems: MenuItem[] = [
@@ -144,6 +145,14 @@ export default function Sidebar() {
                 },
             ],
         },
+        //vista confidencial solo para admin
+        {
+            icon: Lock,
+            label: 'Asignacion de Revisores',
+            path: '/asignacion-revisores',
+            exact: true,
+            allowedRoles: ['admin'],
+        },
     ];
 
     // Filtrar items según permisos
@@ -151,16 +160,14 @@ export default function Sidebar() {
         return items
             .map((item) => {
                 if (item.allowedRoles) {
-                    const hasPermission = isAdmin || isRRHH || item.allowedRoles.some((role) => can(role as any));
+                    const hasPermission = item.allowedRoles.includes(userRole || '');
                     if (!hasPermission) return null;
                 }
-
                 if (item.submenu) {
                     const filteredSubmenu = filterMenuItems(item.submenu);
                     if (filteredSubmenu.length === 0) return null;
                     return { ...item, submenu: filteredSubmenu };
                 }
-
                 return item;
             })
             .filter((item): item is MenuItem => item !== null);

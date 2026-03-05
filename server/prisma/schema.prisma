@@ -37,6 +37,8 @@ model User {
   evidenciaKPIs           EvidenciaKPI[]
   evidenciasKPISubidas    EvidenciaKPI[]     @relation("EvidenciasKPIEmpleado")
   evidenciasKPIRevisadas  EvidenciaKPI[]     @relation("EvidenciasKPIRevisor")
+  revisoresAsignados      RevisorAsignado[]  @relation("EmpleadoRevisor")
+  asignadoComoRevisor     RevisorAsignado[]  @relation("RevisorDeEmpleado")
 
   @@index([areaId])
   @@index([email])
@@ -502,4 +504,27 @@ model EvidenciaKPI {
   @@index([periodo])
   @@index([status])
   @@map("evidencias_kpi")
+}
+
+model RevisorAsignado {
+  id         String @id @default(cuid())
+  empleadoId String @map("empleado_id") // Quien SUBE evidencias
+  revisorId  String @map("revisor_id") // Quien las REVISA
+
+  // Motivo / contexto de la excepción (para auditoría)
+  motivo String? @db.Text
+
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  empleado User @relation("EmpleadoRevisor", fields: [empleadoId], references: [id], onDelete: Cascade)
+  revisor  User @relation("RevisorDeEmpleado", fields: [revisorId], references: [id], onDelete: Cascade)
+
+  // Un empleado solo puede tener un revisor activo asignado a la vez
+  @@unique([empleadoId, activo])
+  @@index([empleadoId])
+  @@index([revisorId])
+  @@map("revisores_asignados")
 }

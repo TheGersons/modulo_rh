@@ -1,42 +1,56 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Users,
-  Briefcase,
-  Target,
-  TrendingUp,
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  Award,
-  BarChart3,
-  ArrowRight,
-  Activity,
-  Zap,
-  FileText,
-  Building,
-  FolderOpen,
-  TrendingDown,
-  Trophy,
+  Users, Briefcase, Target, TrendingUp, AlertTriangle, CheckCircle,
+  Clock, Award, BarChart3, ArrowRight, Activity, Zap, FileText,
+  Building, FolderOpen, TrendingDown, Trophy, X, Info, Shield,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/layout/Layout';
 import { estadisticasService } from '../services/estadisticas.service';
 
-interface DashboardStats {
+// ─── Tipos ───────────────────────────────────────────────────────────────────
+
+interface StatsGlobal {
   empleados: { total: number };
   areas: { total: number; principales: number; subAreas: number };
   kpis: { total: number };
   puestos: { total: number };
-  ordenes: {
-    total: number;
-    activas: number;
-    completadas: number;
-    vencidas: number;
-    porcentajeCompletadas: number;
-  };
+  ordenes: { total: number; activas: number; completadas: number; vencidas: number; porcentajeCompletadas: number };
   alertas: { activas: number };
   evaluaciones: { recientes: number };
+}
+
+interface StatsArea {
+  area: { id: string; nombre: string; jefe: string };
+  empleados: { total: number };
+  kpis: { total: number };
+  ordenes: { total: number; activas: number; completadas: number; vencidas: number };
+  alertas: { activas: number };
+  evaluaciones: { recientes: number };
+  ranking: { empleado: string; promedio: number }[];
+}
+
+interface StatsEmpleado {
+  empleado: { id: string; nombre: string; puesto: string; area: string };
+  ordenes: { total: number; activas: number; completadas: number; vencidas: number; tasaCumplimiento: number };
+  evaluaciones: { total: number; ultimoPromedio: number; ultimosKpisRojos: number };
+}
+
+interface Alerta {
+  id: string;
+  tipo: string;
+  nivel: string;
+  titulo: string;
+  descripcion: string;
+  accionSugerida?: string;
+  status: string;
+  fechaDeteccion: string;
+  empleado?: {         // ← AGREGAR
+    nombre: string;
+    apellido: string;
+    puesto?: { nombre: string };
+  };
 }
 
 interface AreaRanking {
@@ -53,63 +67,309 @@ interface TendenciaData {
   vencidas: number;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const NIVEL_CONFIG: Record<string, { dot: string; bg: string; text: string; badge: string }> = {
+  ALTO: { dot: 'bg-red-500', bg: 'bg-red-50', text: 'text-red-700', badge: 'bg-red-100 text-red-700' },
+  MEDIO: { dot: 'bg-yellow-500', bg: 'bg-yellow-50', text: 'text-yellow-700', badge: 'bg-yellow-100 text-yellow-700' },
+  BAJO: { dot: 'bg-blue-500', bg: 'bg-blue-50', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-700' },
+};
+
+const formatTiempoRelativo = (fecha: string) => {
+  const diff = Date.now() - new Date(fecha).getTime();
+  const mins = Math.floor(diff / 60000);
+  const horas = Math.floor(diff / 3600000);
+  const dias = Math.floor(diff / 86400000);
+  if (mins < 1) return 'Ahora mismo';
+  if (mins < 60) return `Hace ${mins}m`;
+  if (horas < 24) return `Hace ${horas}h`;
+  return `Hace ${dias}d`;
+};
+
+const getTasaColor = (pct: number) => {
+  if (pct >= 80) return 'from-green-500 to-emerald-500';
+  if (pct >= 50) return 'from-yellow-500 to-amber-500';
+  return 'from-red-500 to-rose-500';
+};
+
+// ─── Sub-componentes ─────────────────────────────────────────────────────────
+
+function StatCard({
+  icon: Icon, iconBg, label, value, sub, onClick, highlight,
+}: {
+  icon: any; iconBg: string; label: string; value: string | number;
+  sub?: React.ReactNode; onClick?: () => void; highlight?: boolean;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      className={`bg-white rounded-2xl p-6 shadow-sm border transition-all ${onClick ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5' : ''
+        } ${highlight ? 'border-red-300 bg-red-50' : 'border-gray-100'}`}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${iconBg}`}>
+          <Icon className="w-6 h-6 text-white" />
+        </div>
+        {onClick && <ArrowRight className="w-4 h-4 text-gray-300" />}
+      </div>
+      <p className="text-sm text-gray-500 mb-1">{label}</p>
+      <p className={`text-3xl font-bold mb-2 ${highlight ? 'text-red-600' : 'text-gray-900'}`}>{value}</p>
+      {sub && <div className="text-xs">{sub}</div>}
+    </div>
+  );
+}
+
+function OrdenesPanel({ ordenes, porcentaje }: {
+  ordenes: { total: number; activas: number; completadas: number; vencidas: number };
+  porcentaje?: number;
+}) {
+  const pct = porcentaje ?? (ordenes.total > 0 ? (ordenes.completadas / ordenes.total) * 100 : 0);
+  return (
+    <>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        {[
+          { label: 'Total', val: ordenes.total, color: 'text-gray-700', bg: 'bg-gray-50 border-gray-200' },
+          { label: 'Activas', val: ordenes.activas, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
+          { label: 'Completadas', val: ordenes.completadas, color: 'text-green-600', bg: 'bg-green-50 border-green-200' },
+          { label: 'Vencidas', val: ordenes.vencidas, color: 'text-red-600', bg: 'bg-red-50 border-red-200' },
+        ].map(({ label, val, color, bg }) => (
+          <div key={label} className={`p-4 rounded-xl border ${bg}`}>
+            <p className="text-xs font-semibold text-gray-500 mb-2">{label}</p>
+            <p className={`text-3xl font-bold ${color}`}>{val}</p>
+          </div>
+        ))}
+      </div>
+      <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-blue-600" />
+            Tasa de Cumplimiento
+          </span>
+          <span className={`text-xl font-bold ${pct >= 80 ? 'text-green-600' : pct >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+            {pct.toFixed(1)}%
+          </span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-3">
+          <div
+            className={`h-3 rounded-full bg-gradient-to-r ${getTasaColor(pct)} transition-all duration-700`}
+            style={{ width: `${Math.min(100, pct)}%` }}
+          />
+        </div>
+        <p className="text-xs text-gray-500 mt-1">{ordenes.completadas} de {ordenes.total} órdenes completadas</p>
+      </div>
+    </>
+  );
+}
+
+function AlertasModal({ alertas, onClose, onResolver }: {
+  alertas: Alerta[];
+  onClose: () => void;
+  onResolver: (id: string) => void;
+}) {
+  const [filtro, setFiltro] = useState<'todas' | 'ALTO' | 'MEDIO' | 'BAJO'>('todas');
+  const filtradas = filtro === 'todas' ? alertas : alertas.filter(a => a.nivel === filtro);
+  const counts = { ALTO: alertas.filter(a => a.nivel === 'ALTO').length, MEDIO: alertas.filter(a => a.nivel === 'MEDIO').length, BAJO: alertas.filter(a => a.nivel === 'BAJO').length };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Alertas Activas</h2>
+              <p className="text-xs text-gray-500">{alertas.length} alertas pendientes</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Filtros */}
+        <div className="flex gap-2 px-6 py-3 border-b border-gray-100">
+          {(['todas', 'ALTO', 'MEDIO', 'BAJO'] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFiltro(f)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${filtro === f ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+            >
+              {f === 'todas' ? `Todas (${alertas.length})` : `${f} (${counts[f]})`}
+            </button>
+          ))}
+        </div>
+
+        {/* Lista */}
+        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-3">
+          {filtradas.length === 0 ? (
+            <div className="text-center py-10">
+              <CheckCircle className="w-12 h-12 text-green-300 mx-auto mb-3" />
+              <p className="text-gray-500 text-sm">No hay alertas en este nivel</p>
+            </div>
+          ) : (
+            filtradas.map((alerta) => {
+              const cfg = NIVEL_CONFIG[alerta.nivel] ?? NIVEL_CONFIG['BAJO'];
+              return (
+                <div key={alerta.id} className={`rounded-xl p-4 border ${cfg.bg} ${alerta.nivel === 'ALTO' ? 'border-red-200' : alerta.nivel === 'MEDIO' ? 'border-yellow-200' : 'border-blue-200'} group`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${cfg.dot}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <p className={`text-sm font-semibold ${cfg.text}`}>{alerta.titulo}</p>
+                          {alerta.empleado && (
+                            <p className="text-xs font-semibold text-blue-600 mt-0.5">
+                              👤 {alerta.empleado.nombre} {alerta.empleado.apellido}
+                              {alerta.empleado.puesto && ` · ${alerta.empleado.puesto.nombre}`}
+                            </p>
+                          )}
+
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.badge}`}>{alerta.nivel}</span>
+                        </div>
+                        <p className="text-xs text-gray-600 leading-relaxed">{alerta.descripcion}</p>
+                        {alerta.accionSugerida && (
+                          <p className={`text-xs mt-1.5 font-medium ${cfg.text}`}>→ {alerta.accionSugerida}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1">{formatTiempoRelativo(alerta.fechaDeteccion)}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onResolver(alerta.id)}
+                      className="flex-shrink-0 p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                      title="Marcar como resuelta"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex items-center justify-between">
+          <p className="text-xs text-gray-500">Haz hover sobre una alerta para resolverla</p>
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg transition-colors">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [stats, setStats] = useState<DashboardStats>({
-    empleados: { total: 0 },
-    areas: { total: 0, principales: 0, subAreas: 0 },
-    kpis: { total: 0 },
-    puestos: { total: 0 },
-    ordenes: {
-      total: 0,
-      activas: 0,
-      completadas: 0,
-      vencidas: 0,
-      porcentajeCompletadas: 0,
-    },
-    alertas: { activas: 0 },
-    evaluaciones: { recientes: 0 },
-  });
 
+  const esAdmin = user?.role === 'admin' || user?.role === 'rrhh';
+  const esJefe = user?.role === 'jefe';
+  const esEmpleado = !esAdmin && !esJefe;
+
+  // Stats según rol
+  const [statsGlobal, setStatsGlobal] = useState<StatsGlobal | null>(null);
+  const [statsArea, setStatsArea] = useState<StatsArea | null>(null);
+  const [statsEmpleado, setStatsEmpleado] = useState<StatsEmpleado | null>(null);
+
+  // Datos globales (todos los roles)
   const [areasRanking, setAreasRanking] = useState<AreaRanking[]>([]);
   const [tendencias, setTendencias] = useState<TendenciaData[]>([]);
+
+  // Alertas
+  const [alertas, setAlertas] = useState<Alerta[]>([]);
+  const [showAlertas, setShowAlertas] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    cargarDashboard();
-  }, []);
+  useEffect(() => { cargarDashboard(); }, []);
 
   const cargarDashboard = async () => {
     try {
       setLoading(true);
       setError('');
 
-      const data = await estadisticasService.getDashboard();
-      setStats(data);
-
-      // Cargar tendencias (últimos 6 meses)
-      const tendenciasData = await estadisticasService.getTendencias();
+      // Ranking y tendencias — para todos los roles sin filtro (motivacional)
+      const [rankingData, tendenciasData] = await Promise.all([
+        estadisticasService.getRankingAreas(),
+        estadisticasService.getTendencias(),
+      ]);
+      setAreasRanking(rankingData);
       setTendencias(tendenciasData);
 
-      const rankings = await estadisticasService.getRankingAreas();
-      setAreasRanking(rankings);
-    } catch (error: any) {
-      console.error('Error al cargar dashboard:', error);
+      // Stats y alertas según rol
+      if (esAdmin) {
+        const data = await estadisticasService.getDashboard();
+        setStatsGlobal(data);
+        await cargarAlertas();
+
+      } else if (esJefe && user?.areaId) {
+        const data = await estadisticasService.getByArea(user.areaId);
+        setStatsArea(data);
+        await cargarAlertas(user.areaId);
+
+      } else if (user?.id) {
+        const data = await estadisticasService.getByEmpleado(user.id);
+        setStatsEmpleado(data);
+        // Empleados ven stats globales de estructura (solo lectura)
+        const global = await estadisticasService.getDashboard();
+        setStatsGlobal(global);
+        await cargarAlertas(undefined, user.id);
+      }
+
+    } catch (err: any) {
+      console.error('Error al cargar dashboard:', err);
       setError('Error al cargar estadísticas');
     } finally {
       setLoading(false);
     }
   };
 
+  const cargarAlertas = async (areaId?: string, empleadoId?: string) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const params = new URLSearchParams({ status: 'activa' });
+      if (areaId) params.set('areaId', areaId);
+      else if (empleadoId) params.set('empleadoId', empleadoId);
+      const res = await fetch(`/api/alertas?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      setAlertas(await res.json());
+    } catch (e) {
+      console.error('Error al cargar alertas:', e);
+    }
+  };
+
+  const resolverAlerta = async (alertaId: string) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      await fetch(`/api/alertas/${alertaId}/resolver`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAlertas(prev => prev.filter(a => a.id !== alertaId));
+    } catch (e) {
+      console.error('Error al resolver alerta:', e);
+    }
+  };
+
+  // ─── Loading / Error ───────────────────────────────────────────────────────
+
   if (loading) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-screen">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600 text-lg">Cargando dashboard...</p>
+            <div className="animate-spin rounded-full h-14 w-14 border-b-2 border-blue-600 mx-auto" />
+            <p className="mt-4 text-gray-500">Cargando dashboard...</p>
           </div>
         </div>
       </Layout>
@@ -120,18 +380,13 @@ export default function DashboardPage() {
     return (
       <Layout>
         <div className="p-8">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-6 h-6 text-red-600" />
-              <div>
-                <p className="font-semibold text-red-900">Error al cargar el dashboard</p>
-                <p className="text-sm text-red-700 mt-1">{error}</p>
-              </div>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-6 flex items-center gap-4">
+            <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-red-900">Error al cargar el dashboard</p>
+              <p className="text-sm text-red-700 mt-1">{error}</p>
             </div>
-            <button
-              onClick={cargarDashboard}
-              className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-            >
+            <button onClick={cargarDashboard} className="ml-auto px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">
               Reintentar
             </button>
           </div>
@@ -140,475 +395,410 @@ export default function DashboardPage() {
     );
   }
 
+  // ─── Valores según rol para las cards ─────────────────────────────────────
+
+  const ordenesData = esAdmin
+    ? statsGlobal?.ordenes
+    : esJefe
+      ? statsArea?.ordenes
+      : statsEmpleado?.ordenes;
+
+  const alertasCount = alertas.length;
+  const kpisCount = esAdmin ? statsGlobal?.kpis.total : esJefe ? statsArea?.kpis.total : null;
+  const empleadosCount = esAdmin
+    ? statsGlobal?.empleados.total
+    : esJefe
+      ? statsArea?.empleados.total
+      : statsGlobal?.empleados.total; // empleados ven total global (informativo)
+
+  const labelScope = esAdmin ? 'Global' : esJefe ? `Área: ${statsArea?.area?.nombre ?? ''}` : 'Personal';
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+
   return (
     <Layout>
       <div className="p-8 space-y-6">
-        {/* Welcome Section */}
-        <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
-          {/* Decoración de fondo */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/20 rounded-full blur-2xl"></div>
 
-          <div className="relative z-10">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold mb-2">
-                  ¡Bienvenido de vuelta, {user?.nombre || user?.email?.split('@')[0]}!
-                </h1>
-                <p className="text-blue-100 text-lg mb-4">
-                  {new Date().toLocaleDateString('es-HN', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
+        {/* ── Banner de bienvenida ── */}
+        <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-blue-900 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-72 h-72 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-8 -left-8 w-56 h-56 bg-blue-500/20 rounded-full blur-2xl pointer-events-none" />
+          <div className="relative z-10 flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs bg-white/20 text-blue-100 px-3 py-1 rounded-full font-medium uppercase tracking-wide">
+                  {labelScope}
+                </span>
+                {esAdmin && <Shield className="w-4 h-4 text-yellow-300" />}
+              </div>
+              <h1 className="text-3xl font-bold mb-1">
+                ¡Bienvenido, {user?.nombre || user?.email?.split('@')[0]}!
+              </h1>
+              <p className="text-blue-200 text-sm">
+                {new Date().toLocaleDateString('es-HN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+              {esEmpleado && statsEmpleado && (
+                <p className="text-blue-200 text-sm mt-1">
+                  {statsEmpleado.empleado.puesto} · {statsEmpleado.empleado.area}
                 </p>
-                <div className="flex items-center gap-6 mt-6">
-                  <div className="flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-yellow-300" />
-                    <span className="text-sm text-blue-100">Sistema Operativo</span>
-                  </div>
-                  {stats.ordenes.activas > 0 && (
-                    <div className="flex items-center gap-2">
-                      <Activity className="w-5 h-5 text-green-300" />
-                      <span className="text-sm text-blue-100">{stats.ordenes.activas} Tareas Activas</span>
-                    </div>
-                  )}
+              )}
+              <div className="flex items-center gap-6 mt-5">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-yellow-300" />
+                  <span className="text-sm text-blue-100">Sistema Operativo</span>
                 </div>
-              </div>
-              <div className="hidden md:block">
-                <Award className="w-24 h-24 text-blue-300/30" />
+                {ordenesData && ordenesData.activas > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-green-300" />
+                    <span className="text-sm text-blue-100">{ordenesData.activas} Órdenes Activas</span>
+                  </div>
+                )}
+                {alertasCount > 0 && (
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-300" />
+                    <span className="text-sm text-blue-100">{alertasCount} Alertas pendientes</span>
+                  </div>
+                )}
               </div>
             </div>
+            <Award className="w-24 h-24 text-blue-300/25 hidden md:block" />
           </div>
         </div>
 
-        {/* Stats Grid Principal */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {/* Empleados */}
-          <div
-            className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-lg transition-all cursor-pointer group"
-            onClick={() => navigate('/empleados')}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
-                <Users className="w-6 h-6 text-white" />
-              </div>
-              <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
-            </div>
-            <p className="text-sm text-gray-600 mb-1">Empleados Activos</p>
-            <p className="text-3xl font-bold text-gray-900 mb-2">{stats.empleados.total}</p>
-            <div className="flex items-center gap-1 text-xs text-gray-500">
-              <Activity className="w-3 h-3" />
-              <span>En el sistema</span>
-            </div>
-          </div>
+        {/* ── Cards principales ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
 
-          {/* Áreas */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-lg transition-all">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg">
-                <Building className="w-6 h-6 text-white" />
-              </div>
-            </div>
-            <p className="text-sm text-gray-600 mb-1">Estructura Organizacional</p>
-            <p className="text-3xl font-bold text-gray-900 mb-2">{stats.areas.total}</p>
-            <div className="flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1 text-purple-600">
-                <Building className="w-3 h-3" />
-                {stats.areas.principales} principales
-              </span>
-              <span className="flex items-center gap-1 text-gray-600">
-                <FolderOpen className="w-3 h-3" />
-                {stats.areas.subAreas} sub-áreas
-              </span>
-            </div>
-          </div>
+          {/* Empleados — todos lo ven, pero con scope distinto */}
+          <StatCard
+            icon={Users}
+            iconBg="bg-gradient-to-br from-blue-500 to-blue-600"
+            label={esAdmin ? 'Empleados Activos' : esJefe ? 'Empleados en tu Área' : 'Total Empleados'}
+            value={empleadosCount ?? 0}
+            sub={
+              esAdmin || esEmpleado
+                ? <span className="text-gray-400 flex items-center gap-1"><Activity className="w-3 h-3" /> En el sistema</span>
+                : <span className="text-blue-600">Bajo tu gestión</span>
+            }
+            onClick={esAdmin ? () => navigate('/empleados') : undefined}
+          />
 
-          {/* KPIs */}
-          <div
-            className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-lg transition-all cursor-pointer group"
-            onClick={() => navigate('/kpis')}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg">
-                <Target className="w-6 h-6 text-white" />
+          {/* Estructura — todos lo ven (informativo) */}
+          <StatCard
+            icon={Building}
+            iconBg="bg-gradient-to-br from-purple-500 to-purple-600"
+            label="Estructura Organizacional"
+            value={statsGlobal?.areas.total ?? 0}
+            sub={
+              <div className="flex gap-3">
+                <span className="text-purple-600 flex items-center gap-1"><Building className="w-3 h-3" /> {statsGlobal?.areas.principales} principales</span>
+                <span className="text-gray-400 flex items-center gap-1"><FolderOpen className="w-3 h-3" /> {statsGlobal?.areas.subAreas} sub-áreas</span>
               </div>
-              <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-green-600 group-hover:translate-x-1 transition-all" />
-            </div>
-            <p className="text-sm text-gray-600 mb-1">KPIs Configurados</p>
-            <p className="text-3xl font-bold text-gray-900 mb-2">{stats.kpis.total}</p>
-            <div className="flex items-center gap-1 text-xs text-blue-600">
-              <Zap className="w-3 h-3" />
-              <span>Sistema automático</span>
-            </div>
-          </div>
+            }
+          />
 
-          {/* Alertas */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-lg transition-all">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-gradient-to-br from-red-500 to-red-600 rounded-xl shadow-lg">
-                <AlertTriangle className="w-6 h-6 text-white" />
-              </div>
-            </div>
-            <p className="text-sm text-gray-600 mb-1">Alertas Activas</p>
-            <p className="text-3xl font-bold text-red-600 mb-2">{stats.alertas.activas}</p>
-            {stats.alertas.activas > 0 ? (
-              <div className="flex items-center gap-1 text-xs text-red-600">
-                <AlertTriangle className="w-3 h-3" />
-                <span>Requieren atención</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 text-xs text-green-600">
-                <CheckCircle className="w-3 h-3" />
-                <span>Sin alertas</span>
-              </div>
-            )}
-          </div>
+          {/* KPIs — admin/jefe ven su scope, empleado no ve esta card */}
+          {!esEmpleado ? (
+            <StatCard
+              icon={Target}
+              iconBg="bg-gradient-to-br from-green-500 to-emerald-600"
+              label={esAdmin ? 'KPIs Configurados' : 'KPIs del Área'}
+              value={kpisCount ?? 0}
+              sub={<span className="text-blue-600 flex items-center gap-1"><Zap className="w-3 h-3" /> Sistema automático</span>}
+              onClick={esAdmin ? () => navigate('/kpis') : undefined}
+            />
+          ) : (
+            // Empleado ve su tasa de cumplimiento en lugar de KPIs
+            <StatCard
+              icon={TrendingUp}
+              iconBg="bg-gradient-to-br from-green-500 to-emerald-600"
+              label="Mi Tasa de Cumplimiento"
+              value={`${statsEmpleado?.ordenes.tasaCumplimiento.toFixed(1) ?? 0}%`}
+              sub={
+                <span className={`flex items-center gap-1 ${(statsEmpleado?.ordenes.tasaCumplimiento ?? 0) >= 80 ? 'text-green-600' : 'text-yellow-600'}`}>
+                  {(statsEmpleado?.ordenes.tasaCumplimiento ?? 0) >= 80 ? <CheckCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                  {(statsEmpleado?.ordenes.tasaCumplimiento ?? 0) >= 80 ? 'Buen desempeño' : 'Hay oportunidades de mejora'}
+                </span>
+              }
+            />
+          )}
+
+          {/* Alertas — con funcionalidad, scope por rol */}
+          <StatCard
+            icon={AlertTriangle}
+            iconBg={alertasCount > 0 ? 'bg-gradient-to-br from-red-500 to-rose-600' : 'bg-gradient-to-br from-gray-400 to-gray-500'}
+            label={esAdmin ? 'Alertas Activas' : esJefe ? 'Alertas del Área' : 'Mis Alertas'}
+            value={alertasCount}
+            highlight={alertasCount > 0}
+            sub={
+              alertasCount > 0
+                ? <span className="text-red-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Requieren atención — click para ver</span>
+                : <span className="text-green-600 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Sin alertas activas</span>
+            }
+            onClick={alertasCount > 0 ? () => setShowAlertas(true) : undefined}
+          />
         </div>
 
-        {/* Órdenes de Trabajo - Panel Principal */}
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <Briefcase className="w-6 h-6 text-blue-600" />
-              Estado de Órdenes de Trabajo
+        {/* ── Panel de Órdenes ── */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-blue-600" />
+              {esEmpleado ? 'Mis Órdenes de Trabajo' : 'Estado de Órdenes de Trabajo'}
             </h2>
             <button
-              onClick={() => navigate('/ordenes')}
-              className="flex items-center gap-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors font-medium"
+              onClick={() => navigate(esEmpleado ? '/mis-ordenes' : '/ordenes')}
+              className="flex items-center gap-2 text-sm text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors font-medium"
             >
-              Ver todas
-              <ArrowRight className="w-4 h-4" />
+              Ver todas <ArrowRight className="w-4 h-4" />
             </button>
           </div>
 
-          {stats.ordenes.total === 0 ? (
-            <div className="text-center py-8">
-              <Briefcase className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600 mb-2">No hay órdenes de trabajo aún</p>
-              <button
-                onClick={() => navigate('/ordenes/crear')}
-                className="text-blue-600 hover:text-blue-700 font-medium text-sm"
-              >
-                Crear la primera orden →
-              </button>
+          {!ordenesData || ordenesData.total === 0 ? (
+            <div className="text-center py-10">
+              <Briefcase className="w-14 h-14 text-gray-200 mx-auto mb-3" />
+              <p className="text-gray-500 text-sm">No hay órdenes de trabajo aún</p>
             </div>
           ) : (
-            <>
-              {/* Órdenes Stats Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="p-5 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border border-gray-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 bg-white rounded-lg shadow-sm">
-                      <Briefcase className="w-5 h-5 text-gray-600" />
-                    </div>
-                    <p className="text-sm font-semibold text-gray-600">Total</p>
-                  </div>
-                  <p className="text-3xl font-bold text-gray-900">{stats.ordenes.total}</p>
-                </div>
-
-                <div className="p-5 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border border-blue-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 bg-white rounded-lg shadow-sm">
-                      <Clock className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <p className="text-sm font-semibold text-blue-700">Activas</p>
-                  </div>
-                  <p className="text-3xl font-bold text-blue-600">{stats.ordenes.activas}</p>
-                </div>
-
-                <div className="p-5 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border border-green-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 bg-white rounded-lg shadow-sm">
-                      <CheckCircle className="w-5 h-5 text-green-600" />
-                    </div>
-                    <p className="text-sm font-semibold text-green-700">Completadas</p>
-                  </div>
-                  <p className="text-3xl font-bold text-green-600">{stats.ordenes.completadas}</p>
-                </div>
-
-                <div className="p-5 bg-gradient-to-br from-red-50 to-red-100 rounded-xl border border-red-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 bg-white rounded-lg shadow-sm">
-                      <AlertTriangle className="w-5 h-5 text-red-600" />
-                    </div>
-                    <p className="text-sm font-semibold text-red-700">Vencidas</p>
-                  </div>
-                  <p className="text-3xl font-bold text-red-600">{stats.ordenes.vencidas}</p>
-                </div>
-              </div>
-
-              {/* Progreso Global */}
-              <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-5 border border-gray-200">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-blue-600" />
-                    <p className="font-semibold text-gray-900">Tasa de Cumplimiento Global</p>
-                  </div>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {stats.ordenes.porcentajeCompletadas.toFixed(1)}%
-                  </p>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-4 shadow-inner">
-                  <div
-                    className="bg-gradient-to-r from-green-500 to-green-600 h-4 rounded-full transition-all duration-500 shadow-lg"
-                    style={{ width: `${Math.min(100, stats.ordenes.porcentajeCompletadas)}%` }}
-                  />
-                </div>
-                <p className="text-xs text-gray-600 mt-2">
-                  {stats.ordenes.completadas} de {stats.ordenes.total} órdenes completadas exitosamente
-                </p>
-              </div>
-            </>
+            <OrdenesPanel
+              ordenes={ordenesData}
+              porcentaje={(ordenesData as any).porcentajeCompletadas ?? (ordenesData as any).tasaCumplimiento}
+            />
           )}
         </div>
 
-        {/* ========================= */}
-        {/* Grid Inferior: Tendencias y Ranking */}
-        {/* ========================= */}
+        {/* ── Ranking de empleados del área (solo jefe) ── */}
+        {esJefe && statsArea?.ranking && statsArea.ranking.length > 0 && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-5">
+              <Trophy className="w-5 h-5 text-yellow-500" />
+              Ranking de tu Equipo
+            </h2>
+            <div className="space-y-3">
+              {statsArea.ranking.slice(0, 8).map((emp, idx) => (
+                <div key={idx} className="flex items-center gap-4 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${idx === 0 ? 'bg-yellow-100 text-yellow-700' :
+                    idx === 1 ? 'bg-gray-200 text-gray-700' :
+                      idx === 2 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                    {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                  </div>
+                  <p className="flex-1 text-sm font-medium text-gray-800">{emp.empleado}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-2 rounded-full bg-gradient-to-r ${getTasaColor(emp.promedio)}`}
+                        style={{ width: `${Math.min(100, emp.promedio)}%` }}
+                      />
+                    </div>
+                    <span className={`text-sm font-bold w-12 text-right ${emp.promedio >= 80 ? 'text-green-600' : emp.promedio >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                      {emp.promedio}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Mi último desempeño (solo empleado) ── */}
+        {esEmpleado && statsEmpleado && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-5">
+              <Award className="w-5 h-5 text-yellow-500" />
+              Mi Desempeño
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 text-center">
+                <p className="text-xs text-blue-600 font-semibold mb-1">Evaluaciones Totales</p>
+                <p className="text-3xl font-bold text-blue-700">{statsEmpleado.evaluaciones.total}</p>
+              </div>
+              <div className="p-4 bg-green-50 rounded-xl border border-green-100 text-center">
+                <p className="text-xs text-green-600 font-semibold mb-1">Último Promedio</p>
+                <p className="text-3xl font-bold text-green-700">{statsEmpleado.evaluaciones.ultimoPromedio}%</p>
+              </div>
+              <div className={`p-4 rounded-xl border text-center ${statsEmpleado.evaluaciones.ultimosKpisRojos > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'}`}>
+                <p className={`text-xs font-semibold mb-1 ${statsEmpleado.evaluaciones.ultimosKpisRojos > 0 ? 'text-red-600' : 'text-gray-500'}`}>KPIs en Rojo</p>
+                <p className={`text-3xl font-bold ${statsEmpleado.evaluaciones.ultimosKpisRojos > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                  {statsEmpleado.evaluaciones.ultimosKpisRojos}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Tendencias + Ranking Global — todos los roles ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Tendencias de los últimos 6 meses */}
+
+          {/* Tendencias */}
           {tendencias.length > 0 && (
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-              <div className="flex items-center justify-between mb-6">
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-5">
                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                   <BarChart3 className="w-5 h-5 text-purple-600" />
-                  Tendencias (Últimos 6 Meses)
+                  Tendencias Globales
                 </h2>
+                <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">Últimos 6 meses</span>
               </div>
-
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {tendencias.map((mes, idx) => {
                   const total = mes.completadas + mes.vencidas;
-                  const porcentajeCompletadas =
-                    total > 0 ? (mes.completadas / total) * 100 : 0;
-
+                  const pct = total > 0 ? (mes.completadas / total) * 100 : 0;
                   return (
                     <div key={idx}>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-700">
-                          {mes.mes}
-                        </span>
+                        <span className="text-sm font-medium text-gray-600 capitalize">{mes.mes}</span>
                         <div className="flex items-center gap-3 text-xs">
-                          <span className="flex items-center gap-1 text-green-600">
-                            <TrendingUp className="w-3 h-3" />
-                            {mes.completadas}
-                          </span>
-                          <span className="flex items-center gap-1 text-red-600">
-                            <TrendingDown className="w-3 h-3" />
-                            {mes.vencidas}
-                          </span>
+                          <span className="flex items-center gap-1 text-green-600"><TrendingUp className="w-3 h-3" />{mes.completadas}</span>
+                          <span className="flex items-center gap-1 text-red-500"><TrendingDown className="w-3 h-3" />{mes.vencidas}</span>
                         </div>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-gradient-to-r from-green-500 to-green-600 h-2 rounded-full transition-all"
-                          style={{ width: `${porcentajeCompletadas}%` }}
-                        />
+                      <div className="w-full bg-gray-100 rounded-full h-2.5">
+                        <div className={`h-2.5 rounded-full bg-gradient-to-r ${getTasaColor(pct)} transition-all`} style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                   );
                 })}
               </div>
+              <p className="text-xs text-gray-400 mt-4 flex items-center gap-1">
+                <Info className="w-3 h-3" /> Verde = completadas, Rojo = vencidas en ese mes
+              </p>
             </div>
           )}
 
-          {/* Ranking de Áreas por Desempeño */}
+          {/* Ranking de Áreas Global */}
           {areasRanking.length > 0 && (
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-              <div className="flex items-center justify-between mb-6">
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-5">
                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                   <Trophy className="w-5 h-5 text-yellow-500" />
-                  Ranking de Áreas por Desempeño
+                  Ranking de Áreas
                 </h2>
-                <span className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-                  Año {new Date().getFullYear()}
-                </span>
+                <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">Año {new Date().getFullYear()}</span>
               </div>
-
               <div className="space-y-3">
                 {areasRanking.slice(0, 5).map((area, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-4 p-4 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-200 hover:shadow-md transition-all group"
+                    className={`flex items-center gap-4 p-4 rounded-xl border transition-all hover:shadow-sm ${esJefe && statsArea?.area?.nombre === area.nombre
+                      ? 'bg-blue-50 border-blue-200'
+                      : 'bg-gray-50 border-gray-100'
+                      }`}
                   >
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm ${idx === 0
-                          ? 'bg-gradient-to-br from-yellow-400 to-yellow-500 text-white'
-                          : idx === 1
-                            ? 'bg-gradient-to-br from-gray-300 to-gray-400 text-white'
-                            : idx === 2
-                              ? 'bg-gradient-to-br from-orange-400 to-orange-500 text-white'
-                              : 'bg-gray-100 text-gray-600'
-                        }`}
-                    >
-                      {idx === 0
-                        ? '🥇'
-                        : idx === 1
-                          ? '🥈'
-                          : idx === 2
-                            ? '🥉'
-                            : `#${idx + 1}`}
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-base ${idx === 0 ? 'bg-yellow-100 text-yellow-700' :
+                      idx === 1 ? 'bg-gray-200 text-gray-600' :
+                        idx === 2 ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                      {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
                     </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-bold text-gray-900 text-lg">
-                          {area.nombre}
-                        </p>
-                        {area.subAreasCount > 0 && (
-                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
-                            +{area.subAreasCount} sub-áreas
-                          </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="font-semibold text-gray-900 text-sm truncate">{area.nombre}</p>
+                        {esJefe && statsArea?.area?.nombre === area.nombre && (
+                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex-shrink-0">Tu área</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 text-sm text-gray-600">
-                        <span className="flex items-center gap-1">
-                          <Users className="w-3 h-3" />
-                          {area.empleados} empleados
-                        </span>
+                      <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <span className="flex items-center gap-1"><Users className="w-3 h-3" />{area.empleados}</span>
                         {area.kpisRojos > 0 && (
-                          <span className="flex items-center gap-1 text-red-600">
-                            <AlertTriangle className="w-3 h-3" />
-                            {area.kpisRojos} KPIs rojos
-                          </span>
+                          <span className="flex items-center gap-1 text-red-500"><AlertTriangle className="w-3 h-3" />{area.kpisRojos} rojos</span>
                         )}
                       </div>
                     </div>
-
                     <div className="text-right">
-                      <div className="flex items-center gap-2">
-                        <div>
-                          <p className="text-3xl font-bold text-blue-600">
-                            {area.promedio}%
-                          </p>
-                          <p className="text-xs text-gray-500">Promedio</p>
-                        </div>
-                        {idx < 3 && (
-                          <Trophy
-                            className={`w-6 h-6 ${idx === 0
-                                ? 'text-yellow-500'
-                                : idx === 1
-                                  ? 'text-gray-400'
-                                  : 'text-orange-500'
-                              }`}
-                          />
-                        )}
-                      </div>
-
-                      <div className="w-32 h-2 bg-gray-200 rounded-full mt-2">
+                      <p className={`text-2xl font-bold ${area.promedio >= 80 ? 'text-green-600' : area.promedio >= 50 ? 'text-blue-600' : 'text-red-600'}`}>
+                        {area.promedio}%
+                      </p>
+                      <div className="w-20 h-1.5 bg-gray-200 rounded-full mt-1">
                         <div
-                          className={`h-2 rounded-full transition-all ${area.promedio >= 90
-                              ? 'bg-gradient-to-r from-green-500 to-green-600'
-                              : area.promedio >= 70
-                                ? 'bg-gradient-to-r from-blue-500 to-blue-600'
-                                : 'bg-gradient-to-r from-red-500 to-red-600'
-                            }`}
-                          style={{
-                            width: `${Math.min(100, area.promedio)}%`,
-                          }}
+                          className={`h-1.5 rounded-full bg-gradient-to-r ${getTasaColor(area.promedio)}`}
+                          style={{ width: `${Math.min(100, area.promedio)}%` }}
                         />
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-
               {areasRanking.length > 5 && (
-                <div className="mt-4 text-center">
-                  <p className="text-sm text-gray-500">
-                    Mostrando top 5 de {areasRanking.length} áreas
-                  </p>
-                </div>
+                <p className="text-xs text-center text-gray-400 mt-3">Top 5 de {areasRanking.length} áreas</p>
               )}
             </div>
           )}
         </div>
 
-        {/* ========================= */}
-        {/* Resumen del Sistema (Full Width) */}
-        {/* ========================= */}
-        <div className="mt-6 bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <Award className="w-5 h-5 text-yellow-600" />
-              Resumen del Sistema
-            </h2>
-          </div>
-
-          <div className="space-y-4">
-            {/* Puestos */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-100 rounded-lg">
-                  <Briefcase className="w-5 h-5 text-orange-600" />
+        {/* ── Accesos rápidos ── */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-5">
+            <Zap className="w-5 h-5 text-yellow-500" />
+            Accesos Rápidos
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[
+              {
+                label: esEmpleado ? 'Mis Evaluaciones' : 'Evaluaciones',
+                icon: Award,
+                color: 'from-blue-50 to-purple-50 border-blue-200 hover:border-blue-400',
+                iconColor: 'text-blue-600',
+                path: '/kpis/mis-evaluaciones',
+              },
+              {
+                label: esEmpleado ? 'Mis Órdenes de Trabajo' : 'Órdenes de Trabajo',
+                icon: Briefcase,
+                color: 'from-green-50 to-teal-50 border-green-200 hover:border-green-400',
+                iconColor: 'text-green-600',
+                path: esEmpleado ? '/mis-ordenes' : '/ordenes',
+              },
+              ...(esAdmin ? [
+                {
+                  label: 'Empleados',
+                  icon: Users,
+                  color: 'from-indigo-50 to-blue-50 border-indigo-200 hover:border-indigo-400',
+                  iconColor: 'text-indigo-600',
+                  path: '/empleados',
+                },
+                {
+                  label: 'KPIs',
+                  icon: Target,
+                  color: 'from-yellow-50 to-orange-50 border-yellow-200 hover:border-yellow-400',
+                  iconColor: 'text-yellow-600',
+                  path: '/kpis',
+                },
+              ] : []),
+              ...(esJefe ? [
+                {
+                  label: 'Solicitudes Pendientes',
+                  icon: FileText,
+                  color: 'from-yellow-50 to-orange-50 border-yellow-200 hover:border-yellow-400',
+                  iconColor: 'text-yellow-600',
+                  path: '/solicitudes',
+                },
+              ] : []),
+            ].map(({ label, icon: Icon, color, iconColor, path }) => (
+              <button
+                key={path}
+                onClick={() => navigate(path)}
+                className={`w-full p-4 bg-gradient-to-r ${color} border-2 rounded-xl transition-all group`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-5 h-5 ${iconColor}`} />
+                    <p className="font-medium text-gray-800 text-sm">{label}</p>
+                  </div>
+                  <ArrowRight className={`w-4 h-4 ${iconColor} group-hover:translate-x-1 transition-transform`} />
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    Puestos Registrados
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    Roles en la organización
-                  </p>
-                </div>
-              </div>
-              <p className="text-2xl font-bold text-gray-900">
-                {stats.puestos?.total || 0}
-              </p>
-            </div>
-
-            {/* Evaluaciones Recientes */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    Evaluaciones Recientes
-                  </p>
-                  <p className="text-xs text-gray-600">Último mes</p>
-                </div>
-              </div>
-              <p className="text-2xl font-bold text-gray-900">
-                {stats.evaluaciones.recientes}
-              </p>
-            </div>
-
-            {/* Accesos rápidos */}
-            <button
-              onClick={() => navigate('/kpis/mis-evaluaciones')}
-              className="w-full p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-lg hover:border-blue-400 transition-all group"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Award className="w-5 h-5 text-blue-600" />
-                  <p className="font-medium text-gray-900">
-                    Mis Evaluaciones
-                  </p>
-                </div>
-                <ArrowRight className="w-5 h-5 text-blue-600 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </button>
-
-            <button
-              onClick={() => navigate('/ordenes')}
-              className="w-full p-4 bg-gradient-to-r from-green-50 to-teal-50 border-2 border-green-200 rounded-lg hover:border-green-400 transition-all group"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Briefcase className="w-5 h-5 text-green-600" />
-                  <p className="font-medium text-gray-900">
-                    Mis Órdenes de Trabajo
-                  </p>
-                </div>
-                <ArrowRight className="w-5 h-5 text-green-600 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </button>
+              </button>
+            ))}
           </div>
         </div>
       </div>
+
+      {/* ── Modal de Alertas ── */}
+      {showAlertas && (
+        <AlertasModal
+          alertas={alertas}
+          onClose={() => setShowAlertas(false)}
+          onResolver={resolverAlerta}
+        />
+      )}
     </Layout>
   );
 }

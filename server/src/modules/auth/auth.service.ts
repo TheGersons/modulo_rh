@@ -3,12 +3,14 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { PrismaService } from 'src/common/database/prisma.service';
+import { AlertasService } from '../alertas/alertas.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private alertasService: AlertasService,
   ) {}
 
   async login(
@@ -56,7 +58,7 @@ export class AuthService {
 
     // Crear sesión en DB
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 1); // Refresh token válido por 1 hora
+    expiresAt.setHours(expiresAt.getHours() + 1);
 
     await this.prisma.session.create({
       data: {
@@ -71,12 +73,19 @@ export class AuthService {
       },
     });
 
+    // Generar alertas automáticas al iniciar sesión (non-blocking)
+    this.alertasService
+      .generarAlertasAutomaticas()
+      .catch((err) =>
+        console.warn('Error al generar alertas en login:', err.message),
+      );
+
     return {
       success: true,
       message: 'Login exitoso',
       accessToken,
       refreshToken,
-      expiresIn: 900, // 15 minutos en segundos
+      expiresIn: 900,
       user: {
         id: user.id,
         email: user.email,
@@ -91,7 +100,6 @@ export class AuthService {
   }
 
   async refreshAccessToken(refreshToken: string) {
-    // Buscar sesión por refresh token
     const session = await this.prisma.session.findUnique({
       where: { refreshToken },
       include: { user: true },
@@ -101,16 +109,13 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token inválido');
     }
 
-    // Verificar si expiró (1 hora desde creación)
     if (session.expiresAt < new Date()) {
-      // Eliminar sesión expirada
       await this.prisma.session.delete({ where: { id: session.id } });
       throw new UnauthorizedException(
         'Sesión expirada. Por favor, inicia sesión nuevamente.',
       );
     }
 
-    // Generar nuevo access token (refresh token se mantiene)
     const payload = {
       sub: session.userId,
       email: session.user.email,
@@ -120,7 +125,6 @@ export class AuthService {
 
     const newAccessToken = this.jwtService.sign(payload);
 
-    // Actualizar sesión con nuevo access token
     await this.prisma.session.update({
       where: { id: session.id },
       data: {
@@ -132,12 +136,11 @@ export class AuthService {
     return {
       success: true,
       accessToken: newAccessToken,
-      expiresIn: 900, // 15 minutos
+      expiresIn: 900,
     };
   }
 
   async logout(userId: string, token: string) {
-    // Eliminar sesión por access token o refresh token
     await this.prisma.session.deleteMany({
       where: {
         userId,
@@ -151,12 +154,7 @@ export class AuthService {
   private async generateTokens(userId: string, email: string, role: string) {
     const sessionId = randomBytes(16).toString('hex');
 
-    const payload = {
-      sub: userId,
-      email,
-      role,
-      sessionId,
-    };
+    const payload = { sub: userId, email, role, sessionId };
 
     const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
     const refreshToken = this.jwtService.sign(

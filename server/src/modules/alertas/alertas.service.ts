@@ -64,6 +64,7 @@ export class AlertasService {
           select: {
             nombre: true,
             apellido: true,
+            puesto: { select: { nombre: true } },
           },
         },
       },
@@ -380,6 +381,101 @@ export class AlertasService {
       descripcion: `${empleado.nombre} ${empleado.apellido} solicita cambiar ${solicitud.campoAEditar}`,
       accionSugerida: 'Revisar y aprobar/rechazar solicitud',
       responsable: 'Jefe de área',
+    });
+  }
+
+  // Solicitud de tarea aprobada (notifica al empleado)
+  async alertaSolicitudTareaAprobada(
+    solicitud: any,
+    nuevaFechaLimite?: string,
+  ) {
+    const empleado =
+      solicitud.empleado ??
+      (await this.prisma.user.findUnique({
+        where: { id: solicitud.empleadoId },
+        select: { areaId: true, nombre: true, apellido: true },
+      }));
+
+    if (!empleado?.areaId) return;
+
+    const fechaTexto = nuevaFechaLimite
+      ? `. Nueva fecha límite: ${new Date(nuevaFechaLimite).toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })}`
+      : '';
+
+    return this.create({
+      areaId: empleado.areaId,
+      empleadoId: solicitud.empleadoId,
+      tipo: 'solicitud_tarea_aprobada',
+      nivel: 'BAJO',
+      titulo: 'Tarea adicional aprobada',
+      descripcion: `Tu solicitud para agregar "${solicitud.descripcion}" fue aprobada${fechaTexto}`,
+      accionSugerida: 'Completar la nueva tarea y subir evidencia',
+      responsable: 'Empleado asignado',
+    });
+  }
+
+  // Solicitud de tarea rechazada (notifica al empleado)
+  async alertaSolicitudTareaRechazada(solicitud: any) {
+    const empleado =
+      solicitud.empleado ??
+      (await this.prisma.user.findUnique({
+        where: { id: solicitud.empleadoId },
+        select: { areaId: true, nombre: true, apellido: true },
+      }));
+
+    if (!empleado?.areaId) return;
+
+    return this.create({
+      areaId: empleado.areaId,
+      empleadoId: solicitud.empleadoId,
+      tipo: 'solicitud_tarea_rechazada',
+      nivel: 'MEDIO',
+      titulo: 'Tarea adicional rechazada',
+      descripcion: `Tu solicitud para agregar "${solicitud.descripcion}" fue rechazada. Motivo: ${solicitud.motivoRechazo ?? 'Sin especificar'}`,
+      accionSugerida: 'Continuar con las tareas existentes',
+      responsable: 'Empleado asignado',
+    });
+  }
+
+  // Solicitud de edición aprobada (notifica al solicitante)
+  async alertaSolicitudEdicionAprobada(solicitud: any) {
+    const empleado = await this.prisma.user.findUnique({
+      where: { id: solicitud.solicitanteId },
+      select: { areaId: true, nombre: true, apellido: true },
+    });
+
+    if (!empleado?.areaId) return;
+
+    return this.create({
+      areaId: empleado.areaId,
+      empleadoId: solicitud.solicitanteId,
+      tipo: 'solicitud_edicion_aprobada',
+      nivel: 'BAJO',
+      titulo: 'Solicitud de edición aprobada',
+      descripcion: `Tu solicitud para cambiar ${solicitud.campoAEditar} fue aprobada`,
+      accionSugerida: 'Verificar los cambios en la orden',
+      responsable: 'Empleado asignado',
+    });
+  }
+
+  // Solicitud de edición rechazada (notifica al solicitante)
+  async alertaSolicitudEdicionRechazada(solicitud: any) {
+    const empleado = await this.prisma.user.findUnique({
+      where: { id: solicitud.solicitanteId },
+      select: { areaId: true, nombre: true, apellido: true },
+    });
+
+    if (!empleado?.areaId) return;
+
+    return this.create({
+      areaId: empleado.areaId,
+      empleadoId: solicitud.solicitanteId,
+      tipo: 'solicitud_edicion_rechazada',
+      nivel: 'MEDIO',
+      titulo: 'Solicitud de edición rechazada',
+      descripcion: `Tu solicitud para cambiar ${solicitud.campoAEditar} fue rechazada. Motivo: ${solicitud.motivoRechazo ?? 'Sin especificar'}`,
+      accionSugerida: 'Continuar con la orden tal como está',
+      responsable: 'Empleado asignado',
     });
   }
 

@@ -1,25 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-    Target,
-    CheckCircle,
-    AlertCircle,
-    Clock,
-    Upload,
-    ChevronDown,
-    ChevronUp,
-    Plus,
-    FileText,
-    Image,
-    Film,
-    File,
-    Info,
-    TrendingUp,
-    Hash,
-    Timer,
-    Calculator,
-    ToggleLeft,
-    Eye,
-    Download,
+    Target, CheckCircle, AlertCircle, Clock, Upload, ChevronDown, ChevronUp,
+    Plus, FileText, Image, Film, File, Info, TrendingUp, Hash, Timer,
+    Calculator, ToggleLeft, Eye, Download, StickyNote, ArrowUp, ArrowDown,
+    Minus,
 } from 'lucide-react';
 import Layout from '../components/layout/Layout';
 import { useAuth } from '../contexts/AuthContext';
@@ -37,7 +21,7 @@ interface KPI {
     indicador: string;
     descripcion?: string;
     tipoCalculo: string;
-    formulaCalculo: string; // JSON string
+    formulaCalculo: string;
     meta?: number;
     operadorMeta?: string;
     unidad?: string;
@@ -53,13 +37,12 @@ interface Evidencia {
     nombre: string;
     tamanio?: number;
     intento: number;
-    status: string; // "pendiente_revision" | "aprobada" | "rechazada"
+    status: string;
     motivoRechazo?: string;
     apelacion?: string;
     respuestaApelacion?: string;
     fechaSubida: string;
     esFueraDeTiempo: boolean;
-    // Para KPIs con valores numéricos
     valorNumerico?: number;
     nota?: string;
 }
@@ -69,6 +52,7 @@ interface KPIConEvidencias extends KPI {
     statusKPI: 'pendiente' | 'en_progreso' | 'pendiente_revision' | 'aprobado' | 'rechazado';
     evidenciasRequeridas: number;
     evidenciasAprobadas: number;
+    notaKPI?: string; // Nota general del empleado sobre este KPI
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -79,6 +63,14 @@ const TIPO_ICON: Record<string, any> = {
     tiempo: Timer,
     conteo: Hash,
     binario: ToggleLeft,
+};
+
+const TIPO_LABEL: Record<string, string> = {
+    porcentaje: 'Porcentaje',
+    formula: 'Fórmula',
+    tiempo: 'Tiempo',
+    conteo: 'Conteo',
+    binario: 'Binario',
 };
 
 const ARCHIVO_ICON: Record<string, any> = {
@@ -102,25 +94,73 @@ const KPI_STATUS_CONFIG: Record<string, { label: string; color: string; bg: stri
     rechazado: { label: 'Rechazado', color: 'text-red-700', bg: 'bg-red-100', border: 'border-red-200' },
 };
 
-/** Calcula cuántas evidencias requiere un KPI según su tipo y meta */
+/**
+ * Determina cuántas evidencias requiere un KPI.
+ * Conteo con meta > 0 y "Mayor es mejor" → N evidencias (una por item contado)
+ * Todo lo demás → 1 evidencia
+ */
 function getEvidenciasRequeridas(kpi: KPI): number {
-    if (kpi.tipoCalculo === 'conteo' && kpi.meta && kpi.meta > 0) return kpi.meta;
+    if (
+        kpi.tipoCalculo === 'conteo' &&
+        kpi.meta !== undefined &&
+        kpi.meta > 0 &&
+        kpi.sentido !== 'Menor es mejor'
+    ) {
+        return kpi.meta;
+    }
     return 1;
 }
 
-/** Deriva el status del KPI a partir de sus evidencias */
-function derivarStatusKPI(
-    evidencias: Evidencia[],
-    requeridas: number
-): KPIConEvidencias['statusKPI'] {
-    if (!evidencias || evidencias.length === 0) return 'pendiente';
-    if (evidencias.some((e) => e.status === 'aprobada')) {
-        const aprobadas = evidencias.filter((e) => e.status === 'aprobada').length;
-        if (aprobadas >= requeridas) return 'aprobado';
+/**
+ * ¿Este tipo de KPI requiere que el empleado ingrese un valor numérico?
+ */
+function necesitaValorNumerico(kpi: KPI): boolean {
+    if (kpi.tipoCalculo === 'binario') return false;
+    if (kpi.tipoCalculo === 'porcentaje') return false; // solo descripción + evidencia
+    // formula, tiempo, conteo → siempre piden valor
+    return true;
+}
+
+/**
+ * Label descriptivo del campo numérico según tipo
+ */
+function getValorLabel(kpi: KPI): string {
+    if (kpi.tipoCalculo === 'tiempo') return `Valor real (${kpi.unidad ?? 'días'})`;
+    if (kpi.tipoCalculo === 'conteo') return `Cantidad real (${kpi.unidad ?? 'unidades'})`;
+    if (kpi.tipoCalculo === 'formula') return `Resultado calculado (${kpi.unidad ?? ''})`;
+    return '';
+}
+
+/**
+ * Evalúa si un valor numérico cumple la meta del KPI.
+ * Retorna: 'cumple' | 'no_cumple' | null (si no aplica)
+ */
+function evaluarCumplimiento(kpi: KPI, valor: number): 'cumple' | 'no_cumple' | null {
+    if (kpi.meta === undefined) return null;
+    if (kpi.tipoCalculo === 'binario' || kpi.tipoCalculo === 'porcentaje') return null;
+
+    const esMenorMejor = kpi.sentido === 'Menor es mejor';
+    const operador = kpi.operadorMeta ?? (esMenorMejor ? '<=' : '>=');
+
+    switch (operador) {
+        case '>=': return valor >= kpi.meta ? 'cumple' : 'no_cumple';
+        case '>': return valor > kpi.meta ? 'cumple' : 'no_cumple';
+        case '<=': return valor <= kpi.meta ? 'cumple' : 'no_cumple';
+        case '<': return valor < kpi.meta ? 'cumple' : 'no_cumple';
+        case '=': return valor === kpi.meta ? 'cumple' : 'no_cumple';
+        default: return esMenorMejor
+            ? (valor <= kpi.meta ? 'cumple' : 'no_cumple')
+            : (valor >= kpi.meta ? 'cumple' : 'no_cumple');
     }
+}
+
+function derivarStatusKPI(evidencias: Evidencia[], requeridas: number): KPIConEvidencias['statusKPI'] {
+    if (!evidencias || evidencias.length === 0) return 'pendiente';
+    const aprobadas = evidencias.filter((e) => e.status === 'aprobada').length;
+    if (aprobadas >= requeridas) return 'aprobado';
     if (evidencias.every((e) => e.status === 'rechazada')) return 'rechazado';
     if (evidencias.some((e) => e.status === 'pendiente_revision')) return 'pendiente_revision';
-    if (evidencias.some((e) => e.status === 'rechazada')) return 'en_progreso'; // tiene rechazadas, puede re-subir
+    if (evidencias.some((e) => e.status === 'rechazada')) return 'en_progreso';
     return 'en_progreso';
 }
 
@@ -130,6 +170,15 @@ function formatBytes(bytes?: number): string {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getFormulaDescripcion(formulaCalculo: string): string {
+    try {
+        const parsed: FormulaCalculo = JSON.parse(formulaCalculo);
+        return parsed.descripcion ?? '';
+    } catch {
+        return formulaCalculo;
+    }
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function MisKPIsPage() {
@@ -137,15 +186,21 @@ export default function MisKPIsPage() {
     const [kpis, setKpis] = useState<KPIConEvidencias[]>([]);
     const [loading, setLoading] = useState(true);
     const [expandidos, setExpandidos] = useState<string[]>([]);
-    const [filtro, setFiltro] = useState<'todos' | 'pendiente' | 'en_progreso' | 'pendiente_revision' | 'aprobado' | 'rechazado'>('todos');
+    const [filtro, setFiltro] = useState<string>('todos');
 
     // Subida de evidencia
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [subiendoEvidencia, setSubiendoEvidencia] = useState<string | null>(null); // kpiId
+    const [subiendoEvidencia, setSubiendoEvidencia] = useState<string | null>(null);
     const [kpiSeleccionado, setKpiSeleccionado] = useState<string | null>(null);
     const [valorNumerico, setValorNumerico] = useState<string>('');
     const [notaEvidencia, setNotaEvidencia] = useState<string>('');
-    const [mostrarFormSubida, setMostrarFormSubida] = useState<string | null>(null); // kpiId
+    const [confirmadoBinario, setConfirmadoBinario] = useState(false);
+    const [mostrarFormSubida, setMostrarFormSubida] = useState<string | null>(null);
+
+    // Notas por KPI
+    const [editandoNota, setEditandoNota] = useState<string | null>(null);
+    const [textoNota, setTextoNota] = useState<string>('');
+    const [guardandoNota, setGuardandoNota] = useState(false);
 
     // Apelación
     const [apelandoEvidencia, setApelandoEvidencia] = useState<string | null>(null);
@@ -155,35 +210,42 @@ export default function MisKPIsPage() {
         if (user?.id) cargarKPIs();
     }, [user]);
 
-    // ─── Carga de datos ──────────────────────────────────────────────────────────
+    // ─── Carga ───────────────────────────────────────────────────────────────────
+
+    const getPeriodoActual = () => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    };
 
     const cargarKPIs = async () => {
         try {
             setLoading(true);
             const token = localStorage.getItem('accessToken');
-
-            // 1. KPIs del puesto/área del empleado
             const kpisData = await kpisService.getMisKpis();
-
-            // 2. Evidencias del empleado para el período actual
             const periodo = getPeriodoActual();
-            const resEv = await fetch(
-                `/api/kpis/mis-evidencias?periodo=${periodo}`,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+
+            const resEv = await fetch(`/api/kpis/mis-evidencias?periodo=${periodo}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
             const evidenciasData: Record<string, Evidencia[]> = resEv.ok ? await resEv.json() : {};
 
-            // 3. Combinar
+            // Cargar notas guardadas
+            const resNotas = await fetch(`/api/kpis/mis-notas?periodo=${periodo}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            }).catch(() => null);
+            const notasData: Record<string, string> = resNotas?.ok ? await resNotas.json() : {};
+
             const combinados: KPIConEvidencias[] = (Array.isArray(kpisData) ? kpisData : []).map((kpi) => {
                 const evidencias = evidenciasData[kpi.id] ?? [];
                 const requeridas = getEvidenciasRequeridas(kpi);
-                const aprobadas = evidencias.filter((e) => e.status === 'aprobada').length;
+                const aprobadas = evidencias.filter((e: Evidencia) => e.status === 'aprobada').length;
                 return {
                     ...kpi,
                     evidencias,
                     statusKPI: derivarStatusKPI(evidencias, requeridas),
                     evidenciasRequeridas: requeridas,
                     evidenciasAprobadas: aprobadas,
+                    notaKPI: notasData[kpi.id],
                 };
             });
 
@@ -195,26 +257,33 @@ export default function MisKPIsPage() {
         }
     };
 
-    const getPeriodoActual = () => {
-        const now = new Date();
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    };
-
     // ─── Acciones ────────────────────────────────────────────────────────────────
 
     const toggleExpanded = (kpiId: string) => {
-        setExpandidos((prev) =>
-            prev.includes(kpiId) ? prev.filter((id) => id !== kpiId) : [...prev, kpiId]
-        );
+        setExpandidos((prev) => prev.includes(kpiId) ? prev.filter((id) => id !== kpiId) : [...prev, kpiId]);
     };
 
     const handleAbrirSubida = (kpiId: string) => {
         setMostrarFormSubida(kpiId);
         setValorNumerico('');
         setNotaEvidencia('');
+        setConfirmadoBinario(false);
     };
 
     const handleSeleccionarArchivo = (kpiId: string) => {
+        const kpi = kpis.find((k) => k.id === kpiId);
+        if (!kpi) return;
+
+        // Validaciones antes de abrir el selector
+        if (kpi.tipoCalculo === 'binario' && !confirmadoBinario) {
+            alert('Debes confirmar que completaste la actividad antes de subir evidencia.');
+            return;
+        }
+        if (necesitaValorNumerico(kpi) && !valorNumerico) {
+            alert(`Debes ingresar ${getValorLabel(kpi)} antes de seleccionar el archivo.`);
+            return;
+        }
+
         setKpiSeleccionado(kpiId);
         fileInputRef.current?.click();
     };
@@ -224,27 +293,24 @@ export default function MisKPIsPage() {
         if (!file || !kpiSeleccionado) return;
 
         const kpi = kpis.find((k) => k.id === kpiSeleccionado);
-        const necesitaValor = ['formula', 'tiempo', 'conteo'].includes(kpi?.tipoCalculo ?? '');
-
-        if (necesitaValor && !valorNumerico) {
-            alert('Debes ingresar el valor numérico antes de seleccionar el archivo.');
-            if (fileInputRef.current) fileInputRef.current.value = '';
-            return;
-        }
+        if (!kpi) return;
 
         try {
             setSubiendoEvidencia(kpiSeleccionado);
             const token = localStorage.getItem('accessToken');
 
-            // FormData con el archivo real y metadatos
             const formData = new FormData();
             formData.append('archivo', file);
             formData.append('kpiId', kpiSeleccionado);
-            formData.append('kpiKey', kpi!.key);
+            formData.append('kpiKey', kpi.key);
             formData.append('periodo', getPeriodoActual());
             formData.append('anio', String(new Date().getFullYear()));
-            if (necesitaValor && valorNumerico) {
+
+            if (necesitaValorNumerico(kpi) && valorNumerico) {
                 formData.append('valorNumerico', valorNumerico);
+            }
+            if (kpi.tipoCalculo === 'binario') {
+                formData.append('valorNumerico', '1'); // binario = 1 = cumplido
             }
             if (notaEvidencia) {
                 formData.append('nota', notaEvidencia);
@@ -253,7 +319,6 @@ export default function MisKPIsPage() {
             const res = await fetch('/api/storage/evidencia-kpi', {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${token}` },
-                // Sin Content-Type — el navegador lo pone automáticamente con el boundary
                 body: formData,
             });
 
@@ -265,6 +330,7 @@ export default function MisKPIsPage() {
             setMostrarFormSubida(null);
             setValorNumerico('');
             setNotaEvidencia('');
+            setConfirmadoBinario(false);
             await cargarKPIs();
         } catch (error: any) {
             console.error('Error:', error);
@@ -273,6 +339,25 @@ export default function MisKPIsPage() {
             setSubiendoEvidencia(null);
             setKpiSeleccionado(null);
             if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleGuardarNota = async (kpiId: string) => {
+        try {
+            setGuardandoNota(true);
+            const token = localStorage.getItem('accessToken');
+            await fetch(`/api/kpis/${kpiId}/nota`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ nota: textoNota, periodo: getPeriodoActual() }),
+            });
+            setKpis((prev) => prev.map((k) => k.id === kpiId ? { ...k, notaKPI: textoNota } : k));
+            setEditandoNota(null);
+            setTextoNota('');
+        } catch {
+            alert('Error al guardar la nota.');
+        } finally {
+            setGuardandoNota(false);
         }
     };
 
@@ -288,15 +373,14 @@ export default function MisKPIsPage() {
             setApelandoEvidencia(null);
             setTextoApelacion('');
             await cargarKPIs();
-        } catch (error) {
+        } catch {
             alert('Error al enviar la apelación.');
         }
     };
 
-    // ─── Computed ────────────────────────────────────────────────────────────────
+    // ─── Computed ─────────────────────────────────────────────────────────────────
 
     const kpisFiltrados = kpis.filter((k) => filtro === 'todos' || k.statusKPI === filtro);
-
     const stats = {
         total: kpis.length,
         aprobados: kpis.filter((k) => k.statusKPI === 'aprobado').length,
@@ -304,23 +388,7 @@ export default function MisKPIsPage() {
         pendientes: kpis.filter((k) => ['pendiente', 'en_progreso', 'rechazado'].includes(k.statusKPI)).length,
     };
 
-    const getNecesitaValorLabel = (tipoCalculo: string, unidad?: string): string => {
-        if (tipoCalculo === 'tiempo') return `Tiempo real (${unidad ?? 'horas'})`;
-        if (tipoCalculo === 'conteo') return `Cantidad real (${unidad ?? 'unidades'})`;
-        if (tipoCalculo === 'formula') return `Resultado calculado (${unidad ?? ''})`;
-        return '';
-    };
-
-    const getFormulaDescripcion = (formulaCalculo: string): string => {
-        try {
-            const parsed: FormulaCalculo = JSON.parse(formulaCalculo);
-            return parsed.descripcion ?? '';
-        } catch {
-            return formulaCalculo;
-        }
-    };
-
-    // ─── Render ──────────────────────────────────────────────────────────────────
+    // ─── Render ───────────────────────────────────────────────────────────────────
 
     if (loading) {
         return (
@@ -337,7 +405,6 @@ export default function MisKPIsPage() {
 
     return (
         <Layout>
-            {/* Input oculto */}
             <input
                 ref={fileInputRef}
                 type="file"
@@ -393,10 +460,8 @@ export default function MisKPIsPage() {
                     ].map((f) => (
                         <button
                             key={f.value}
-                            onClick={() => setFiltro(f.value as any)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtro === f.value
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            onClick={() => setFiltro(f.value)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtro === f.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                 }`}
                         >
                             {f.label}
@@ -404,7 +469,7 @@ export default function MisKPIsPage() {
                     ))}
                 </div>
 
-                {/* Lista de KPIs */}
+                {/* Lista */}
                 {kpisFiltrados.length === 0 ? (
                     <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-200">
                         <Target className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -418,45 +483,60 @@ export default function MisKPIsPage() {
                             const TipoIcon = TIPO_ICON[kpi.tipoCalculo] ?? Target;
                             const expandido = expandidos.includes(kpi.id);
                             const esCritico = kpi.tipoCriticidad === 'critico';
+                            const esMenorMejor = kpi.sentido === 'Menor es mejor';
                             const formulaDesc = getFormulaDescripcion(kpi.formulaCalculo);
-                            const necesitaValor = ['formula', 'tiempo', 'conteo'].includes(kpi.tipoCalculo);
-                            const valorLabel = getNecesitaValorLabel(kpi.tipoCalculo, kpi.unidad);
+                            const esBinario = kpi.tipoCalculo === 'binario';
+                            const necesitaValor = necesitaValorNumerico(kpi);
                             const mostrandoForm = mostrarFormSubida === kpi.id;
                             const cargando = subiendoEvidencia === kpi.id;
 
-                            // Cuántas evidencias faltan de las requeridas
                             const aprobadas = kpi.evidenciasAprobadas;
                             const requeridas = kpi.evidenciasRequeridas;
                             const enRevision = kpi.evidencias.filter((e) => e.status === 'pendiente_revision').length;
                             const falta = Math.max(0, requeridas - aprobadas - enRevision);
-
-                            // Puede subir si no está aprobado del todo
                             const puedeSubir = kpi.statusKPI !== 'aprobado';
 
+                            // Valor numérico más reciente aprobado o en revisión
+                            const ultimaEvidenciaConValor = kpi.evidencias
+                                .filter((e) => e.valorNumerico !== undefined)
+                                .sort((a, b) => new Date(b.fechaSubida).getTime() - new Date(a.fechaSubida).getTime())[0];
+                            const cumplimiento = ultimaEvidenciaConValor?.valorNumerico !== undefined
+                                ? evaluarCumplimiento(kpi, ultimaEvidenciaConValor.valorNumerico)
+                                : null;
+
                             return (
-                                <div
-                                    key={kpi.id}
-                                    className={`bg-white rounded-xl shadow-sm border transition-all ${statusCfg.border}`}
-                                >
-                                    {/* Header KPI */}
-                                    <div
-                                        className="flex items-start gap-4 p-5 cursor-pointer"
-                                        onClick={() => toggleExpanded(kpi.id)}
-                                    >
-                                        {/* Icono tipo */}
+                                <div key={kpi.id} className={`bg-white rounded-xl shadow-sm border transition-all ${statusCfg.border}`}>
+
+                                    {/* Header KPI — clickeable para expandir */}
+                                    <div className="flex items-start gap-4 p-5 cursor-pointer" onClick={() => toggleExpanded(kpi.id)}>
                                         <div className={`p-2.5 rounded-lg flex-shrink-0 ${esCritico ? 'bg-red-50' : 'bg-blue-50'}`}>
                                             <TipoIcon className={`w-5 h-5 ${esCritico ? 'text-red-600' : 'text-blue-600'}`} />
                                         </div>
 
                                         <div className="flex-1 min-w-0">
-                                            {/* Título y badges */}
                                             <div className="flex items-start justify-between gap-3 mb-1">
                                                 <div className="min-w-0">
                                                     <div className="flex items-center gap-2 flex-wrap">
                                                         <span className="text-xs font-mono text-blue-600 font-medium">{kpi.key}</span>
+                                                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                                                            {TIPO_LABEL[kpi.tipoCalculo] ?? kpi.tipoCalculo}
+                                                        </span>
                                                         {esCritico && (
-                                                            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                                                                Crítico
+                                                            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">Crítico</span>
+                                                        )}
+                                                        {esMenorMejor && (
+                                                            <span className="flex items-center gap-0.5 text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
+                                                                <ArrowDown className="w-3 h-3" /> Menor es mejor
+                                                            </span>
+                                                        )}
+                                                        {!esMenorMejor && kpi.tipoCalculo !== 'binario' && (
+                                                            <span className="flex items-center gap-0.5 text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                                                <ArrowUp className="w-3 h-3" /> Mayor es mejor
+                                                            </span>
+                                                        )}
+                                                        {esBinario && (
+                                                            <span className="flex items-center gap-0.5 text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
+                                                                <Minus className="w-3 h-3" /> Sí / No
                                                             </span>
                                                         )}
                                                     </div>
@@ -467,16 +547,16 @@ export default function MisKPIsPage() {
                                                 </span>
                                             </div>
 
-                                            {/* Fórmula / descripción */}
                                             <p className="text-xs text-gray-500 mb-2">{formulaDesc}</p>
 
-                                            {/* Progreso evidencias */}
-                                            <div className="flex items-center gap-3">
+                                            {/* Barra de progreso */}
+                                            <div className="flex items-center gap-3 mb-1">
                                                 <div className="flex-1 bg-gray-100 rounded-full h-1.5">
                                                     <div
-                                                        className={`h-1.5 rounded-full transition-all ${aprobadas >= requeridas ? 'bg-green-500' : 'bg-blue-500'
+                                                        className={`h-1.5 rounded-full transition-all ${aprobadas >= requeridas ? 'bg-green-500' :
+                                                            cumplimiento === 'no_cumple' ? 'bg-red-400' : 'bg-blue-500'
                                                             }`}
-                                                        style={{ width: `${Math.min((aprobadas / requeridas) * 100, 100)}%` }}
+                                                        style={{ width: `${Math.min((aprobadas / Math.max(requeridas, 1)) * 100, 100)}%` }}
                                                     />
                                                 </div>
                                                 <span className="text-xs text-gray-500 flex-shrink-0">
@@ -485,31 +565,40 @@ export default function MisKPIsPage() {
                                                 </span>
                                             </div>
 
-                                            {/* Meta */}
-                                            {kpi.meta !== undefined && (
-                                                <p className="text-xs text-gray-400 mt-1">
-                                                    Meta: <span className="font-medium text-gray-600">
-                                                        {kpi.operadorMeta} {kpi.meta} {kpi.unidad}
+                                            {/* Meta y cumplimiento */}
+                                            <div className="flex items-center gap-3 flex-wrap">
+                                                {kpi.meta !== undefined && !esBinario && (
+                                                    <p className="text-xs text-gray-400">
+                                                        Meta: <span className="font-medium text-gray-600">
+                                                            {kpi.operadorMeta} {kpi.meta} {kpi.unidad}
+                                                        </span>
+                                                        <span className="ml-1 text-gray-400 capitalize">· {kpi.periodicidad}</span>
+                                                    </p>
+                                                )}
+                                                {cumplimiento && ultimaEvidenciaConValor && (
+                                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cumplimiento === 'cumple' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                        }`}>
+                                                        {cumplimiento === 'cumple' ? '✓ Cumple meta' : '✗ No cumple meta'} ({ultimaEvidenciaConValor.valorNumerico} {kpi.unidad})
                                                     </span>
-                                                    <span className="ml-2 capitalize text-gray-400">· {kpi.sentido}</span>
-                                                </p>
-                                            )}
+                                                )}
+                                                {kpi.notaKPI && (
+                                                    <span className="flex items-center gap-1 text-xs text-amber-600">
+                                                        <StickyNote className="w-3 h-3" /> Tiene nota
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
 
-                                        {/* Chevron */}
                                         <div className="flex-shrink-0 self-center">
-                                            {expandido
-                                                ? <ChevronUp className="w-4 h-4 text-gray-400" />
-                                                : <ChevronDown className="w-4 h-4 text-gray-400" />
-                                            }
+                                            {expandido ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                                         </div>
                                     </div>
 
-                                    {/* Detalle expandido */}
+                                    {/* ── Detalle expandido ── */}
                                     {expandido && (
-                                        <div className="border-t border-gray-100 p-5 space-y-4">
+                                        <div className="border-t border-gray-100 p-5 space-y-5">
 
-                                            {/* Descripción del KPI */}
+                                            {/* Info del KPI */}
                                             {kpi.descripcion && (
                                                 <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg">
                                                     <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
@@ -517,74 +606,85 @@ export default function MisKPIsPage() {
                                                 </div>
                                             )}
 
-                                            {/* Slots de evidencias requeridas */}
+                                            {/* Instrucción por tipo */}
+                                            <div className={`flex items-start gap-2 p-3 rounded-lg text-xs ${esBinario ? 'bg-gray-50 border border-gray-200' :
+                                                esMenorMejor ? 'bg-purple-50 border border-purple-100' :
+                                                    'bg-green-50 border border-green-100'
+                                                }`}>
+                                                <Info className={`w-4 h-4 flex-shrink-0 mt-0.5 ${esBinario ? 'text-gray-500' : esMenorMejor ? 'text-purple-500' : 'text-green-500'}`} />
+                                                <div>
+                                                    {esBinario && <p className="text-gray-700">Este KPI es de tipo <strong>Sí/No</strong>. Confirma que realizaste la actividad y sube la evidencia que lo demuestra.</p>}
+                                                    {kpi.tipoCalculo === 'tiempo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra el tiempo real que tomó la actividad. Meta: <strong>{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Menor es mejor.' : 'Mayor es mejor.'}</p>}
+                                                    {kpi.tipoCalculo === 'conteo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra la cantidad real. Meta: <strong>{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Mientras menos, mejor.' : 'Mientras más, mejor.'}</p>}
+                                                    {kpi.tipoCalculo === 'formula' && <p className="text-green-700">Calcula el resultado usando la fórmula: <strong>{formulaDesc}</strong>. Ingresa el resultado y sube la evidencia.</p>}
+                                                    {kpi.tipoCalculo === 'porcentaje' && <p className="text-green-700">Sube la evidencia que demuestra el cumplimiento. Meta: <strong>{kpi.operadorMeta} {kpi.meta}{kpi.unidad}</strong>.</p>}
+                                                    {kpi.tipoCalculo === 'division' && (() => {
+                                                        // Parseamos el string a un objeto real
+                                                        const formula = JSON.parse(kpi.formulaCalculo);
+
+                                                        return (
+                                                            <p className="text-purple-700">
+                                                                Calcula el resultado usando la fórmula:
+                                                                <strong> ({formula.numerador} / {formula.denominador}) x {formula.multiplicador}</strong>.
+                                                                Ingresa el resultado y sube la evidencia.
+                                                            </p>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+
+                                            {/* Slots de evidencias */}
                                             <div>
                                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                                                    Evidencias requeridas ({requeridas})
+                                                    Evidencias {esBinario ? '' : `requeridas (${requeridas})`}
                                                 </p>
 
                                                 <div className="space-y-2">
                                                     {Array.from({ length: requeridas }).map((_, idx) => {
-                                                        // Buscar evidencia aprobada o en revisión para este slot
-                                                        const evidenciasAprobadas = kpi.evidencias.filter((e) => e.status === 'aprobada');
-                                                        const evidenciasRevision = kpi.evidencias.filter((e) => e.status === 'pendiente_revision');
-                                                        const evidenciasRechazadas = kpi.evidencias.filter((e) => e.status === 'rechazada');
+                                                        const evidenciasAprobadas_ = kpi.evidencias.filter((e) => e.status === 'aprobada');
+                                                        const evidenciasRevision_ = kpi.evidencias.filter((e) => e.status === 'pendiente_revision');
+                                                        const evidenciasRechazadas_ = kpi.evidencias.filter((e) => e.status === 'rechazada');
 
                                                         let evidenciaSlot: Evidencia | undefined;
-                                                        if (idx < evidenciasAprobadas.length) {
-                                                            evidenciaSlot = evidenciasAprobadas[idx];
-                                                        } else if ((idx - evidenciasAprobadas.length) < evidenciasRevision.length) {
-                                                            evidenciaSlot = evidenciasRevision[idx - evidenciasAprobadas.length];
-                                                        } else if ((idx - evidenciasAprobadas.length - evidenciasRevision.length) < evidenciasRechazadas.length) {
-                                                            evidenciaSlot = evidenciasRechazadas[idx - evidenciasAprobadas.length - evidenciasRevision.length];
+                                                        if (idx < evidenciasAprobadas_.length) {
+                                                            evidenciaSlot = evidenciasAprobadas_[idx];
+                                                        } else if ((idx - evidenciasAprobadas_.length) < evidenciasRevision_.length) {
+                                                            evidenciaSlot = evidenciasRevision_[idx - evidenciasAprobadas_.length];
+                                                        } else if ((idx - evidenciasAprobadas_.length - evidenciasRevision_.length) < evidenciasRechazadas_.length) {
+                                                            evidenciaSlot = evidenciasRechazadas_[idx - evidenciasAprobadas_.length - evidenciasRevision_.length];
                                                         }
 
                                                         const slotStatus = evidenciaSlot?.status;
                                                         const slotCfg = slotStatus ? EVIDENCIA_STATUS[slotStatus] : null;
+                                                        const slotCumplimiento = evidenciaSlot?.valorNumerico !== undefined
+                                                            ? evaluarCumplimiento(kpi, evidenciaSlot.valorNumerico)
+                                                            : null;
 
                                                         return (
-                                                            <div
-                                                                key={idx}
-                                                                className={`flex items-center gap-3 p-3 rounded-lg border ${slotStatus === 'aprobada' ? 'bg-green-50 border-green-200' :
-                                                                    slotStatus === 'pendiente_revision' ? 'bg-orange-50 border-orange-200' :
-                                                                        slotStatus === 'rechazada' ? 'bg-red-50 border-red-200' :
-                                                                            'bg-gray-50 border-gray-200 border-dashed'
-                                                                    }`}
-                                                            >
-                                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${slotStatus === 'aprobada' ? 'bg-green-500 text-white' :
+                                                            <div key={idx} className={`flex items-start gap-3 p-3 rounded-lg border ${slotStatus === 'aprobada' ? 'bg-green-50 border-green-200' :
+                                                                slotStatus === 'pendiente_revision' ? 'bg-orange-50 border-orange-200' :
+                                                                    slotStatus === 'rechazada' ? 'bg-red-50 border-red-200' :
+                                                                        'bg-gray-50 border-gray-200 border-dashed'
+                                                                }`}>
+                                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5 ${slotStatus === 'aprobada' ? 'bg-green-500 text-white' :
                                                                     slotStatus === 'pendiente_revision' ? 'bg-orange-400 text-white' :
                                                                         slotStatus === 'rechazada' ? 'bg-red-400 text-white' :
                                                                             'bg-gray-200 text-gray-500'
                                                                     }`}>
-                                                                    {slotStatus === 'aprobada' ? '✓' :
-                                                                        slotStatus === 'pendiente_revision' ? '⏳' :
-                                                                            slotStatus === 'rechazada' ? '✗' :
-                                                                                idx + 1}
+                                                                    {slotStatus === 'aprobada' ? '✓' : slotStatus === 'pendiente_revision' ? '⏳' : slotStatus === 'rechazada' ? '✗' : idx + 1}
                                                                 </div>
 
                                                                 {evidenciaSlot ? (
                                                                     <div className="flex-1 min-w-0">
-                                                                        <div className="flex items-center justify-between gap-2">
-                                                                            <p className="text-xs font-medium text-gray-800 truncate">
-                                                                                {evidenciaSlot.nombre}
-                                                                            </p>
-                                                                            <div className="flex items-center gap-1 flex-shrink-0">
-                                                                                <a
-                                                                                    href={evidenciaSlot.archivoUrl}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
-                                                                                    className="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors"
-                                                                                    title="Ver archivo"
-                                                                                >
+                                                                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                                            <p className="text-xs font-medium text-gray-800 truncate">{evidenciaSlot.nombre}</p>
+                                                                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                                                <a href={evidenciaSlot.archivoUrl} target="_blank" rel="noopener noreferrer"
+                                                                                    className="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors" title="Ver">
                                                                                     <Eye className="w-3.5 h-3.5" />
                                                                                 </a>
-
-                                                                                <a
-                                                                                    href={evidenciaSlot.archivoUrl}
-                                                                                    download={evidenciaSlot.nombre}
-                                                                                    className="p-1 text-gray-400 hover:text-gray-700 rounded transition-colors"
-                                                                                    title="Descargar"
-                                                                                >
+                                                                                <a href={evidenciaSlot.archivoUrl} download={evidenciaSlot.nombre}
+                                                                                    className="p-1 text-gray-400 hover:text-gray-700 rounded transition-colors" title="Descargar">
                                                                                     <Download className="w-3.5 h-3.5" />
                                                                                 </a>
                                                                                 {slotCfg && (
@@ -595,21 +695,40 @@ export default function MisKPIsPage() {
                                                                             </div>
                                                                         </div>
 
+                                                                        {/* Valor numérico registrado */}
                                                                         {evidenciaSlot.valorNumerico !== undefined && (
-                                                                            <p className="text-xs text-gray-500 mt-0.5">
-                                                                                Valor registrado: <span className="font-medium">{evidenciaSlot.valorNumerico} {kpi.unidad}</span>
-                                                                            </p>
+                                                                            <div className="flex items-center gap-2 mt-1">
+                                                                                <p className="text-xs text-gray-500">
+                                                                                    Valor: <span className="font-medium">{evidenciaSlot.valorNumerico} {kpi.unidad}</span>
+                                                                                </p>
+                                                                                {slotCumplimiento && (
+                                                                                    <span className={`text-xs font-medium ${slotCumplimiento === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>
+                                                                                        {slotCumplimiento === 'cumple' ? '✓ Cumple' : '✗ No cumple'}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
                                                                         )}
+
+                                                                        {/* Binario: mostrar que fue confirmado */}
+                                                                        {esBinario && evidenciaSlot.valorNumerico === 1 && (
+                                                                            <p className="text-xs text-green-600 mt-0.5">✓ Actividad confirmada</p>
+                                                                        )}
+
+                                                                        {/* Nota de evidencia */}
+                                                                        {evidenciaSlot.nota && (
+                                                                            <p className="text-xs text-gray-500 mt-0.5 italic">"{evidenciaSlot.nota}"</p>
+                                                                        )}
+
+                                                                        {/* Motivo rechazo */}
                                                                         {evidenciaSlot.motivoRechazo && (
-                                                                            <p className="text-xs text-red-600 mt-0.5">
-                                                                                Rechazo: {evidenciaSlot.motivoRechazo}
-                                                                            </p>
+                                                                            <p className="text-xs text-red-600 mt-0.5">Rechazo: {evidenciaSlot.motivoRechazo}</p>
                                                                         )}
+
                                                                         {/* Apelar */}
                                                                         {slotStatus === 'rechazada' && !evidenciaSlot.apelacion && (
-                                                                            <div className="mt-1">
+                                                                            <div className="mt-1.5">
                                                                                 {apelandoEvidencia === evidenciaSlot.id ? (
-                                                                                    <div className="space-y-1.5 mt-2">
+                                                                                    <div className="space-y-1.5">
                                                                                         <textarea
                                                                                             value={textoApelacion}
                                                                                             onChange={(e) => setTextoApelacion(e.target.value)}
@@ -618,26 +737,19 @@ export default function MisKPIsPage() {
                                                                                             className="w-full text-xs p-2 border border-gray-300 rounded-lg resize-none focus:ring-1 focus:ring-blue-500"
                                                                                         />
                                                                                         <div className="flex gap-2">
-                                                                                            <button
-                                                                                                onClick={() => handleApelar(evidenciaSlot!.id)}
-                                                                                                disabled={!textoApelacion.trim()}
-                                                                                                className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
-                                                                                            >
+                                                                                            <button onClick={() => handleApelar(evidenciaSlot!.id)} disabled={!textoApelacion.trim()}
+                                                                                                className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
                                                                                                 Enviar
                                                                                             </button>
-                                                                                            <button
-                                                                                                onClick={() => { setApelandoEvidencia(null); setTextoApelacion(''); }}
-                                                                                                className="px-3 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200"
-                                                                                            >
+                                                                                            <button onClick={() => { setApelandoEvidencia(null); setTextoApelacion(''); }}
+                                                                                                className="px-3 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200">
                                                                                                 Cancelar
                                                                                             </button>
                                                                                         </div>
                                                                                     </div>
                                                                                 ) : (
-                                                                                    <button
-                                                                                        onClick={() => setApelandoEvidencia(evidenciaSlot!.id)}
-                                                                                        className="text-xs text-blue-600 hover:underline mt-0.5"
-                                                                                    >
+                                                                                    <button onClick={() => setApelandoEvidencia(evidenciaSlot!.id)}
+                                                                                        className="text-xs text-blue-600 hover:underline">
                                                                                         Apelar rechazo
                                                                                     </button>
                                                                                 )}
@@ -645,12 +757,14 @@ export default function MisKPIsPage() {
                                                                         )}
                                                                         {evidenciaSlot.apelacion && (
                                                                             <p className="text-xs text-blue-600 mt-0.5">
-                                                                                Apelación enviada {evidenciaSlot.respuestaApelacion ? `· Resp: ${evidenciaSlot.respuestaApelacion}` : '· Pendiente de respuesta'}
+                                                                                Apelación enviada {evidenciaSlot.respuestaApelacion ? `· Resp: ${evidenciaSlot.respuestaApelacion}` : '· Pendiente'}
                                                                             </p>
                                                                         )}
                                                                     </div>
                                                                 ) : (
-                                                                    <p className="text-xs text-gray-400 flex-1">Evidencia {idx + 1} pendiente</p>
+                                                                    <p className="text-xs text-gray-400 flex-1 mt-0.5">
+                                                                        {esBinario ? 'Evidencia pendiente' : `Evidencia ${idx + 1} pendiente`}
+                                                                    </p>
                                                                 )}
                                                             </div>
                                                         );
@@ -658,7 +772,7 @@ export default function MisKPIsPage() {
                                                 </div>
                                             </div>
 
-                                            {/* Evidencias extra (más allá de las requeridas) */}
+                                            {/* Evidencias adicionales */}
                                             {kpi.evidencias.length > requeridas && (
                                                 <div>
                                                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -700,30 +814,72 @@ export default function MisKPIsPage() {
                                                         </button>
                                                     ) : (
                                                         <div className="space-y-3 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                                                            <p className="text-sm font-medium text-gray-700">
-                                                                {falta > 0 ? `Subir evidencia requerida` : 'Agregar evidencia extra'}
+                                                            <p className="text-sm font-semibold text-gray-700">
+                                                                {falta > 0 ? 'Subir evidencia requerida' : 'Agregar evidencia extra'}
                                                             </p>
 
-                                                            {/* Input valor numérico si aplica */}
+                                                            {/* Binario: checkbox de confirmación */}
+                                                            {esBinario && (
+                                                                <label className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={confirmadoBinario}
+                                                                        onChange={(e) => setConfirmadoBinario(e.target.checked)}
+                                                                        className="w-4 h-4 text-blue-600 rounded"
+                                                                    />
+                                                                    <div>
+                                                                        <p className="text-sm font-medium text-gray-800">Confirmo que realicé esta actividad</p>
+                                                                        <p className="text-xs text-gray-500 mt-0.5">{formulaDesc}</p>
+                                                                    </div>
+                                                                </label>
+                                                            )}
+
+                                                            {/* Valor numérico según tipo */}
                                                             {necesitaValor && (
                                                                 <div>
-                                                                    <label className="text-xs text-gray-500 mb-1 block">{valorLabel}</label>
-                                                                    <input
-                                                                        type="number"
-                                                                        value={valorNumerico}
-                                                                        onChange={(e) => setValorNumerico(e.target.value)}
-                                                                        placeholder="0"
-                                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                                    />
+                                                                    <label className="text-xs font-medium text-gray-600 mb-1 block">
+                                                                        {getValorLabel(kpi)} <span className="text-red-500">*</span>
+                                                                    </label>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <input
+                                                                            type="number"
+                                                                            value={valorNumerico}
+                                                                            onChange={(e) => setValorNumerico(e.target.value)}
+                                                                            placeholder="0"
+                                                                            min="0"
+                                                                            step="any"
+                                                                            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                                        />
+                                                                        {kpi.unidad && (
+                                                                            <span className="text-sm text-gray-500 font-medium">{kpi.unidad}</span>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* Feedback en tiempo real */}
+                                                                    {valorNumerico && kpi.meta !== undefined && (
+                                                                        (() => {
+                                                                            const val = parseFloat(valorNumerico);
+                                                                            const resultado = evaluarCumplimiento(kpi, val);
+                                                                            return resultado ? (
+                                                                                <p className={`text-xs mt-1.5 font-medium ${resultado === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>
+                                                                                    {resultado === 'cumple'
+                                                                                        ? `✓ Cumple la meta (${kpi.operadorMeta ?? ''} ${kpi.meta} ${kpi.unidad})`
+                                                                                        : `✗ No cumple la meta (${kpi.operadorMeta ?? ''} ${kpi.meta} ${kpi.unidad})`
+                                                                                    }
+                                                                                </p>
+                                                                            ) : null;
+                                                                        })()
+                                                                    )}
+
                                                                     {kpi.tipoCalculo === 'formula' && (
                                                                         <p className="text-xs text-gray-400 mt-1">Fórmula: {formulaDesc}</p>
                                                                     )}
                                                                 </div>
                                                             )}
 
-                                                            {/* Nota opcional */}
+                                                            {/* Nota de evidencia */}
                                                             <div>
-                                                                <label className="text-xs text-gray-500 mb-1 block">Nota (opcional)</label>
+                                                                <label className="text-xs font-medium text-gray-600 mb-1 block">Nota (opcional)</label>
                                                                 <textarea
                                                                     value={notaEvidencia}
                                                                     onChange={(e) => setNotaEvidencia(e.target.value)}
@@ -733,18 +889,16 @@ export default function MisKPIsPage() {
                                                                 />
                                                             </div>
 
-                                                            {/* Botones */}
                                                             <div className="flex gap-2">
                                                                 <button
                                                                     onClick={() => handleSeleccionarArchivo(kpi.id)}
-                                                                    disabled={cargando || (necesitaValor && !valorNumerico)}
+                                                                    disabled={cargando || (esBinario && !confirmadoBinario) || (necesitaValor && !valorNumerico)}
                                                                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
                                                                 >
-                                                                    {cargando ? (
-                                                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                                    ) : (
-                                                                        <Upload className="w-4 h-4" />
-                                                                    )}
+                                                                    {cargando
+                                                                        ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                        : <Upload className="w-4 h-4" />
+                                                                    }
                                                                     Seleccionar archivo
                                                                 </button>
                                                                 <button
@@ -758,6 +912,60 @@ export default function MisKPIsPage() {
                                                     )}
                                                 </div>
                                             )}
+
+                                            {/* ── Nota del KPI (por período) ── */}
+                                            <div className="pt-2 border-t border-gray-100">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                                                        <StickyNote className="w-3.5 h-3.5" /> Nota del período
+                                                    </p>
+                                                    {!editandoNota && (
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditandoNota(kpi.id);
+                                                                setTextoNota(kpi.notaKPI ?? '');
+                                                            }}
+                                                            className="text-xs text-blue-600 hover:underline"
+                                                        >
+                                                            {kpi.notaKPI ? 'Editar' : 'Agregar nota'}
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                {editandoNota === kpi.id ? (
+                                                    <div className="space-y-2">
+                                                        <textarea
+                                                            value={textoNota}
+                                                            onChange={(e) => setTextoNota(e.target.value)}
+                                                            placeholder="Agrega observaciones, contexto o comentarios sobre este KPI para el período actual..."
+                                                            rows={3}
+                                                            className="w-full text-xs p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => handleGuardarNota(kpi.id)}
+                                                                disabled={guardandoNota}
+                                                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+                                                            >
+                                                                {guardandoNota ? 'Guardando...' : 'Guardar'}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => { setEditandoNota(null); setTextoNota(''); }}
+                                                                className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-200"
+                                                            >
+                                                                Cancelar
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : kpi.notaKPI ? (
+                                                    <div className="p-3 bg-amber-50 rounded-lg border border-amber-100">
+                                                        <p className="text-xs text-amber-800 leading-relaxed">{kpi.notaKPI}</p>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-gray-400 italic">Sin nota para este período</p>
+                                                )}
+                                            </div>
+
                                         </div>
                                     )}
                                 </div>

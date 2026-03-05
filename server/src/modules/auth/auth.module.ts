@@ -7,6 +7,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { PrismaService } from 'src/common/database/prisma.service';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AuthCron } from './auth.cron';
+import { AlertasModule } from '../alertas/alertas.module';
 
 @Module({
   imports: [
@@ -16,8 +17,9 @@ import { AuthCron } from './auth.cron';
       secret:
         process.env.JWT_SECRET ||
         'tu-secreto-super-seguro-cambiar-en-produccion',
-      signOptions: { expiresIn: '15m' }, // Token válido por 15 minutos
+      signOptions: { expiresIn: '15m' },
     }),
+    AlertasModule, // ← para inyectar AlertasService en AuthService y AuthCron
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, PrismaService, AuthCron],

@@ -719,17 +719,56 @@ export class KpisService {
     });
   }
 
-  async getEvidenciasPendientesKPI(jefeId: string) {
+  async getEvidenciasPendientesKPI(userId: string) {
+    // 1. Evidencias por revisores asignados manualmente
+    const asignaciones = await this.prisma.revisorAsignado.findMany({
+      where: { revisorId: userId, activo: true },
+      select: { empleadoId: true },
+    });
+    const empleadosAsignados = asignaciones.map((a) => a.empleadoId);
+
+    // 2. Evidencias por jerarquía normal (jefe de área)
     const areaJefe = await this.prisma.area.findFirst({
-      where: { jefeId },
+      where: { jefeId: userId },
       include: { subAreas: { select: { id: true } } },
     });
-    if (!areaJefe) return [];
-    const areaIds = [areaJefe.id, ...areaJefe.subAreas.map((s) => s.id)];
+    const areaIds = areaJefe
+      ? [areaJefe.id, ...areaJefe.subAreas.map((s) => s.id)]
+      : [];
+
+    // Empleados del área pero excluir los que tienen revisor asignado a otro
+    // (para no mostrar duplicados si un empleado tiene revisor manual diferente)
+    let empleadosDelArea: string[] = [];
+    if (areaIds.length > 0) {
+      const empleadosArea = await this.prisma.user.findMany({
+        where: { areaId: { in: areaIds }, activo: true },
+        select: { id: true },
+      });
+      const idsArea = empleadosArea.map((e) => e.id);
+
+      // Excluir empleados del área que tienen revisor asignado a OTRO (no a userId)
+      const conRevisorOtro = await this.prisma.revisorAsignado.findMany({
+        where: {
+          empleadoId: { in: idsArea },
+          activo: true,
+          revisorId: { not: userId },
+        },
+        select: { empleadoId: true },
+      });
+      const excluidos = new Set(conRevisorOtro.map((r) => r.empleadoId));
+      empleadosDelArea = idsArea.filter((id) => !excluidos.has(id));
+    }
+
+    // 3. Union de ambos grupos
+    const todosEmpleados = [
+      ...new Set([...empleadosAsignados, ...empleadosDelArea]),
+    ];
+    if (todosEmpleados.length === 0) return [];
+
     return this.prisma.evidenciaKPI.findMany({
       where: {
         status: 'pendiente_revision',
-        empleado: { areaId: { in: areaIds } },
+        empleadoId: { in: todosEmpleados },
       },
       include: {
         kpi: {
@@ -738,6 +777,7 @@ export class KpisService {
             key: true,
             indicador: true,
             tipoCriticidad: true,
+            area: true,
           },
         },
         empleado: {

@@ -23,6 +23,7 @@ import MisOrdenesPage from './pages/MisOrdenesPage';
 import DetalleOrdenEmpleadoPage from './pages/DetalleOrdenEmpleadoPage';
 import MisKPIsPage from './pages/MisKpisPage';
 import RevisionEvidenciasPage from './pages/RevisionEvidenciasPage';
+import RevisoresAsignadosPage from './pages/RevisoresAsignadosPage';
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -216,6 +217,14 @@ function AppRoutes() {
           <PrivateRoute allowedRoles={['admin', 'RRHH', 'jefe']}>
             <RevisionEvidenciasPage />
           </PrivateRoute>} />
+
+      <Route
+        path="/asignacion-revisores"
+        element={
+          <PrivateRoute allowedRoles={['admin']}>
+            <RevisoresAsignadosPage />
+          </PrivateRoute>}
+      />
 
       {/* Redirect */}
       <Route path="/" element={<Navigate to="/dashboard" />} />

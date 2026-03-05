@@ -8,15 +8,13 @@ export const estadisticasService = {
   },
 
   getByArea: async (areaId: string) => {
-    const response = await apiClient.get(
-      API_ENDPOINTS.estadisticasArea(areaId),
-    );
+    const response = await apiClient.get(`estadisticas/area?areaId=${areaId}`);
     return response.data;
   },
 
   getByEmpleado: async (empleadoId: string) => {
     const response = await apiClient.get(
-      API_ENDPOINTS.estadisticasEmpleado(empleadoId),
+      `estadisticas/empleado?empleadoId=${empleadoId}`,
     );
     return response.data;
   },

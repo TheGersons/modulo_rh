@@ -11,6 +11,7 @@ export const usePermissions = () => {
       cerrar_periodo: ["admin", "rrhh"], // Solo admin y RRHH
       gestionar_kpis: ["admin", "jefe"],
       gestionar_empleados: ["admin", "rrhh"],
+      asignar_revisores: ["admin"],
     };
 
     return permissions[action]?.includes(userRole || "") || false;

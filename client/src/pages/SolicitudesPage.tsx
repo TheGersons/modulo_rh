@@ -63,7 +63,7 @@ export default function SolicitudesPage() {
     const [solicitudSeleccionada, setSolicitudSeleccionada] = useState<any>(null);
     const [accion, setAccion] = useState<'aprobar' | 'rechazar'>('aprobar');
     const [motivoRechazo, setMotivoRechazo] = useState('');
-    const [nuevaFechaLimite, setNuevaFechaLimite] = useState('');
+    const [nuevafechaLimite, setNuevaFechaLimite] = useState('');
     const [procesando, setProcesando] = useState(false);
 
     useEffect(() => { cargarSolicitudes(); }, [tipoVista, filtroStatus]);
@@ -117,7 +117,7 @@ export default function SolicitudesPage() {
         }
 
         // Validar nueva fecha si es aprobación de tarea
-        if (accion === 'aprobar' && tipoVista === 'tareas' && !nuevaFechaLimite) {
+        if (accion === 'aprobar' && tipoVista === 'tareas' && !nuevafechaLimite) {
             showToast('Debes indicar la nueva fecha límite', 'error');
             return;
         }
@@ -126,13 +126,13 @@ export default function SolicitudesPage() {
             setProcesando(true);
             const status = accion === 'aprobar' ? 'aprobada' : 'rechazada';
 
-            const fechaLimite = accion === 'aprobar' ? nuevaFechaLimite : undefined;
+            const nuevaFechaLimite = accion === 'aprobar' ? nuevafechaLimite : undefined;
             if (tipoVista === 'tareas') {
                 await ordenesTrabajoService.responderSolicitudTarea(
                     solicitudSeleccionada.id,
                     status,
                     motivoRechazo,
-                    fechaLimite,
+                    nuevaFechaLimite,
                 );
             } else {
                 await ordenesTrabajoService.responderSolicitudEdicion(
@@ -530,7 +530,7 @@ export default function SolicitudesPage() {
                                 )}
                                 <input
                                     type="date"
-                                    value={nuevaFechaLimite}
+                                    value={nuevafechaLimite}
                                     min={hoy}
                                     onChange={(e) => setNuevaFechaLimite(e.target.value)}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
