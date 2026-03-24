@@ -44,6 +44,7 @@ export class CreateKpiDto {
     'conteo',
     'porcentaje_kpis_equipo',
     'dashboard_presentado',
+    'precision',
     'personalizado',
   ])
   tipoCalculo: string;

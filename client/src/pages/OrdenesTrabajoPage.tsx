@@ -32,14 +32,18 @@ export default function OrdenesTrabajoPage() {
             setLoading(true);
             const filters: any = {};
 
-            // Si es empleado, solo sus órdenes
-            if (user?.role === 'empleado') {
-                filters.empleadoId = user.id;
-            }
-
             if (filtroStatus !== 'todos') {
                 filters.status = filtroStatus;
             }
+
+            if (user?.role === 'empleado') {
+                // Empleado: solo las suyas
+                filters.empleadoId = user.id;
+            } else if (user?.role === 'jefe') {
+                // Jefe: todas las de su área
+                filters.areaId = user.areaId;
+            }
+            // admin / rrhh: sin filtro adicional → ven todo
 
             const data = await ordenesTrabajoService.getAll(filters);
             setOrdenes(data);
@@ -49,6 +53,8 @@ export default function OrdenesTrabajoPage() {
             setLoading(false);
         }
     };
+
+
 
     const getStatusBadge = (status: string) => {
         const badges: Record<string, { color: string; icon: any; label: string }> = {

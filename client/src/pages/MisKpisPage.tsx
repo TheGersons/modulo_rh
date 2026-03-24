@@ -3,7 +3,7 @@ import {
     Target, CheckCircle, AlertCircle, Clock, Upload, ChevronDown, ChevronUp,
     Plus, FileText, Image, Film, File, Info, TrendingUp, Hash, Timer,
     Calculator, ToggleLeft, Eye, Download, StickyNote, ArrowUp, ArrowDown,
-    Minus,
+    Minus, Crosshair,
 } from 'lucide-react';
 import Layout from '../components/layout/Layout';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,7 +12,15 @@ import { kpisService } from '../services/kpis.service';
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 interface FormulaCalculo {
-    descripcion: string;
+    descripcion?: string;
+    labelEsperado?: string;
+    valorEsperado?: number;
+    labelObtenido?: string;
+    modoEvaluacion?: 'tolerancia' | 'umbral';
+    toleranciaPorc?: number;
+    numerador?: string;
+    denominador?: string;
+    multiplicador?: number;
 }
 
 interface KPI {
@@ -52,32 +60,23 @@ interface KPIConEvidencias extends KPI {
     statusKPI: 'pendiente' | 'en_progreso' | 'pendiente_revision' | 'aprobado' | 'rechazado';
     evidenciasRequeridas: number;
     evidenciasAprobadas: number;
-    notaKPI?: string; // Nota general del empleado sobre este KPI
+    notaKPI?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const TIPO_ICON: Record<string, any> = {
-    porcentaje: TrendingUp,
-    formula: Calculator,
-    tiempo: Timer,
-    conteo: Hash,
-    binario: ToggleLeft,
+    porcentaje: TrendingUp, formula: Calculator, tiempo: Timer,
+    conteo: Hash, binario: ToggleLeft, precision: Crosshair,
 };
 
 const TIPO_LABEL: Record<string, string> = {
-    porcentaje: 'Porcentaje',
-    formula: 'Fórmula',
-    tiempo: 'Tiempo',
-    conteo: 'Conteo',
-    binario: 'Binario',
+    porcentaje: 'Porcentaje', formula: 'Fórmula', tiempo: 'Tiempo',
+    conteo: 'Conteo', binario: 'Binario', precision: 'Precisión',
 };
 
 const ARCHIVO_ICON: Record<string, any> = {
-    imagen: Image,
-    video: Film,
-    pdf: FileText,
-    documento: File,
+    imagen: Image, video: Film, pdf: FileText, documento: File,
 };
 
 const EVIDENCIA_STATUS: Record<string, { label: string; color: string; bg: string }> = {
@@ -94,36 +93,18 @@ const KPI_STATUS_CONFIG: Record<string, { label: string; color: string; bg: stri
     rechazado: { label: 'Rechazado', color: 'text-red-700', bg: 'bg-red-100', border: 'border-red-200' },
 };
 
-/**
- * Determina cuántas evidencias requiere un KPI.
- * Conteo con meta > 0 y "Mayor es mejor" → N evidencias (una por item contado)
- * Todo lo demás → 1 evidencia
- */
 function getEvidenciasRequeridas(kpi: KPI): number {
-    if (
-        kpi.tipoCalculo === 'conteo' &&
-        kpi.meta !== undefined &&
-        kpi.meta > 0 &&
-        kpi.sentido !== 'Menor es mejor'
-    ) {
+    if (kpi.tipoCalculo === 'conteo' && kpi.meta !== undefined && kpi.meta > 0 && kpi.sentido !== 'Menor es mejor') {
         return kpi.meta;
     }
     return 1;
 }
 
-/**
- * ¿Este tipo de KPI requiere que el empleado ingrese un valor numérico?
- */
 function necesitaValorNumerico(kpi: KPI): boolean {
-    if (kpi.tipoCalculo === 'binario') return false;
-    if (kpi.tipoCalculo === 'porcentaje') return false; // solo descripción + evidencia
-    // formula, tiempo, conteo → siempre piden valor
+    if (['binario', 'porcentaje', 'precision'].includes(kpi.tipoCalculo)) return false;
     return true;
 }
 
-/**
- * Label descriptivo del campo numérico según tipo
- */
 function getValorLabel(kpi: KPI): string {
     if (kpi.tipoCalculo === 'tiempo') return `Valor real (${kpi.unidad ?? 'días'})`;
     if (kpi.tipoCalculo === 'conteo') return `Cantidad real (${kpi.unidad ?? 'unidades'})`;
@@ -131,26 +112,68 @@ function getValorLabel(kpi: KPI): string {
     return '';
 }
 
-/**
- * Evalúa si un valor numérico cumple la meta del KPI.
- * Retorna: 'cumple' | 'no_cumple' | null (si no aplica)
- */
+function evaluarOperador(valor: number, operador: string, referencia: number): boolean {
+    switch (operador) {
+        case '>=': return valor >= referencia;
+        case '>': return valor > referencia;
+        case '<=': return valor <= referencia;
+        case '<': return valor < referencia;
+        case '=': return valor === referencia;
+        default: return valor >= referencia;
+    }
+}
+
 function evaluarCumplimiento(kpi: KPI, valor: number): 'cumple' | 'no_cumple' | null {
     if (kpi.meta === undefined) return null;
-    if (kpi.tipoCalculo === 'binario' || kpi.tipoCalculo === 'porcentaje') return null;
-
+    if (['binario', 'porcentaje'].includes(kpi.tipoCalculo)) return null;
     const esMenorMejor = kpi.sentido === 'Menor es mejor';
-    const operador = kpi.operadorMeta ?? (esMenorMejor ? '<=' : '>=');
+    const op = kpi.operadorMeta ?? (esMenorMejor ? '<=' : '>=');
+    return evaluarOperador(valor, op, kpi.meta) ? 'cumple' : 'no_cumple';
+}
 
-    switch (operador) {
-        case '>=': return valor >= kpi.meta ? 'cumple' : 'no_cumple';
-        case '>': return valor > kpi.meta ? 'cumple' : 'no_cumple';
-        case '<=': return valor <= kpi.meta ? 'cumple' : 'no_cumple';
-        case '<': return valor < kpi.meta ? 'cumple' : 'no_cumple';
-        case '=': return valor === kpi.meta ? 'cumple' : 'no_cumple';
-        default: return esMenorMejor
-            ? (valor <= kpi.meta ? 'cumple' : 'no_cumple')
-            : (valor >= kpi.meta ? 'cumple' : 'no_cumple');
+/**
+ * Calcula precisión según el modo configurado.
+ * Modo tolerancia: 100 - |desviación%|, cumple si desviación <= tolerancia Y precisión >= meta
+ * Modo umbral:     obtenido [operador] esperado, cumple si pasa umbral Y precisión >= meta
+ */
+function calcularPrecision(
+    formula: FormulaCalculo,
+    obtenidoStr: string,
+    meta?: number,
+    operadorMeta?: string,
+): { precision: number | null; cumple: boolean | null; detalle: string } {
+    const esperado = formula.valorEsperado;
+    const obtenido = parseFloat(obtenidoStr);
+
+    if (!obtenidoStr || isNaN(obtenido) || !esperado || esperado === 0) {
+        return { precision: null, cumple: null, detalle: '' };
+    }
+
+    const desviacionPorc = Math.abs(((obtenido - esperado) / esperado) * 100);
+    const precision = 100 - desviacionPorc;
+    const cumpleMeta = meta !== undefined ? precision >= meta : true;
+    const modo = formula.modoEvaluacion ?? 'tolerancia';
+
+    if (modo === 'tolerancia') {
+        const tolerancia = formula.toleranciaPorc ?? 5;
+        const dentroTolerancia = desviacionPorc <= tolerancia;
+        const cumple = dentroTolerancia && cumpleMeta;
+        return {
+            precision,
+            cumple,
+            detalle: `Desviación: ${desviacionPorc.toFixed(1)}% (tolerancia ±${tolerancia}%)`,
+        };
+    } else {
+        const op = operadorMeta ?? '>=';
+        const pasoUmbral = evaluarOperador(obtenido, op, esperado);
+        const cumple = pasoUmbral && cumpleMeta;
+        return {
+            precision,
+            cumple,
+            detalle: pasoUmbral
+                ? `✓ ${obtenido} ${op} ${esperado} (umbral cumplido)`
+                : `✗ ${obtenido} no cumple ${op} ${esperado}`,
+        };
     }
 }
 
@@ -171,12 +194,8 @@ function formatBytes(bytes?: number): string {
 }
 
 function getFormulaDescripcion(formulaCalculo: string): string {
-    try {
-        const parsed: FormulaCalculo = JSON.parse(formulaCalculo);
-        return parsed.descripcion ?? '';
-    } catch {
-        return formulaCalculo;
-    }
+    try { return (JSON.parse(formulaCalculo) as FormulaCalculo).descripcion ?? ''; }
+    catch { return formulaCalculo; }
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -188,7 +207,6 @@ export default function MisKPIsPage() {
     const [expandidos, setExpandidos] = useState<string[]>([]);
     const [filtro, setFiltro] = useState<string>('todos');
 
-    // Subida de evidencia
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [subiendoEvidencia, setSubiendoEvidencia] = useState<string | null>(null);
     const [kpiSeleccionado, setKpiSeleccionado] = useState<string | null>(null);
@@ -196,21 +214,16 @@ export default function MisKPIsPage() {
     const [notaEvidencia, setNotaEvidencia] = useState<string>('');
     const [confirmadoBinario, setConfirmadoBinario] = useState(false);
     const [mostrarFormSubida, setMostrarFormSubida] = useState<string | null>(null);
+    const [valorEsperado, setValorEsperado] = useState<string>('');
+    const [valorObtenido, setValorObtenido] = useState<string>('');
 
-    // Notas por KPI
     const [editandoNota, setEditandoNota] = useState<string | null>(null);
     const [textoNota, setTextoNota] = useState<string>('');
     const [guardandoNota, setGuardandoNota] = useState(false);
-
-    // Apelación
     const [apelandoEvidencia, setApelandoEvidencia] = useState<string | null>(null);
     const [textoApelacion, setTextoApelacion] = useState('');
 
-    useEffect(() => {
-        if (user?.id) cargarKPIs();
-    }, [user]);
-
-    // ─── Carga ───────────────────────────────────────────────────────────────────
+    useEffect(() => { if (user?.id) cargarKPIs(); }, [user]);
 
     const getPeriodoActual = () => {
         const now = new Date();
@@ -224,29 +237,17 @@ export default function MisKPIsPage() {
             const kpisData = await kpisService.getMisKpis();
             const periodo = getPeriodoActual();
 
-            const resEv = await fetch(`/api/kpis/mis-evidencias?periodo=${periodo}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const resEv = await fetch(`/api/kpis/mis-evidencias?periodo=${periodo}`, { headers: { Authorization: `Bearer ${token}` } });
             const evidenciasData: Record<string, Evidencia[]> = resEv.ok ? await resEv.json() : {};
 
-            // Cargar notas guardadas
-            const resNotas = await fetch(`/api/kpis/mis-notas?periodo=${periodo}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            }).catch(() => null);
+            const resNotas = await fetch(`/api/kpis/mis-notas?periodo=${periodo}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
             const notasData: Record<string, string> = resNotas?.ok ? await resNotas.json() : {};
 
             const combinados: KPIConEvidencias[] = (Array.isArray(kpisData) ? kpisData : []).map((kpi) => {
                 const evidencias = evidenciasData[kpi.id] ?? [];
                 const requeridas = getEvidenciasRequeridas(kpi);
                 const aprobadas = evidencias.filter((e: Evidencia) => e.status === 'aprobada').length;
-                return {
-                    ...kpi,
-                    evidencias,
-                    statusKPI: derivarStatusKPI(evidencias, requeridas),
-                    evidenciasRequeridas: requeridas,
-                    evidenciasAprobadas: aprobadas,
-                    notaKPI: notasData[kpi.id],
-                };
+                return { ...kpi, evidencias, statusKPI: derivarStatusKPI(evidencias, requeridas), evidenciasRequeridas: requeridas, evidenciasAprobadas: aprobadas, notaKPI: notasData[kpi.id] };
             });
 
             setKpis(combinados);
@@ -257,33 +258,21 @@ export default function MisKPIsPage() {
         }
     };
 
-    // ─── Acciones ────────────────────────────────────────────────────────────────
-
-    const toggleExpanded = (kpiId: string) => {
+    const toggleExpanded = (kpiId: string) =>
         setExpandidos((prev) => prev.includes(kpiId) ? prev.filter((id) => id !== kpiId) : [...prev, kpiId]);
-    };
 
     const handleAbrirSubida = (kpiId: string) => {
         setMostrarFormSubida(kpiId);
-        setValorNumerico('');
-        setNotaEvidencia('');
-        setConfirmadoBinario(false);
+        setValorNumerico(''); setNotaEvidencia('');
+        setConfirmadoBinario(false); setValorEsperado(''); setValorObtenido('');
     };
 
     const handleSeleccionarArchivo = (kpiId: string) => {
         const kpi = kpis.find((k) => k.id === kpiId);
         if (!kpi) return;
-
-        // Validaciones antes de abrir el selector
-        if (kpi.tipoCalculo === 'binario' && !confirmadoBinario) {
-            alert('Debes confirmar que completaste la actividad antes de subir evidencia.');
-            return;
-        }
-        if (necesitaValorNumerico(kpi) && !valorNumerico) {
-            alert(`Debes ingresar ${getValorLabel(kpi)} antes de seleccionar el archivo.`);
-            return;
-        }
-
+        if (kpi.tipoCalculo === 'binario' && !confirmadoBinario) { alert('Debes confirmar que completaste la actividad.'); return; }
+        if (necesitaValorNumerico(kpi) && !valorNumerico) { alert(`Debes ingresar ${getValorLabel(kpi)}.`); return; }
+        if (kpi.tipoCalculo === 'precision' && !valorObtenido) { alert('Debes ingresar el resultado obtenido.'); return; }
         setKpiSeleccionado(kpiId);
         fileInputRef.current?.click();
     };
@@ -291,14 +280,12 @@ export default function MisKPIsPage() {
     const handleArchivoSeleccionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !kpiSeleccionado) return;
-
         const kpi = kpis.find((k) => k.id === kpiSeleccionado);
         if (!kpi) return;
 
         try {
             setSubiendoEvidencia(kpiSeleccionado);
             const token = localStorage.getItem('accessToken');
-
             const formData = new FormData();
             formData.append('archivo', file);
             formData.append('kpiId', kpiSeleccionado);
@@ -306,14 +293,16 @@ export default function MisKPIsPage() {
             formData.append('periodo', getPeriodoActual());
             formData.append('anio', String(new Date().getFullYear()));
 
-            if (necesitaValorNumerico(kpi) && valorNumerico) {
-                formData.append('valorNumerico', valorNumerico);
-            }
-            if (kpi.tipoCalculo === 'binario') {
-                formData.append('valorNumerico', '1'); // binario = 1 = cumplido
-            }
-            if (notaEvidencia) {
-                formData.append('nota', notaEvidencia);
+            if (necesitaValorNumerico(kpi) && valorNumerico) formData.append('valorNumerico', valorNumerico);
+            if (kpi.tipoCalculo === 'binario') formData.append('valorNumerico', '1');
+            if (notaEvidencia) formData.append('nota', notaEvidencia);
+
+            // Precisión: calcular según modo y enviar
+            if (kpi.tipoCalculo === 'precision' && valorObtenido) {
+                const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+                const { precision } = calcularPrecision(formula, valorObtenido, kpi.meta, kpi.operadorMeta);
+                if (precision !== null) formData.append('valorNumerico', precision.toFixed(2));
+                formData.append('valorObtenido', valorObtenido);
             }
 
             const res = await fetch('/api/storage/evidencia-kpi', {
@@ -328,13 +317,10 @@ export default function MisKPIsPage() {
             }
 
             setMostrarFormSubida(null);
-            setValorNumerico('');
-            setNotaEvidencia('');
-            setConfirmadoBinario(false);
+            setValorNumerico(''); setNotaEvidencia(''); setConfirmadoBinario(false); setValorObtenido('');
             await cargarKPIs();
         } catch (error: any) {
-            console.error('Error:', error);
-            alert(error.message || 'Error al subir la evidencia. Intenta de nuevo.');
+            alert(error.message || 'Error al subir la evidencia.');
         } finally {
             setSubiendoEvidencia(null);
             setKpiSeleccionado(null);
@@ -352,13 +338,9 @@ export default function MisKPIsPage() {
                 body: JSON.stringify({ nota: textoNota, periodo: getPeriodoActual() }),
             });
             setKpis((prev) => prev.map((k) => k.id === kpiId ? { ...k, notaKPI: textoNota } : k));
-            setEditandoNota(null);
-            setTextoNota('');
-        } catch {
-            alert('Error al guardar la nota.');
-        } finally {
-            setGuardandoNota(false);
-        }
+            setEditandoNota(null); setTextoNota('');
+        } catch { alert('Error al guardar la nota.'); }
+        finally { setGuardandoNota(false); }
     };
 
     const handleApelar = async (evidenciaId: string) => {
@@ -370,15 +352,10 @@ export default function MisKPIsPage() {
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ apelacion: textoApelacion }),
             });
-            setApelandoEvidencia(null);
-            setTextoApelacion('');
+            setApelandoEvidencia(null); setTextoApelacion('');
             await cargarKPIs();
-        } catch {
-            alert('Error al enviar la apelación.');
-        }
+        } catch { alert('Error al enviar la apelación.'); }
     };
-
-    // ─── Computed ─────────────────────────────────────────────────────────────────
 
     const kpisFiltrados = kpis.filter((k) => filtro === 'todos' || k.statusKPI === filtro);
     const stats = {
@@ -387,8 +364,6 @@ export default function MisKPIsPage() {
         revision: kpis.filter((k) => k.statusKPI === 'pendiente_revision').length,
         pendientes: kpis.filter((k) => ['pendiente', 'en_progreso', 'rechazado'].includes(k.statusKPI)).length,
     };
-
-    // ─── Render ───────────────────────────────────────────────────────────────────
 
     if (loading) {
         return (
@@ -405,17 +380,12 @@ export default function MisKPIsPage() {
 
     return (
         <Layout>
-            <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
+            <input ref={fileInputRef} type="file" className="hidden"
                 accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
-                onChange={handleArchivoSeleccionado}
-            />
+                onChange={handleArchivoSeleccionado} />
 
             <div className="p-8 space-y-6 max-w-4xl mx-auto">
 
-                {/* Header */}
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Mis KPIs</h1>
                     <p className="text-gray-500 mt-1 text-sm">
@@ -423,7 +393,6 @@ export default function MisKPIsPage() {
                     </p>
                 </div>
 
-                {/* Stats */}
                 <div className="grid grid-cols-3 gap-4">
                     {[
                         { label: 'Aprobados', value: stats.aprobados, color: 'text-green-600', bg: 'bg-green-50', icon: CheckCircle },
@@ -448,28 +417,19 @@ export default function MisKPIsPage() {
                     })}
                 </div>
 
-                {/* Filtros */}
                 <div className="flex gap-2 flex-wrap">
                     {[
-                        { value: 'todos', label: 'Todos' },
-                        { value: 'pendiente', label: 'Pendientes' },
-                        { value: 'en_progreso', label: 'En Progreso' },
-                        { value: 'pendiente_revision', label: 'En Revisión' },
-                        { value: 'aprobado', label: 'Aprobados' },
-                        { value: 'rechazado', label: 'Rechazados' },
+                        { value: 'todos', label: 'Todos' }, { value: 'pendiente', label: 'Pendientes' },
+                        { value: 'en_progreso', label: 'En Progreso' }, { value: 'pendiente_revision', label: 'En Revisión' },
+                        { value: 'aprobado', label: 'Aprobados' }, { value: 'rechazado', label: 'Rechazados' },
                     ].map((f) => (
-                        <button
-                            key={f.value}
-                            onClick={() => setFiltro(f.value)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtro === f.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                }`}
-                        >
+                        <button key={f.value} onClick={() => setFiltro(f.value)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtro === f.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                             {f.label}
                         </button>
                     ))}
                 </div>
 
-                {/* Lista */}
                 {kpisFiltrados.length === 0 ? (
                     <div className="bg-white rounded-xl p-12 text-center shadow-sm border border-gray-200">
                         <Target className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -486,6 +446,7 @@ export default function MisKPIsPage() {
                             const esMenorMejor = kpi.sentido === 'Menor es mejor';
                             const formulaDesc = getFormulaDescripcion(kpi.formulaCalculo);
                             const esBinario = kpi.tipoCalculo === 'binario';
+                            const esPrecision = kpi.tipoCalculo === 'precision';
                             const necesitaValor = necesitaValorNumerico(kpi);
                             const mostrandoForm = mostrarFormSubida === kpi.id;
                             const cargando = subiendoEvidencia === kpi.id;
@@ -496,7 +457,6 @@ export default function MisKPIsPage() {
                             const falta = Math.max(0, requeridas - aprobadas - enRevision);
                             const puedeSubir = kpi.statusKPI !== 'aprobado';
 
-                            // Valor numérico más reciente aprobado o en revisión
                             const ultimaEvidenciaConValor = kpi.evidencias
                                 .filter((e) => e.valorNumerico !== undefined)
                                 .sort((a, b) => new Date(b.fechaSubida).getTime() - new Date(a.fechaSubida).getTime())[0];
@@ -507,98 +467,64 @@ export default function MisKPIsPage() {
                             return (
                                 <div key={kpi.id} className={`bg-white rounded-xl shadow-sm border transition-all ${statusCfg.border}`}>
 
-                                    {/* Header KPI — clickeable para expandir */}
+                                    {/* Header */}
                                     <div className="flex items-start gap-4 p-5 cursor-pointer" onClick={() => toggleExpanded(kpi.id)}>
                                         <div className={`p-2.5 rounded-lg flex-shrink-0 ${esCritico ? 'bg-red-50' : 'bg-blue-50'}`}>
                                             <TipoIcon className={`w-5 h-5 ${esCritico ? 'text-red-600' : 'text-blue-600'}`} />
                                         </div>
-
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-start justify-between gap-3 mb-1">
                                                 <div className="min-w-0">
                                                     <div className="flex items-center gap-2 flex-wrap">
-                                                        <span className="text-xs font-mono text-blue-600 font-medium">{kpi.key}</span>
+                                                        <span className="text-xs font-mono text-blue-600 font-medium">{kpi.indicador}</span>
                                                         <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
                                                             {TIPO_LABEL[kpi.tipoCalculo] ?? kpi.tipoCalculo}
                                                         </span>
-                                                        {esCritico && (
-                                                            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">Crítico</span>
-                                                        )}
-                                                        {esMenorMejor && (
-                                                            <span className="flex items-center gap-0.5 text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
-                                                                <ArrowDown className="w-3 h-3" /> Menor es mejor
-                                                            </span>
-                                                        )}
-                                                        {!esMenorMejor && kpi.tipoCalculo !== 'binario' && (
-                                                            <span className="flex items-center gap-0.5 text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                                                                <ArrowUp className="w-3 h-3" /> Mayor es mejor
-                                                            </span>
-                                                        )}
-                                                        {esBinario && (
-                                                            <span className="flex items-center gap-0.5 text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
-                                                                <Minus className="w-3 h-3" /> Sí / No
-                                                            </span>
-                                                        )}
+                                                        {esCritico && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">Crítico</span>}
+                                                        {esMenorMejor && <span className="flex items-center gap-0.5 text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full"><ArrowDown className="w-3 h-3" /> Menor es mejor</span>}
+                                                        {!esMenorMejor && !esBinario && <span className="flex items-center gap-0.5 text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full"><ArrowUp className="w-3 h-3" /> Mayor es mejor</span>}
+                                                        {esBinario && <span className="flex items-center gap-0.5 text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full"><Minus className="w-3 h-3" /> Sí / No</span>}
                                                     </div>
-                                                    <p className="text-sm font-semibold text-gray-900 mt-0.5">{kpi.indicador}</p>
+                                                    <p className="text-sm font-semibold text-gray-900 mt-0.5">{kpi.descripcion}</p>
                                                 </div>
                                                 <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${statusCfg.bg} ${statusCfg.color}`}>
                                                     {statusCfg.label}
                                                 </span>
                                             </div>
-
                                             <p className="text-xs text-gray-500 mb-2">{formulaDesc}</p>
-
-                                            {/* Barra de progreso */}
                                             <div className="flex items-center gap-3 mb-1">
                                                 <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                                                    <div
-                                                        className={`h-1.5 rounded-full transition-all ${aprobadas >= requeridas ? 'bg-green-500' :
-                                                            cumplimiento === 'no_cumple' ? 'bg-red-400' : 'bg-blue-500'
-                                                            }`}
-                                                        style={{ width: `${Math.min((aprobadas / Math.max(requeridas, 1)) * 100, 100)}%` }}
-                                                    />
+                                                    <div className={`h-1.5 rounded-full transition-all ${aprobadas >= requeridas ? 'bg-green-500' : cumplimiento === 'no_cumple' ? 'bg-red-400' : 'bg-blue-500'}`}
+                                                        style={{ width: `${Math.min((aprobadas / Math.max(requeridas, 1)) * 100, 100)}%` }} />
                                                 </div>
                                                 <span className="text-xs text-gray-500 flex-shrink-0">
-                                                    {aprobadas}/{requeridas} evidencias
-                                                    {enRevision > 0 && ` · ${enRevision} en revisión`}
+                                                    {aprobadas}/{requeridas} evidencias{enRevision > 0 && ` · ${enRevision} en revisión`}
                                                 </span>
                                             </div>
-
-                                            {/* Meta y cumplimiento */}
                                             <div className="flex items-center gap-3 flex-wrap">
                                                 {kpi.meta !== undefined && !esBinario && (
                                                     <p className="text-xs text-gray-400">
-                                                        Meta: <span className="font-medium text-gray-600">
-                                                            {kpi.operadorMeta} {kpi.meta} {kpi.unidad}
-                                                        </span>
+                                                        Meta: <span className="font-medium text-gray-600">{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</span>
                                                         <span className="ml-1 text-gray-400 capitalize">· {kpi.periodicidad}</span>
                                                     </p>
                                                 )}
                                                 {cumplimiento && ultimaEvidenciaConValor && (
-                                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cumplimiento === 'cumple' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                                                        }`}>
-                                                        {cumplimiento === 'cumple' ? '✓ Cumple meta' : '✗ No cumple meta'} ({ultimaEvidenciaConValor.valorNumerico} {kpi.unidad})
+                                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cumplimiento === 'cumple' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                        {cumplimiento === 'cumple' ? '✓ Cumple meta' : '✗ No cumple meta'} ({ultimaEvidenciaConValor.valorNumerico}{esPrecision ? '%' : ` ${kpi.unidad}`})
                                                     </span>
                                                 )}
-                                                {kpi.notaKPI && (
-                                                    <span className="flex items-center gap-1 text-xs text-amber-600">
-                                                        <StickyNote className="w-3 h-3" /> Tiene nota
-                                                    </span>
-                                                )}
+                                                {kpi.notaKPI && <span className="flex items-center gap-1 text-xs text-amber-600"><StickyNote className="w-3 h-3" /> Tiene nota</span>}
                                             </div>
                                         </div>
-
                                         <div className="flex-shrink-0 self-center">
                                             {expandido ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                                         </div>
                                     </div>
 
-                                    {/* ── Detalle expandido ── */}
+                                    {/* Detalle expandido */}
                                     {expandido && (
                                         <div className="border-t border-gray-100 p-5 space-y-5">
 
-                                            {/* Info del KPI */}
                                             {kpi.descripcion && (
                                                 <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg">
                                                     <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
@@ -608,27 +534,33 @@ export default function MisKPIsPage() {
 
                                             {/* Instrucción por tipo */}
                                             <div className={`flex items-start gap-2 p-3 rounded-lg text-xs ${esBinario ? 'bg-gray-50 border border-gray-200' :
-                                                esMenorMejor ? 'bg-purple-50 border border-purple-100' :
-                                                    'bg-green-50 border border-green-100'
+                                                    esPrecision ? 'bg-teal-50 border border-teal-100' :
+                                                        esMenorMejor ? 'bg-purple-50 border border-purple-100' :
+                                                            'bg-green-50 border border-green-100'
                                                 }`}>
-                                                <Info className={`w-4 h-4 flex-shrink-0 mt-0.5 ${esBinario ? 'text-gray-500' : esMenorMejor ? 'text-purple-500' : 'text-green-500'}`} />
-                                                <div>
-                                                    {esBinario && <p className="text-gray-700">Este KPI es de tipo <strong>Sí/No</strong>. Confirma que realizaste la actividad y sube la evidencia que lo demuestra.</p>}
-                                                    {kpi.tipoCalculo === 'tiempo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra el tiempo real que tomó la actividad. Meta: <strong>{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Menor es mejor.' : 'Mayor es mejor.'}</p>}
+                                                <Info className={`w-4 h-4 flex-shrink-0 mt-0.5 ${esBinario ? 'text-gray-500' : esPrecision ? 'text-teal-500' : esMenorMejor ? 'text-purple-500' : 'text-green-500'}`} />
+                                                <div className="space-y-1">
+                                                    {esBinario && <p className="text-gray-700">Este KPI es de tipo <strong>Sí/No</strong>. Confirma que realizaste la actividad y sube la evidencia.</p>}
+                                                    {kpi.tipoCalculo === 'tiempo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra el tiempo real. Meta: <strong>{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Menor es mejor.' : 'Mayor es mejor.'}</p>}
                                                     {kpi.tipoCalculo === 'conteo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra la cantidad real. Meta: <strong>{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Mientras menos, mejor.' : 'Mientras más, mejor.'}</p>}
-                                                    {kpi.tipoCalculo === 'formula' && <p className="text-green-700">Calcula el resultado usando la fórmula: <strong>{formulaDesc}</strong>. Ingresa el resultado y sube la evidencia.</p>}
-                                                    {kpi.tipoCalculo === 'porcentaje' && <p className="text-green-700">Sube la evidencia que demuestra el cumplimiento. Meta: <strong>{kpi.operadorMeta} {kpi.meta}{kpi.unidad}</strong>.</p>}
-                                                    {kpi.tipoCalculo === 'division' && (() => {
-                                                        // Parseamos el string a un objeto real
-                                                        const formula = JSON.parse(kpi.formulaCalculo);
-
+                                                    {kpi.tipoCalculo === 'formula' && <p className="text-green-700">Calcula usando: <strong>{formulaDesc}</strong>. Ingresa el resultado y sube la evidencia.</p>}
+                                                    {kpi.tipoCalculo === 'porcentaje' && <p className="text-green-700">Sube la evidencia del cumplimiento. Meta: <strong>{kpi.operadorMeta} {kpi.meta}{kpi.unidad}</strong>.</p>}
+                                                    {esPrecision && (() => {
+                                                        const f: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+                                                        const modo = f.modoEvaluacion ?? 'tolerancia';
                                                         return (
-                                                            <p className="text-purple-700">
-                                                                Calcula el resultado usando la fórmula:
-                                                                <strong> ({formula.numerador} / {formula.denominador}) x {formula.multiplicador}</strong>.
-                                                                Ingresa el resultado y sube la evidencia.
-                                                            </p>
+                                                            <>
+                                                                <p className="text-teal-700">Ingresa tu <strong>{f.labelObtenido ?? 'resultado obtenido'}</strong>. El valor de referencia es <strong>{f.valorEsperado} {kpi.unidad}</strong>.</p>
+                                                                {modo === 'tolerancia'
+                                                                    ? <p className="text-teal-600">Modo <strong>tolerancia ±{f.toleranciaPorc ?? 5}%</strong>: cumples si tu desviación es ≤ ese margen y la precisión ≥ <strong>{kpi.meta}%</strong>.</p>
+                                                                    : <p className="text-teal-600">Modo <strong>umbral directo</strong>: cumples si tu resultado {kpi.operadorMeta} {f.valorEsperado} y la precisión ≥ <strong>{kpi.meta}%</strong>.</p>
+                                                                }
+                                                            </>
                                                         );
+                                                    })()}
+                                                    {kpi.tipoCalculo === 'division' && (() => {
+                                                        const f: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+                                                        return <p className="text-purple-700">Fórmula: <strong>({f.numerador} / {f.denominador}) × {f.multiplicador}</strong>. Ingresa el resultado.</p>;
                                                     })()}
                                                 </div>
                                             </div>
@@ -638,133 +570,76 @@ export default function MisKPIsPage() {
                                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                                                     Evidencias {esBinario ? '' : `requeridas (${requeridas})`}
                                                 </p>
-
                                                 <div className="space-y-2">
                                                     {Array.from({ length: requeridas }).map((_, idx) => {
-                                                        const evidenciasAprobadas_ = kpi.evidencias.filter((e) => e.status === 'aprobada');
-                                                        const evidenciasRevision_ = kpi.evidencias.filter((e) => e.status === 'pendiente_revision');
-                                                        const evidenciasRechazadas_ = kpi.evidencias.filter((e) => e.status === 'rechazada');
+                                                        const evA = kpi.evidencias.filter((e) => e.status === 'aprobada');
+                                                        const evR = kpi.evidencias.filter((e) => e.status === 'pendiente_revision');
+                                                        const evX = kpi.evidencias.filter((e) => e.status === 'rechazada');
+                                                        let slot: Evidencia | undefined;
+                                                        if (idx < evA.length) slot = evA[idx];
+                                                        else if (idx - evA.length < evR.length) slot = evR[idx - evA.length];
+                                                        else if (idx - evA.length - evR.length < evX.length) slot = evX[idx - evA.length - evR.length];
 
-                                                        let evidenciaSlot: Evidencia | undefined;
-                                                        if (idx < evidenciasAprobadas_.length) {
-                                                            evidenciaSlot = evidenciasAprobadas_[idx];
-                                                        } else if ((idx - evidenciasAprobadas_.length) < evidenciasRevision_.length) {
-                                                            evidenciaSlot = evidenciasRevision_[idx - evidenciasAprobadas_.length];
-                                                        } else if ((idx - evidenciasAprobadas_.length - evidenciasRevision_.length) < evidenciasRechazadas_.length) {
-                                                            evidenciaSlot = evidenciasRechazadas_[idx - evidenciasAprobadas_.length - evidenciasRevision_.length];
-                                                        }
-
-                                                        const slotStatus = evidenciaSlot?.status;
-                                                        const slotCfg = slotStatus ? EVIDENCIA_STATUS[slotStatus] : null;
-                                                        const slotCumplimiento = evidenciaSlot?.valorNumerico !== undefined
-                                                            ? evaluarCumplimiento(kpi, evidenciaSlot.valorNumerico)
-                                                            : null;
+                                                        const ss = slot?.status;
+                                                        const sCfg = ss ? EVIDENCIA_STATUS[ss] : null;
+                                                        const sCumpl = slot?.valorNumerico !== undefined ? evaluarCumplimiento(kpi, slot.valorNumerico) : null;
 
                                                         return (
-                                                            <div key={idx} className={`flex items-start gap-3 p-3 rounded-lg border ${slotStatus === 'aprobada' ? 'bg-green-50 border-green-200' :
-                                                                slotStatus === 'pendiente_revision' ? 'bg-orange-50 border-orange-200' :
-                                                                    slotStatus === 'rechazada' ? 'bg-red-50 border-red-200' :
-                                                                        'bg-gray-50 border-gray-200 border-dashed'
+                                                            <div key={idx} className={`flex items-start gap-3 p-3 rounded-lg border ${ss === 'aprobada' ? 'bg-green-50 border-green-200' :
+                                                                    ss === 'pendiente_revision' ? 'bg-orange-50 border-orange-200' :
+                                                                        ss === 'rechazada' ? 'bg-red-50 border-red-200' :
+                                                                            'bg-gray-50 border-gray-200 border-dashed'
                                                                 }`}>
-                                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5 ${slotStatus === 'aprobada' ? 'bg-green-500 text-white' :
-                                                                    slotStatus === 'pendiente_revision' ? 'bg-orange-400 text-white' :
-                                                                        slotStatus === 'rechazada' ? 'bg-red-400 text-white' :
-                                                                            'bg-gray-200 text-gray-500'
+                                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5 ${ss === 'aprobada' ? 'bg-green-500 text-white' :
+                                                                        ss === 'pendiente_revision' ? 'bg-orange-400 text-white' :
+                                                                            ss === 'rechazada' ? 'bg-red-400 text-white' : 'bg-gray-200 text-gray-500'
                                                                     }`}>
-                                                                    {slotStatus === 'aprobada' ? '✓' : slotStatus === 'pendiente_revision' ? '⏳' : slotStatus === 'rechazada' ? '✗' : idx + 1}
+                                                                    {ss === 'aprobada' ? '✓' : ss === 'pendiente_revision' ? '⏳' : ss === 'rechazada' ? '✗' : idx + 1}
                                                                 </div>
 
-                                                                {evidenciaSlot ? (
+                                                                {slot ? (
                                                                     <div className="flex-1 min-w-0">
                                                                         <div className="flex items-center justify-between gap-2 flex-wrap">
-                                                                            <p className="text-xs font-medium text-gray-800 truncate">{evidenciaSlot.nombre}</p>
+                                                                            <p className="text-xs font-medium text-gray-800 truncate">{slot.nombre}</p>
                                                                             <div className="flex items-center gap-1.5 flex-shrink-0">
-                                                                                <a href={evidenciaSlot.archivoUrl} target="_blank" rel="noopener noreferrer"
-                                                                                    className="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors" title="Ver">
-                                                                                    <Eye className="w-3.5 h-3.5" />
-                                                                                </a>
-                                                                                <a href={evidenciaSlot.archivoUrl} download={evidenciaSlot.nombre}
-                                                                                    className="p-1 text-gray-400 hover:text-gray-700 rounded transition-colors" title="Descargar">
-                                                                                    <Download className="w-3.5 h-3.5" />
-                                                                                </a>
-                                                                                {slotCfg && (
-                                                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${slotCfg.bg} ${slotCfg.color}`}>
-                                                                                        {slotCfg.label}
-                                                                                    </span>
-                                                                                )}
+                                                                                <a href={slot.archivoUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-gray-400 hover:text-blue-600 rounded"><Eye className="w-3.5 h-3.5" /></a>
+                                                                                <a href={slot.archivoUrl} download={slot.nombre} className="p-1 text-gray-400 hover:text-gray-700 rounded"><Download className="w-3.5 h-3.5" /></a>
+                                                                                {sCfg && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sCfg.bg} ${sCfg.color}`}>{sCfg.label}</span>}
                                                                             </div>
                                                                         </div>
-
-                                                                        {/* Valor numérico registrado */}
-                                                                        {evidenciaSlot.valorNumerico !== undefined && (
+                                                                        {slot.valorNumerico !== undefined && (
                                                                             <div className="flex items-center gap-2 mt-1">
                                                                                 <p className="text-xs text-gray-500">
-                                                                                    Valor: <span className="font-medium">{evidenciaSlot.valorNumerico} {kpi.unidad}</span>
+                                                                                    {esPrecision ? 'Precisión: ' : 'Valor: '}
+                                                                                    <span className="font-medium">{slot.valorNumerico}{esPrecision ? '%' : ` ${kpi.unidad}`}</span>
                                                                                 </p>
-                                                                                {slotCumplimiento && (
-                                                                                    <span className={`text-xs font-medium ${slotCumplimiento === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>
-                                                                                        {slotCumplimiento === 'cumple' ? '✓ Cumple' : '✗ No cumple'}
-                                                                                    </span>
-                                                                                )}
+                                                                                {sCumpl && <span className={`text-xs font-medium ${sCumpl === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>{sCumpl === 'cumple' ? '✓ Cumple' : '✗ No cumple'}</span>}
                                                                             </div>
                                                                         )}
-
-                                                                        {/* Binario: mostrar que fue confirmado */}
-                                                                        {esBinario && evidenciaSlot.valorNumerico === 1 && (
-                                                                            <p className="text-xs text-green-600 mt-0.5">✓ Actividad confirmada</p>
-                                                                        )}
-
-                                                                        {/* Nota de evidencia */}
-                                                                        {evidenciaSlot.nota && (
-                                                                            <p className="text-xs text-gray-500 mt-0.5 italic">"{evidenciaSlot.nota}"</p>
-                                                                        )}
-
-                                                                        {/* Motivo rechazo */}
-                                                                        {evidenciaSlot.motivoRechazo && (
-                                                                            <p className="text-xs text-red-600 mt-0.5">Rechazo: {evidenciaSlot.motivoRechazo}</p>
-                                                                        )}
-
-                                                                        {/* Apelar */}
-                                                                        {slotStatus === 'rechazada' && !evidenciaSlot.apelacion && (
+                                                                        {esBinario && slot.valorNumerico === 1 && <p className="text-xs text-green-600 mt-0.5">✓ Actividad confirmada</p>}
+                                                                        {slot.nota && <p className="text-xs text-gray-500 mt-0.5 italic">"{slot.nota}"</p>}
+                                                                        {slot.motivoRechazo && <p className="text-xs text-red-600 mt-0.5">Rechazo: {slot.motivoRechazo}</p>}
+                                                                        {ss === 'rechazada' && !slot.apelacion && (
                                                                             <div className="mt-1.5">
-                                                                                {apelandoEvidencia === evidenciaSlot.id ? (
+                                                                                {apelandoEvidencia === slot.id ? (
                                                                                     <div className="space-y-1.5">
-                                                                                        <textarea
-                                                                                            value={textoApelacion}
-                                                                                            onChange={(e) => setTextoApelacion(e.target.value)}
-                                                                                            placeholder="¿Por qué consideras válida esta evidencia?"
-                                                                                            rows={2}
-                                                                                            className="w-full text-xs p-2 border border-gray-300 rounded-lg resize-none focus:ring-1 focus:ring-blue-500"
-                                                                                        />
+                                                                                        <textarea value={textoApelacion} onChange={(e) => setTextoApelacion(e.target.value)}
+                                                                                            placeholder="¿Por qué consideras válida esta evidencia?" rows={2}
+                                                                                            className="w-full text-xs p-2 border border-gray-300 rounded-lg resize-none focus:ring-1 focus:ring-blue-500" />
                                                                                         <div className="flex gap-2">
-                                                                                            <button onClick={() => handleApelar(evidenciaSlot!.id)} disabled={!textoApelacion.trim()}
-                                                                                                className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
-                                                                                                Enviar
-                                                                                            </button>
-                                                                                            <button onClick={() => { setApelandoEvidencia(null); setTextoApelacion(''); }}
-                                                                                                className="px-3 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200">
-                                                                                                Cancelar
-                                                                                            </button>
+                                                                                            <button onClick={() => handleApelar(slot!.id)} disabled={!textoApelacion.trim()} className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50">Enviar</button>
+                                                                                            <button onClick={() => { setApelandoEvidencia(null); setTextoApelacion(''); }} className="px-3 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200">Cancelar</button>
                                                                                         </div>
                                                                                     </div>
                                                                                 ) : (
-                                                                                    <button onClick={() => setApelandoEvidencia(evidenciaSlot!.id)}
-                                                                                        className="text-xs text-blue-600 hover:underline">
-                                                                                        Apelar rechazo
-                                                                                    </button>
+                                                                                    <button onClick={() => setApelandoEvidencia(slot!.id)} className="text-xs text-blue-600 hover:underline">Apelar rechazo</button>
                                                                                 )}
                                                                             </div>
                                                                         )}
-                                                                        {evidenciaSlot.apelacion && (
-                                                                            <p className="text-xs text-blue-600 mt-0.5">
-                                                                                Apelación enviada {evidenciaSlot.respuestaApelacion ? `· Resp: ${evidenciaSlot.respuestaApelacion}` : '· Pendiente'}
-                                                                            </p>
-                                                                        )}
+                                                                        {slot.apelacion && <p className="text-xs text-blue-600 mt-0.5">Apelación enviada {slot.respuestaApelacion ? `· Resp: ${slot.respuestaApelacion}` : '· Pendiente'}</p>}
                                                                     </div>
                                                                 ) : (
-                                                                    <p className="text-xs text-gray-400 flex-1 mt-0.5">
-                                                                        {esBinario ? 'Evidencia pendiente' : `Evidencia ${idx + 1} pendiente`}
-                                                                    </p>
+                                                                    <p className="text-xs text-gray-400 flex-1 mt-0.5">{esBinario ? 'Evidencia pendiente' : `Evidencia ${idx + 1} pendiente`}</p>
                                                                 )}
                                                             </div>
                                                         );
@@ -775,9 +650,7 @@ export default function MisKPIsPage() {
                                             {/* Evidencias adicionales */}
                                             {kpi.evidencias.length > requeridas && (
                                                 <div>
-                                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                                                        Evidencias adicionales
-                                                    </p>
+                                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Evidencias adicionales</p>
                                                     <div className="space-y-2">
                                                         {kpi.evidencias.slice(requeridas).map((ev) => {
                                                             const evCfg = EVIDENCIA_STATUS[ev.status];
@@ -789,11 +662,7 @@ export default function MisKPIsPage() {
                                                                         <p className="text-xs font-medium text-gray-700 truncate">{ev.nombre}</p>
                                                                         <p className="text-xs text-gray-400">{formatBytes(ev.tamanio)}</p>
                                                                     </div>
-                                                                    {evCfg && (
-                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${evCfg.bg} ${evCfg.color}`}>
-                                                                            {evCfg.label}
-                                                                        </span>
-                                                                    )}
+                                                                    {evCfg && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${evCfg.bg} ${evCfg.color}`}>{evCfg.label}</span>}
                                                                 </div>
                                                             );
                                                         })}
@@ -805,28 +674,19 @@ export default function MisKPIsPage() {
                                             {puedeSubir && (
                                                 <div className="pt-2 border-t border-gray-100">
                                                     {!mostrandoForm ? (
-                                                        <button
-                                                            onClick={() => handleAbrirSubida(kpi.id)}
-                                                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
-                                                        >
+                                                        <button onClick={() => handleAbrirSubida(kpi.id)}
+                                                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors">
                                                             <Plus className="w-4 h-4" />
                                                             {falta > 0 ? `Subir evidencia requerida (${falta} pendiente${falta > 1 ? 's' : ''})` : 'Agregar evidencia extra'}
                                                         </button>
                                                     ) : (
                                                         <div className="space-y-3 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                                                            <p className="text-sm font-semibold text-gray-700">
-                                                                {falta > 0 ? 'Subir evidencia requerida' : 'Agregar evidencia extra'}
-                                                            </p>
+                                                            <p className="text-sm font-semibold text-gray-700">{falta > 0 ? 'Subir evidencia requerida' : 'Agregar evidencia extra'}</p>
 
-                                                            {/* Binario: checkbox de confirmación */}
+                                                            {/* Binario */}
                                                             {esBinario && (
                                                                 <label className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={confirmadoBinario}
-                                                                        onChange={(e) => setConfirmadoBinario(e.target.checked)}
-                                                                        className="w-4 h-4 text-blue-600 rounded"
-                                                                    />
+                                                                    <input type="checkbox" checked={confirmadoBinario} onChange={(e) => setConfirmadoBinario(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
                                                                     <div>
                                                                         <p className="text-sm font-medium text-gray-800">Confirmo que realicé esta actividad</p>
                                                                         <p className="text-xs text-gray-500 mt-0.5">{formulaDesc}</p>
@@ -834,77 +694,90 @@ export default function MisKPIsPage() {
                                                                 </label>
                                                             )}
 
-                                                            {/* Valor numérico según tipo */}
-                                                            {necesitaValor && (
-                                                                <div>
-                                                                    <label className="text-xs font-medium text-gray-600 mb-1 block">
-                                                                        {getValorLabel(kpi)} <span className="text-red-500">*</span>
-                                                                    </label>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={valorNumerico}
-                                                                            onChange={(e) => setValorNumerico(e.target.value)}
-                                                                            placeholder="0"
-                                                                            min="0"
-                                                                            step="any"
-                                                                            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                                                        />
-                                                                        {kpi.unidad && (
-                                                                            <span className="text-sm text-gray-500 font-medium">{kpi.unidad}</span>
+                                                            {/* Precisión */}
+                                                            {esPrecision && (() => {
+                                                                const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+                                                                const modo = formula.modoEvaluacion ?? 'tolerancia';
+                                                                const { precision, cumple, detalle } = calcularPrecision(formula, valorObtenido, kpi.meta, kpi.operadorMeta);
+
+                                                                return (
+                                                                    <div className="space-y-3">
+                                                                        {/* Valor esperado — informativo */}
+                                                                        <div className="p-3 bg-teal-50 border border-teal-100 rounded-lg space-y-0.5">
+                                                                            <p className="text-xs text-teal-700">
+                                                                                <span className="font-medium">{formula.labelEsperado ?? 'Resultado esperado'}:</span>{' '}
+                                                                                <span className="font-bold">{formula.valorEsperado} {kpi.unidad}</span>
+                                                                                <span className="ml-1 text-teal-500">(definido por el sistema)</span>
+                                                                            </p>
+                                                                            {modo === 'tolerancia' && <p className="text-xs text-teal-600">Tolerancia permitida: ±{formula.toleranciaPorc ?? 5}%</p>}
+                                                                            {modo === 'umbral' && <p className="text-xs text-teal-600">Tu resultado debe ser {kpi.operadorMeta} {formula.valorEsperado}</p>}
+                                                                        </div>
+
+                                                                        {/* Resultado obtenido */}
+                                                                        <div>
+                                                                            <label className="text-xs font-medium text-gray-600 mb-1 block">
+                                                                                {formula.labelObtenido ?? 'Resultado obtenido'} <span className="text-red-500">*</span>
+                                                                            </label>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <input type="number" value={valorObtenido} onChange={(e) => setValorObtenido(e.target.value)}
+                                                                                    placeholder="0" step="any"
+                                                                                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500" />
+                                                                                {kpi.unidad && <span className="text-sm text-gray-500 font-medium">{kpi.unidad}</span>}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Feedback en tiempo real */}
+                                                                        {precision !== null && (
+                                                                            <div className={`p-2.5 rounded-lg text-xs font-medium space-y-0.5 ${cumple ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                                                                                <p>Precisión calculada: <strong>{precision.toFixed(1)}%</strong></p>
+                                                                                <p>{detalle}</p>
+                                                                                {kpi.meta !== undefined && <p>{cumple ? `✓ Cumple la meta de precisión (≥ ${kpi.meta}%)` : `✗ No cumple la meta de precisión (≥ ${kpi.meta}%)`}</p>}
+                                                                            </div>
                                                                         )}
                                                                     </div>
+                                                                );
+                                                            })()}
 
-                                                                    {/* Feedback en tiempo real */}
-                                                                    {valorNumerico && kpi.meta !== undefined && (
-                                                                        (() => {
-                                                                            const val = parseFloat(valorNumerico);
-                                                                            const resultado = evaluarCumplimiento(kpi, val);
-                                                                            return resultado ? (
-                                                                                <p className={`text-xs mt-1.5 font-medium ${resultado === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>
-                                                                                    {resultado === 'cumple'
-                                                                                        ? `✓ Cumple la meta (${kpi.operadorMeta ?? ''} ${kpi.meta} ${kpi.unidad})`
-                                                                                        : `✗ No cumple la meta (${kpi.operadorMeta ?? ''} ${kpi.meta} ${kpi.unidad})`
-                                                                                    }
-                                                                                </p>
-                                                                            ) : null;
-                                                                        })()
-                                                                    )}
-
-                                                                    {kpi.tipoCalculo === 'formula' && (
-                                                                        <p className="text-xs text-gray-400 mt-1">Fórmula: {formulaDesc}</p>
-                                                                    )}
+                                                            {/* Valor numérico genérico */}
+                                                            {necesitaValor && (
+                                                                <div>
+                                                                    <label className="text-xs font-medium text-gray-600 mb-1 block">{getValorLabel(kpi)} <span className="text-red-500">*</span></label>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <input type="number" value={valorNumerico} onChange={(e) => setValorNumerico(e.target.value)}
+                                                                            placeholder="0" min="0" step="any"
+                                                                            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                                                                        {kpi.unidad && <span className="text-sm text-gray-500 font-medium">{kpi.unidad}</span>}
+                                                                    </div>
+                                                                    {valorNumerico && kpi.meta !== undefined && (() => {
+                                                                        const val = parseFloat(valorNumerico);
+                                                                        const res = evaluarCumplimiento(kpi, val);
+                                                                        return res ? (
+                                                                            <p className={`text-xs mt-1.5 font-medium ${res === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>
+                                                                                {res === 'cumple' ? `✓ Cumple (${kpi.operadorMeta} ${kpi.meta} ${kpi.unidad})` : `✗ No cumple (${kpi.operadorMeta} ${kpi.meta} ${kpi.unidad})`}
+                                                                            </p>
+                                                                        ) : null;
+                                                                    })()}
+                                                                    {kpi.tipoCalculo === 'formula' && <p className="text-xs text-gray-400 mt-1">Fórmula: {formulaDesc}</p>}
                                                                 </div>
                                                             )}
 
-                                                            {/* Nota de evidencia */}
+                                                            {/* Nota */}
                                                             <div>
                                                                 <label className="text-xs font-medium text-gray-600 mb-1 block">Nota (opcional)</label>
-                                                                <textarea
-                                                                    value={notaEvidencia}
-                                                                    onChange={(e) => setNotaEvidencia(e.target.value)}
-                                                                    placeholder="Describe brevemente qué evidencia es..."
-                                                                    rows={2}
-                                                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500"
-                                                                />
+                                                                <textarea value={notaEvidencia} onChange={(e) => setNotaEvidencia(e.target.value)}
+                                                                    placeholder="Describe brevemente qué evidencia es..." rows={2}
+                                                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500" />
                                                             </div>
 
                                                             <div className="flex gap-2">
-                                                                <button
-                                                                    onClick={() => handleSeleccionarArchivo(kpi.id)}
-                                                                    disabled={cargando || (esBinario && !confirmadoBinario) || (necesitaValor && !valorNumerico)}
-                                                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
-                                                                >
-                                                                    {cargando
-                                                                        ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                                        : <Upload className="w-4 h-4" />
-                                                                    }
+                                                                <button onClick={() => handleSeleccionarArchivo(kpi.id)}
+                                                                    disabled={cargando || (esBinario && !confirmadoBinario) || (necesitaValor && !valorNumerico) || (esPrecision && !valorObtenido)}
+                                                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
+                                                                    {cargando ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
                                                                     Seleccionar archivo
                                                                 </button>
-                                                                <button
-                                                                    onClick={() => setMostrarFormSubida(null)}
-                                                                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
-                                                                >
+                                                                <button onClick={() => setMostrarFormSubida(null)}
+                                                                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">
                                                                     Cancelar
                                                                 </button>
                                                             </div>
@@ -913,46 +786,30 @@ export default function MisKPIsPage() {
                                                 </div>
                                             )}
 
-                                            {/* ── Nota del KPI (por período) ── */}
+                                            {/* Nota del KPI */}
                                             <div className="pt-2 border-t border-gray-100">
                                                 <div className="flex items-center justify-between mb-2">
                                                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
                                                         <StickyNote className="w-3.5 h-3.5" /> Nota del período
                                                     </p>
                                                     {!editandoNota && (
-                                                        <button
-                                                            onClick={() => {
-                                                                setEditandoNota(kpi.id);
-                                                                setTextoNota(kpi.notaKPI ?? '');
-                                                            }}
-                                                            className="text-xs text-blue-600 hover:underline"
-                                                        >
+                                                        <button onClick={() => { setEditandoNota(kpi.id); setTextoNota(kpi.notaKPI ?? ''); }} className="text-xs text-blue-600 hover:underline">
                                                             {kpi.notaKPI ? 'Editar' : 'Agregar nota'}
                                                         </button>
                                                     )}
                                                 </div>
-
                                                 {editandoNota === kpi.id ? (
                                                     <div className="space-y-2">
-                                                        <textarea
-                                                            value={textoNota}
-                                                            onChange={(e) => setTextoNota(e.target.value)}
-                                                            placeholder="Agrega observaciones, contexto o comentarios sobre este KPI para el período actual..."
-                                                            rows={3}
-                                                            className="w-full text-xs p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500"
-                                                        />
+                                                        <textarea value={textoNota} onChange={(e) => setTextoNota(e.target.value)}
+                                                            placeholder="Agrega observaciones, contexto o comentarios sobre este KPI..." rows={3}
+                                                            className="w-full text-xs p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500" />
                                                         <div className="flex gap-2">
-                                                            <button
-                                                                onClick={() => handleGuardarNota(kpi.id)}
-                                                                disabled={guardandoNota}
-                                                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
-                                                            >
+                                                            <button onClick={() => handleGuardarNota(kpi.id)} disabled={guardandoNota}
+                                                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
                                                                 {guardandoNota ? 'Guardando...' : 'Guardar'}
                                                             </button>
-                                                            <button
-                                                                onClick={() => { setEditandoNota(null); setTextoNota(''); }}
-                                                                className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-200"
-                                                            >
+                                                            <button onClick={() => { setEditandoNota(null); setTextoNota(''); }}
+                                                                className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-200">
                                                                 Cancelar
                                                             </button>
                                                         </div>

@@ -10,14 +10,11 @@ import {
   FileText,
   Building,
   Briefcase,
-  X,
-  Plus,
 } from 'lucide-react';
 import Layout from '../components/layout/Layout';
 import { empleadosService } from '../services/empleados.service';
 import { kpisService } from '../services/kpis.service';
 import { areasService } from '../services/areas.service';
-import { useAuth } from '../contexts/AuthContext';
 import { ordenesTrabajoService } from '../services/ordenes-trabajo.service';
 
 interface Empleado {
@@ -59,7 +56,6 @@ interface Area {
 
 export default function CrearOrdenPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
 
   // Datos de catálogos
   const [empleados, setEmpleados] = useState<Empleado[]>([]);
@@ -112,31 +108,63 @@ export default function CrearOrdenPage() {
 
   // Filtrar KPIs según empleados seleccionados y filtros de área
   useEffect(() => {
+    // Sin selección ni filtro → todos los KPIs
     if (empleadosSeleccionados.length === 0 && filtroArea === 'todas') {
       setKpisFiltrados(kpis);
       return;
     }
 
-    // Obtener las áreas y puestos de los empleados seleccionados
-    const empleadosActivos = empleadosSeleccionados.length > 0
+    // Empleados de referencia: los seleccionados tienen prioridad,
+    // si no hay seleccionados usamos los filtrados por área
+    const empleadosReferencia = empleadosSeleccionados.length > 0
       ? empleados.filter((e) => empleadosSeleccionados.includes(e.id))
       : empleadosFiltrados;
 
-    const areaIds = [...new Set(empleadosActivos.map((e) => e.area?.id).filter(Boolean))];
-    const puestoIds = [...new Set(empleadosActivos.map((e) => e.puesto?.id).filter(Boolean))];
+    // Construir el set de areaIds relevantes incluyendo área padre
+    // Ej: empleado en sub-área "Contabilidad" (padre: "Administrativa")
+    //     → incluir ambas para que los KPIs de área padre también aparezcan
+    const areaIdsDirectas = empleadosReferencia
+      .map((e) => e.area?.id)
+      .filter(Boolean) as string[];
+
+    const areaIdsConPadre = new Set<string>(areaIdsDirectas);
+    areaIdsDirectas.forEach((areaId) => {
+      const areaDato = areas.find((a) => a.id === areaId);
+      if (areaDato?.areaPadreId) areaIdsConPadre.add(areaDato.areaPadreId);
+    });
+
+    // Puestos — solo de empleados que SÍ tienen puesto asignado
+    const puestoIds = new Set(
+      empleadosReferencia
+        .map((e) => e.puesto?.id)
+        .filter(Boolean) as string[]
+    );
 
     const filtrados = kpis.filter((kpi) => {
-      // KPI sin área ni puesto específico = aplica a todos
-      if (!kpi.areaRelacion && !kpi.puestoRelacion) return true;
-      // KPI de área que coincide con algún empleado seleccionado
-      if (kpi.areaRelacion && areaIds.includes(kpi.areaRelacion.id)) return true;
-      // KPI de puesto que coincide con algún empleado seleccionado
-      if (kpi.puestoRelacion && puestoIds.includes(kpi.puestoRelacion.id)) return true;
+      const tieneArea = !!kpi.areaRelacion;
+      const tienePuesto = !!kpi.puestoRelacion;
+
+      // KPI genérico (sin área ni puesto) → siempre visible
+      if (!tieneArea && !tienePuesto) return true;
+
+      // KPI con puesto específico → mostrar solo si algún empleado
+      // seleccionado tiene ese puesto
+      if (tienePuesto) {
+        return puestoIds.has(kpi.puestoRelacion!.id);
+      }
+
+      // KPI de área → mostrar si el área del KPI está en el set
+      // (área directa del empleado o área padre)
+      if (tieneArea) {
+        return areaIdsConPadre.has(kpi.areaRelacion!.id);
+      }
+
       return false;
     });
 
-    setKpisFiltrados(filtrados.length > 0 ? filtrados : kpis);
-  }, [empleadosSeleccionados, filtroArea, filtroSubArea, kpis, empleados, empleadosFiltrados]);
+    // NUNCA hacer fallback a todos — si no hay coincidencia, lista vacía
+    setKpisFiltrados(filtrados);
+  }, [empleadosSeleccionados, filtroArea, filtroSubArea, kpis, empleados, empleadosFiltrados, areas]);
 
   const cargarDatos = async () => {
     try {
@@ -477,7 +505,7 @@ export default function CrearOrdenPage() {
                   //const areaNombre = kpi.areaRelacion?.nombre ?? 'Sin área';
                   return (
                     <option key={kpi.id} value={kpi.id}>
-                      [{kpi.key}] {kpi.indicador}
+                      {kpi.indicador}
                     </option>
                   );
                 })}

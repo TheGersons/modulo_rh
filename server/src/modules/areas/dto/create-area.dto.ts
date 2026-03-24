@@ -18,6 +18,6 @@ export class CreateAreaDto {
   activa?: boolean;
 
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   areaPadreId?: string;
 }

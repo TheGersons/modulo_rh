@@ -62,9 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await apiClient.post('/auth/refresh', { refreshToken });
 
     if (response.data.success && response.data.accessToken) {
-      const newAccessToken = response.data.accessToken;
-      localStorage.setItem('accessToken', newAccessToken);
-      apiClient.defaults.headers.common['Authorization'] = `Bearer ${newAccessToken}`;
+      localStorage.setItem('accessToken', response.data.accessToken);
+      if (response.data.refreshToken) {
+        localStorage.setItem('refreshToken', response.data.refreshToken); // ← agregar
+      }
+      apiClient.defaults.headers.common['Authorization'] = `Bearer ${response.data.accessToken}`;
     } else {
       throw new Error('Failed to refresh token');
     }

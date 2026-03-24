@@ -94,6 +94,7 @@ export const ordenesTrabajoService = {
     kpiId?: string;
     status?: string;
     tipoOrden?: string;
+    areaId?: string;
   }): Promise<OrdenTrabajo[]> => {
     const params = new URLSearchParams();
     if (filters?.empleadoId) params.append("empleadoId", filters.empleadoId);
@@ -101,6 +102,7 @@ export const ordenesTrabajoService = {
     if (filters?.kpiId) params.append("kpiId", filters.kpiId);
     if (filters?.status) params.append("status", filters.status);
     if (filters?.tipoOrden) params.append("tipoOrden", filters.tipoOrden);
+    if (filters?.areaId) params.append("areaId", filters.areaId);
 
     const url = params.toString()
       ? `${API_ENDPOINTS.ordenesTrabajo}?${params.toString()}`

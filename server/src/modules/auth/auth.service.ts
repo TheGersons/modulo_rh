@@ -123,19 +123,31 @@ export class AuthService {
       sessionId: session.id,
     };
 
-    const newAccessToken = this.jwtService.sign(payload);
+    const newAccessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+
+    // ← NUEVO: rotar refresh token con nueva expiración de 1h desde ahora
+    const newRefreshToken = this.jwtService.sign(
+      { sub: session.userId, sessionId: session.id, type: 'refresh' },
+      { expiresIn: '1h' },
+    );
+
+    const newExpiresAt = new Date();
+    newExpiresAt.setHours(newExpiresAt.getHours() + 1); // ← extender 1h desde ahora
 
     await this.prisma.session.update({
       where: { id: session.id },
       data: {
         accessToken: newAccessToken,
+        refreshToken: newRefreshToken, // ← rotar el refresh token
         lastActivity: new Date(),
+        expiresAt: newExpiresAt, // ← extender expiración
       },
     });
 
     return {
       success: true,
       accessToken: newAccessToken,
+      refreshToken: newRefreshToken, // ← devolver el nuevo refresh token
       expiresIn: 900,
     };
   }

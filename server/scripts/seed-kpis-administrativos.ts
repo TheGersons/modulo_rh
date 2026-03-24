@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+/*import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -2262,3 +2262,5 @@ seedKPIsAdministrativos().catch((error) => {
   console.error('❌ Error en seed:', error);
   process.exit(1);
 });
+
+*/

@@ -180,6 +180,24 @@ export default function DetalleOrdenEmpleadoPage() {
         } catch { alert('Error al enviar la apelación.'); }
     };
 
+    const handleEnviarRevision = async () => {
+        try {
+            const token = localStorage.getItem('accessToken');
+            const res = await fetch(`/api/ordenes-trabajo/${id}/calcular-progreso`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) throw new Error();
+            showToast('Orden enviada para revisión');
+            await cargarOrden();
+        } catch {
+            alert('Error al enviar la orden.');
+        }
+    };
+
+
+
+
     const handleSolicitarTarea = async () => {
         if (!nuevaTareaDesc.trim() || !justificacion.trim()) return;
         try {

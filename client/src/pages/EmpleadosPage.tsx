@@ -757,10 +757,9 @@ export default function EmpleadosPage() {
                       setFormPuestoId('');
                       setPuestosDisponibles([]);
                       if (e.target.value) {
-                        const tieneSubs = areas.some((a) => a.areaPadreId === e.target.value);
-                        if (!tieneSubs) {
-                          cargarPuestosPorArea(e.target.value);
-                        }
+                        cargarPuestosPorArea(e.target.value); // ← siempre cargar, sin condición
+                      } else {
+                        setPuestosDisponibles([]);
                       }
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"

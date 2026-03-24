@@ -36,13 +36,21 @@ interface FormulaCalculo {
   target?: string;
   filtro?: string;
   descripcion?: string;
+  // Campos de precision
+  labelEsperado?: string;
+  valorEsperado?: string;
+  labelObtenido?: string;
+  modoEvaluacion?: 'tolerancia' | 'umbral'; // ← NUEVO
+  toleranciaPorc?: number;                   // ← NUEVO: solo para modo tolerancia
 }
 
 export default function GestionKPIsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('edit');
+  const duplicarId = searchParams.get('duplicar');
   const isEdit = !!editId;
+  const isDuplicar = !!duplicarId;
 
   // Estados de carga
   const [loading, setLoading] = useState(false);
@@ -55,7 +63,7 @@ export default function GestionKPIsPage() {
   const [puestos, setPuestos] = useState<Puesto[]>([]);
 
   // Información básica
-  const [codigo, setCodigo] = useState('');
+  const [keyOriginal, setKeyOriginal] = useState('');
   const [indicador, setIndicador] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [areaId, setAreaId] = useState('');
@@ -71,6 +79,13 @@ export default function GestionKPIsPage() {
   const [invertir, setInvertir] = useState(false);
   const [target, setTarget] = useState('');
 
+  // Campos de precision
+  const [precisionLabelEsperado, setPrecisionLabelEsperado] = useState('Resultado esperado');
+  const [precisionValorEsperado, setPrecisionValorEsperado] = useState('');
+  const [precisionLabelObtenido, setPrecisionLabelObtenido] = useState('Resultado obtenido');
+  const [precisionModo, setPrecisionModo] = useState<'tolerancia' | 'umbral'>('tolerancia');
+  const [precisionToleranciaPorc, setPrecisionToleranciaPorc] = useState('5');
+
   // Configuración de meta
   const [meta, setMeta] = useState('');
   const [operador, setOperador] = useState('>');
@@ -84,23 +99,21 @@ export default function GestionKPIsPage() {
     cargarAreas();
     if (isEdit) {
       cargarKPI();
+    } else if (duplicarId) {
+      cargarKPIParaDuplicar(duplicarId);
     }
   }, []);
 
   useEffect(() => {
-    // Cargar sub-áreas cuando se selecciona un área
     if (areaId) {
       const areaSeleccionada = areas.find((a) => a.id === areaId);
       if (areaSeleccionada && !areaSeleccionada.areaPadreId) {
-        // Es área padre, cargar sus sub-áreas
         const subs = areas.filter((a) => a.areaPadreId === areaId);
         setSubAreas(subs);
       } else {
         setSubAreas([]);
         setSubAreaId('');
       }
-
-      // Cargar puestos del área
       cargarPuestos(areaId);
     } else {
       setSubAreas([]);
@@ -111,7 +124,6 @@ export default function GestionKPIsPage() {
   }, [areaId, areas]);
 
   useEffect(() => {
-    // Cargar puestos de sub-área si se selecciona
     if (subAreaId) {
       cargarPuestos(subAreaId);
     } else if (areaId) {
@@ -132,7 +144,6 @@ export default function GestionKPIsPage() {
     try {
       const data = await puestosService.getAll(areaIdParam);
       setPuestos(data);
-      // Si el puesto actual no está en la nueva lista, limpiar
       if (puestoId && !data.find((p: Puesto) => p.id === puestoId)) {
         setPuestoId('');
       }
@@ -147,12 +158,11 @@ export default function GestionKPIsPage() {
       setLoading(true);
       const kpi = await kpisService.getById(editId!);
 
-      setCodigo(kpi.key);
+      setKeyOriginal(kpi.key);
       setIndicador(kpi.indicador);
       setDescripcion(kpi.descripcion || '');
       setAreaId(kpi.areaId);
 
-      // Si tiene sub-área (areaPadreId del área del KPI)
       const kpiArea = await areasService.getById(kpi.areaId);
       if (kpiArea.areaPadreId) {
         setAreaId(kpiArea.areaPadreId);
@@ -169,7 +179,6 @@ export default function GestionKPIsPage() {
       setPeriodicidad(kpi.periodicidad);
       setSentido(kpi.sentido || 'Mayor es mejor');
 
-      // Parsear fórmula
       if (kpi.formulaCalculo) {
         const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
 
@@ -182,11 +191,61 @@ export default function GestionKPIsPage() {
           setInvertir(formula.invertir || false);
         } else if (formula.tipo === 'conteo') {
           setTarget(formula.target || '');
+        } else if (formula.tipo === 'precision') {
+          setPrecisionLabelEsperado(formula.labelEsperado || 'Resultado esperado');
+          setPrecisionValorEsperado(formula.valorEsperado?.toString() || '');
+          setPrecisionLabelObtenido(formula.labelObtenido || 'Resultado obtenido');
+          setPrecisionModo(formula.modoEvaluacion ?? 'tolerancia');
+          setPrecisionToleranciaPorc(formula.toleranciaPorc?.toString() || '5');
         }
       }
     } catch (error) {
       console.error('Error al cargar KPI:', error);
       setError('Error al cargar el KPI');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cargarKPIParaDuplicar = async (id: string) => {
+    try {
+      setLoading(true);
+      const kpi = await kpisService.getById(id);
+
+      // Carga configuración pero NO área/puesto — el usuario elige el destino
+      setIndicador(kpi.indicador);
+      setDescripcion(kpi.descripcion || '');
+      setTipoCalculo(kpi.tipoCalculo);
+      setMeta(kpi.meta?.toString() || '');
+      setOperador(kpi.operadorMeta || '>');
+      setUnidad(kpi.unidad || '%');
+      setTolerancia(kpi.tolerancia?.toString() || '');
+      setCriticidad(kpi.tipoCriticidad || 'no_critico');
+      setPeriodicidad(kpi.periodicidad);
+      setSentido(kpi.sentido || 'Mayor es mejor');
+
+      if (kpi.formulaCalculo) {
+        const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+        if (formula.tipo === 'binario') {
+          setDescripcionCondicion(formula.descripcion || '');
+        } else if (formula.tipo === 'division') {
+          setNumerador(formula.numerador || '');
+          setDenominador(formula.denominador || '');
+          setMultiplicador(formula.multiplicador?.toString() || '100');
+          setInvertir(formula.invertir || false);
+        } else if (formula.tipo === 'conteo') {
+          setTarget(formula.target || '');
+        } else if (formula.tipo === 'precision') {
+          setPrecisionLabelEsperado(formula.labelEsperado || 'Resultado esperado');
+          setPrecisionValorEsperado(formula.valorEsperado?.toString() || '');
+          setPrecisionLabelObtenido(formula.labelObtenido || 'Resultado obtenido');
+          setPrecisionModo(formula.modoEvaluacion ?? 'tolerancia');
+          setPrecisionToleranciaPorc(formula.toleranciaPorc?.toString() || '5');
+        }
+      }
+    } catch (error) {
+      console.error('Error al cargar KPI para duplicar:', error);
+      setError('Error al cargar el KPI original');
     } finally {
       setLoading(false);
     }
@@ -204,6 +263,14 @@ export default function GestionKPIsPage() {
       formula.invertir = invertir;
     } else if (tipoCalculo === 'conteo') {
       formula.target = target;
+    } else if (tipoCalculo === 'precision') {
+      formula.labelEsperado = precisionLabelEsperado;
+      formula.valorEsperado = precisionValorEsperado;
+      formula.labelObtenido = precisionLabelObtenido;
+      formula.modoEvaluacion = precisionModo;
+      if (precisionModo === 'tolerancia') {
+        formula.toleranciaPorc = parseFloat(precisionToleranciaPorc) || 5;
+      }
     }
 
     return JSON.stringify(formula);
@@ -211,12 +278,6 @@ export default function GestionKPIsPage() {
 
   const handleSubmit = async () => {
     setError('');
-
-    // Validaciones
-    if (!codigo.trim()) {
-      setError('El código KPI es requerido');
-      return;
-    }
 
     if (!indicador.trim()) {
       setError('El indicador es requerido');
@@ -228,11 +289,10 @@ export default function GestionKPIsPage() {
       return;
     }
 
-    // Validar que si hay sub-áreas disponibles, se seleccione una
+    const puestoEnAreaPadre = puestos.some((p) => p.id === puestoId);
     const tieneSubs = areas.some((a) => a.areaPadreId === areaId);
-
-    if (tieneSubs && !subAreaId) {
-      setError('Debes seleccionar una sub-área');
+    if (tieneSubs && !subAreaId && !puestoEnAreaPadre) {
+      setError('El puesto seleccionado requiere que escojas una sub-área');
       return;
     }
 
@@ -241,7 +301,6 @@ export default function GestionKPIsPage() {
       return;
     }
 
-    // Validaciones por tipo de cálculo
     if (tipoCalculo === 'division') {
       if (!numerador.trim() || !denominador.trim()) {
         setError('Numerador y denominador son requeridos para el tipo división');
@@ -256,14 +315,42 @@ export default function GestionKPIsPage() {
       }
     }
 
+    if (tipoCalculo === 'precision') {
+      if (!precisionValorEsperado) {
+        setError('El valor esperado es requerido para el tipo precisión');
+        return;
+      }
+      if (precisionModo === 'tolerancia' && !precisionToleranciaPorc) {
+        setError('La tolerancia (%) es requerida para el modo tolerancia');
+        return;
+      }
+    }
+
+    const areaFinal = subAreaId || areaId;
+    const areaNombre = areas.find(a => a.id === areaFinal)?.nombre ?? 'AREA';
+    const puestoNombre = puestos.find(p => p.id === puestoId)?.nombre ?? 'PUESTO';
+    const slug = (str: string) => str
+      .toUpperCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 6);
+
+    const keyGenerado = isEdit
+      ? keyOriginal
+      : `${slug(areaNombre)}-${slug(puestoNombre)}-${Date.now().toString(36).toUpperCase()}`;
+
+    const areaFinalId = subAreaId || areaId;
+    const areaNombreTexto = areas.find(a => a.id === areaFinalId)?.nombre ?? '';
+
     try {
       setGuardando(true);
 
       const kpiData = {
-        key: codigo.toUpperCase(),
+        key: keyGenerado,
         indicador: indicador.trim(),
         descripcion: descripcion.trim() || undefined,
-        areaId: subAreaId || areaId, // Usar sub-área si está seleccionada
+        area: areaNombreTexto,
+        areaId: subAreaId || areaId,
         puestoId: puestoId,
         tipoCalculo,
         formulaCalculo: construirFormula(),
@@ -307,11 +394,9 @@ export default function GestionKPIsPage() {
     );
   }
 
-  // Filtrar áreas principales (sin padre)
   const areasPrincipales = areas.filter((a) => !a.areaPadreId);
 
   return (
-
     <div className="p-8 max-w-5xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -323,10 +408,14 @@ export default function GestionKPIsPage() {
         </button>
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
-            {isEdit ? 'Editar KPI' : 'Nuevo KPI'}
+            {isEdit ? 'Editar KPI' : isDuplicar ? 'Duplicar KPI' : 'Nuevo KPI'}
           </h1>
           <p className="text-gray-600 mt-1">
-            {isEdit ? 'Modifica la configuración del KPI' : 'Configura un nuevo indicador de desempeño'}
+            {isEdit
+              ? 'Modifica la configuración del KPI'
+              : isDuplicar
+                ? 'Selecciona el área y puesto de destino para el KPI duplicado'
+                : 'Configura un nuevo indicador de desempeño'}
           </p>
         </div>
       </div>
@@ -350,21 +439,6 @@ export default function GestionKPIsPage() {
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Código KPI */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Código KPI <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={codigo}
-              onChange={(e) => setCodigo(e.target.value.toUpperCase())}
-              placeholder="Ej: KPI-001"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase"
-              disabled={isEdit}
-            />
-          </div>
-
           {/* Indicador */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -415,7 +489,7 @@ export default function GestionKPIsPage() {
             </select>
           </div>
 
-          {/* Sub-área (solo si el área tiene sub-áreas) */}
+          {/* Sub-área */}
           {subAreas.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -487,13 +561,14 @@ export default function GestionKPIsPage() {
             <option value="binario">Binario (Sí/No)</option>
             <option value="division">División</option>
             <option value="conteo">Conteo</option>
+            <option value="precision">Precisión (resultado esperado vs obtenido)</option>
             <option value="porcentaje_kpis_equipo">% KPIs del Equipo</option>
             <option value="dashboard_presentado">Dashboard Presentado</option>
             <option value="personalizado">Personalizado</option>
           </select>
         </div>
 
-        {/* Campos dinámicos según tipo */}
+        {/* ── Binario ── */}
         {tipoCalculo === 'binario' && (
           <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
             <div className="flex items-start gap-2 mb-3">
@@ -517,6 +592,7 @@ export default function GestionKPIsPage() {
           </div>
         )}
 
+        {/* ── División ── */}
         {tipoCalculo === 'division' && (
           <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-200 space-y-4">
             <div className="flex items-start gap-2">
@@ -580,6 +656,7 @@ export default function GestionKPIsPage() {
           </div>
         )}
 
+        {/* ── Conteo ── */}
         {tipoCalculo === 'conteo' && (
           <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
             <div className="flex items-start gap-2 mb-3">
@@ -603,6 +680,156 @@ export default function GestionKPIsPage() {
           </div>
         )}
 
+        {/* ── Precisión ── */}
+        {tipoCalculo === 'precision' && (
+          <div className="mt-4 p-4 bg-teal-50 rounded-lg border border-teal-200 space-y-5">
+            <div className="flex items-start gap-2">
+              <Info className="w-5 h-5 text-teal-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-teal-900 font-medium">
+                  Precisión: compara el resultado obtenido contra el esperado
+                </p>
+                <p className="text-xs text-teal-700 mt-1">
+                  Define cómo se evalúa si el resultado obtenido cumple con el esperado.
+                </p>
+              </div>
+            </div>
+
+            {/* Modo de evaluación */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Modo de evaluación <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${precisionModo === 'tolerancia'
+                    ? 'border-teal-500 bg-teal-50'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}>
+                  <input
+                    type="radio"
+                    name="precisionModo"
+                    value="tolerancia"
+                    checked={precisionModo === 'tolerancia'}
+                    onChange={() => setPrecisionModo('tolerancia')}
+                    className="mt-0.5 text-teal-600"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">Tolerancia porcentual (±%)</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      El resultado debe estar dentro de un margen del valor esperado.<br />
+                      <span className="text-teal-600 font-medium">Ej: ±5% del valor proyectado</span>
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1 font-mono">
+                      precisión = 100 - |(obtenido - esperado) / esperado × 100|
+                    </p>
+                  </div>
+                </label>
+
+                <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${precisionModo === 'umbral'
+                    ? 'border-teal-500 bg-teal-50'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                  }`}>
+                  <input
+                    type="radio"
+                    name="precisionModo"
+                    value="umbral"
+                    checked={precisionModo === 'umbral'}
+                    onChange={() => setPrecisionModo('umbral')}
+                    className="mt-0.5 text-teal-600"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">Umbral directo (operador)</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      El resultado debe cumplir una condición directa contra el valor esperado.<br />
+                      <span className="text-teal-600 font-medium">Ej: obtenido &gt;= esperado</span>
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1 font-mono">
+                      cumple si: obtenido [operador] esperado
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Tolerancia porcentual (solo si modo = tolerancia) */}
+            {precisionModo === 'tolerancia' && (
+              <div className="p-3 bg-white rounded-lg border border-teal-200">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tolerancia permitida (±%) <span className="text-red-500">*</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    value={precisionToleranciaPorc}
+                    onChange={(e) => setPrecisionToleranciaPorc(e.target.value)}
+                    placeholder="5"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    className="w-32 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 text-sm"
+                  />
+                  <span className="text-sm text-gray-500">%</span>
+                  <p className="text-xs text-gray-400">
+                    El empleado cumple si su desviación es menor o igual a este valor
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Nota sobre el operador en modo umbral */}
+            {precisionModo === 'umbral' && (
+              <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <p className="text-xs text-amber-700">
+                  <span className="font-medium">Operador usado:</span> el configurado en "Configuración de Meta" más abajo.
+                  El sistema evaluará <span className="font-mono">obtenido [operador] esperado</span>.
+                </p>
+              </div>
+            )}
+
+            {/* Campos de etiquetas y valor esperado */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Etiqueta del campo esperado
+                </label>
+                <input
+                  type="text"
+                  value={precisionLabelEsperado}
+                  onChange={(e) => setPrecisionLabelEsperado(e.target.value)}
+                  placeholder="Ej: Proyección de flujo"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Valor esperado <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={precisionValorEsperado}
+                  onChange={(e) => setPrecisionValorEsperado(e.target.value)}
+                  placeholder="Ej: 100000"
+                  step="any"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Etiqueta del campo obtenido
+                </label>
+                <input
+                  type="text"
+                  value={precisionLabelObtenido}
+                  onChange={(e) => setPrecisionLabelObtenido(e.target.value)}
+                  placeholder="Ej: Flujo real del período"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── % KPIs Equipo ── */}
         {tipoCalculo === 'porcentaje_kpis_equipo' && (
           <div className="mt-4 p-4 bg-orange-50 rounded-lg border border-orange-200">
             <div className="flex items-start gap-2">
@@ -614,6 +841,7 @@ export default function GestionKPIsPage() {
           </div>
         )}
 
+        {/* ── Dashboard Presentado ── */}
         {tipoCalculo === 'dashboard_presentado' && (
           <div className="mt-4 p-4 bg-pink-50 rounded-lg border border-pink-200">
             <div className="flex items-start gap-2">
@@ -633,7 +861,19 @@ export default function GestionKPIsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Meta */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Meta</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Meta
+              {tipoCalculo === 'precision' && precisionModo === 'tolerancia' && (
+                <span className="ml-1 text-xs text-teal-600 font-normal">
+                  (% mínimo de precisión requerido)
+                </span>
+              )}
+              {tipoCalculo === 'precision' && precisionModo === 'umbral' && (
+                <span className="ml-1 text-xs text-amber-600 font-normal">
+                  (no aplica — se compara contra el valor esperado)
+                </span>
+              )}
+            </label>
             <input
               type="number"
               value={meta}
@@ -645,7 +885,14 @@ export default function GestionKPIsPage() {
 
           {/* Operador */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Operador</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Operador
+              {tipoCalculo === 'precision' && precisionModo === 'umbral' && (
+                <span className="ml-1 text-xs text-teal-600 font-normal">
+                  (se aplica: obtenido [operador] esperado)
+                </span>
+              )}
+            </label>
             <select
               value={operador}
               onChange={(e) => setOperador(e.target.value)}
@@ -759,6 +1006,5 @@ export default function GestionKPIsPage() {
         </button>
       </div>
     </div>
-
   );
 }

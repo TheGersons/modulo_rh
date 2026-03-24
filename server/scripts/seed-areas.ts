@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+/*import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -100,3 +100,5 @@ seedAreas().catch((error) => {
   console.error('❌ Error al crear áreas:', error);
   process.exit(1);
 });
+
+*/

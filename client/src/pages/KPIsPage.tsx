@@ -11,6 +11,7 @@ import {
   AlertCircle,
   CheckCircle,
   Calculator,
+  Copy,
 } from 'lucide-react';
 import { kpisService } from '../services/kpis.service';
 import { areasService } from '../services/areas.service';
@@ -123,6 +124,10 @@ export default function KPIsPage() {
     }
   };
 
+  const handleDuplicar = (kpiId: string) => {
+    navigate(`/configuracion/kpis?duplicar=${kpiId}`);
+  };
+
   const getTipoCalculoLabel = (tipo: string) => {
     const labels: Record<string, string> = {
       binario: 'Binario',
@@ -131,6 +136,7 @@ export default function KPIsPage() {
       porcentaje_kpis_equipo: '% KPIs Equipo',
       dashboard_presentado: 'Dashboard',
       personalizado: 'Personalizado',
+      precision: 'Precision'
     };
     return labels[tipo] || tipo;
   };
@@ -143,6 +149,7 @@ export default function KPIsPage() {
       porcentaje_kpis_equipo: 'bg-orange-100 text-orange-700',
       dashboard_presentado: 'bg-pink-100 text-pink-700',
       personalizado: 'bg-gray-100 text-gray-700',
+      precision: 'bg-teal-100 text-teal-700',
     };
     return badges[tipo] || 'bg-gray-100 text-gray-700';
   };
@@ -393,7 +400,7 @@ export default function KPIsPage() {
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <h3 className="text-lg font-semibold text-gray-900">{kpi.key}</h3>
+                          <h3 className="text-lg font-semibold text-gray-900">{kpi.indicador}</h3>
                           <span
                             className={`px-3 py-1 rounded-full text-xs font-medium ${getTipoCalculoBadge(
                               kpi.tipoCalculo
@@ -418,9 +425,8 @@ export default function KPIsPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-gray-900 font-medium mb-2">{kpi.indicador}</p>
                         {kpi.descripcion && (
-                          <p className="text-sm text-gray-600 mb-3">{kpi.descripcion}</p>
+                          <p className="text-gray-500 font-medium mb-2">{kpi.descripcion}</p>
                         )}
 
                         {/* Info Grid */}
@@ -481,6 +487,14 @@ export default function KPIsPage() {
                         title="Editar"
                       >
                         <Edit className="w-5 h-5" />
+                      </button>
+
+                      <button
+                        onClick={() => handleDuplicar(kpi.id)}
+                        className="p-2 text-teal-600 hover:bg-teal-50 rounded-lg transition-colors"
+                        title="Duplicar para otro puesto/área"
+                      >
+                        <Copy className="w-5 h-5" />
                       </button>
 
                       <button

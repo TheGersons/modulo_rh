@@ -57,6 +57,7 @@ export class OrdenesTrabajoController {
     @Query('kpiId') kpiId?: string,
     @Query('status') status?: string,
     @Query('tipoOrden') tipoOrden?: string,
+    @Query('areaId') areaId?: string,
   ) {
     return this.ordenesService.findAll({
       empleadoId,
@@ -64,6 +65,7 @@ export class OrdenesTrabajoController {
       kpiId,
       status,
       tipoOrden,
+      areaId,
     });
   }
 

@@ -135,6 +135,7 @@ export class OrdenesTrabajoService {
     kpiId?: string;
     status?: string;
     tipoOrden?: string;
+    areaId?: string;
   }) {
     const where: any = {};
 
@@ -143,6 +144,15 @@ export class OrdenesTrabajoService {
     if (filters?.kpiId) where.kpiId = filters.kpiId;
     if (filters?.status) where.status = filters.status;
     if (filters?.tipoOrden) where.tipoOrden = filters.tipoOrden;
+
+    if (filters?.areaId) {
+      where.empleado = {
+        OR: [
+          { areaId: filters.areaId },
+          { area: { areaPadreId: filters.areaId } },
+        ],
+      };
+    }
 
     const ordenes = await this.prisma.ordenTrabajo.findMany({
       where,

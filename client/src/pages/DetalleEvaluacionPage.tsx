@@ -355,7 +355,7 @@ export default function DetalleEvaluacionPage() {
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-lg font-semibold text-gray-900">{detalle.kpi.key}</h3>
+                      <h3 className="text-lg font-semibold text-gray-900">{detalle.kpi.indicador}</h3>
                       {getEstadoBadge(detalle.estado)}
                       {detalle.kpi.tipoCriticidad === 'critico' && (
                         <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
@@ -363,7 +363,6 @@ export default function DetalleEvaluacionPage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-gray-900 font-medium mb-2">{detalle.kpi.indicador}</p>
                     {detalle.kpi.descripcion && (
                       <p className="text-sm text-gray-600">{detalle.kpi.descripcion}</p>
                     )}

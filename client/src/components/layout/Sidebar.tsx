@@ -81,7 +81,7 @@ export default function Sidebar() {
                     label: 'Ver Órdenes',    // admin/jefe/rrhh ven todas
                     path: '/ordenes',
                     exact: true,
-                    allowedRoles: ['admin', 'jefe', 'rrhh'],
+                    allowedRoles: ['admin', 'jefe', 'rrhh', 'empleado'],
                 },
                 {
                     icon: ClipboardCheck,
