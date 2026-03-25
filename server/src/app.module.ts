@@ -13,6 +13,7 @@ import { EvaluacionesModule } from './modules/evaluaciones/evaluaciones.module';
 import { PuestosModule } from './modules/puestos/puestos.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { RevisoresAsignadosModule } from './modules/revisores-asignados/revisores-asignados.module';
+import { MiEquipoModule } from './modules/mi-equipo/mi-equipo.module';
 import { PrismaService } from './common/database/prisma.service';
 
 @Module({
@@ -32,6 +33,7 @@ import { PrismaService } from './common/database/prisma.service';
     AlertasModule,
     OrdenesTrabajoModule,
     RevisoresAsignadosModule,
+    MiEquipoModule,
     // PlanesAccionModule, // ← COMENTADO
   ],
   providers: [PrismaService],

@@ -15,6 +15,7 @@ import { ResponderSolicitudTareaDto } from './dto/responder-solicitud-tarea.dto'
 import { SolicitarEdicionDto } from './dto/solicitar-edicion.dto';
 import { ResponderSolicitudEdicionDto } from './dto/responder-solicitud-edicion.dto';
 import { AlertasService } from '../alertas/alertas.service';
+import { calcularFechaLimiteLaboral } from '../../common/utils/calcular-fecha-limite.util';
 
 @Injectable()
 export class OrdenesTrabajoService {
@@ -27,7 +28,7 @@ export class OrdenesTrabajoService {
   // CREAR ORDEN DE TRABAJO
   // ============================================
   async create(createDto: CreateOrdenTrabajoDto, creadorId: string) {
-    // Validar que el KPI existe
+    // 1. Validar que el KPI existe
     const kpi = await this.prisma.kPI.findUnique({
       where: { id: createDto.kpiId },
     });
@@ -38,7 +39,14 @@ export class OrdenesTrabajoService {
       );
     }
 
-    // Validar que el empleado existe
+    // 2. Validar horas límite configuradas
+    if (!kpi.horasLimiteOrden || kpi.horasLimiteOrden <= 0) {
+      throw new BadRequestException(
+        'Este KPI no tiene horas límite configuradas. Configúralas antes de crear órdenes.',
+      );
+    }
+
+    // 3. Validar que el empleado existe
     const empleado = await this.prisma.user.findUnique({
       where: { id: createDto.empleadoId },
     });
@@ -49,7 +57,13 @@ export class OrdenesTrabajoService {
       );
     }
 
-    // Crear orden
+    // 4. Calcular fecha límite automáticamente desde horas laborales del KPI
+    const fechaLimite = calcularFechaLimiteLaboral(
+      new Date(),
+      kpi.horasLimiteOrden,
+    );
+
+    // 5. Crear orden
     const orden = await this.prisma.ordenTrabajo.create({
       data: {
         kpiId: createDto.kpiId,
@@ -58,8 +72,8 @@ export class OrdenesTrabajoService {
         titulo: createDto.titulo,
         descripcion: createDto.descripcion,
         cantidadTareas: createDto.cantidadTareas,
-        fechaLimite: new Date(createDto.fechaLimite),
-        fechaLimiteOriginal: new Date(createDto.fechaLimite),
+        fechaLimite,
+        fechaLimiteOriginal: fechaLimite,
         tipoOrden: createDto.tipoOrden || 'kpi_sistema',
         status: 'pendiente',
       },
@@ -86,7 +100,7 @@ export class OrdenesTrabajoService {
       },
     });
 
-    // Crear tareas si se proporcionaron
+    // 6. Crear tareas con la misma fechaLimite calculada
     if (createDto.tareas && createDto.tareas.length > 0) {
       for (const tarea of createDto.tareas) {
         await this.prisma.tarea.create({
@@ -94,13 +108,12 @@ export class OrdenesTrabajoService {
             ordenTrabajoId: orden.id,
             descripcion: tarea.descripcion,
             orden: tarea.orden,
-            fechaLimite: new Date(createDto.fechaLimite),
+            fechaLimite, // ← usa la calculada, no la del DTO
           },
         });
       }
     }
-
-    // TODO: Generar alerta para el empleado
+    await this.alertasService.alertaOrdenAsignada(orden).catch(() => null);
 
     return orden;
   }
@@ -113,7 +126,24 @@ export class OrdenesTrabajoService {
     empleadoIds: string[],
     creadorId: string,
   ) {
-    const ordenesCreadas: any[] = []; // ← Agregar tipo
+    // Validar KPI y horas límite una sola vez antes del loop
+    const kpi = await this.prisma.kPI.findUnique({
+      where: { id: createDto.kpiId },
+    });
+
+    if (!kpi) {
+      throw new NotFoundException(
+        `KPI con ID ${createDto.kpiId} no encontrado`,
+      );
+    }
+
+    if (!kpi.horasLimiteOrden || kpi.horasLimiteOrden <= 0) {
+      throw new BadRequestException(
+        'Este KPI no tiene horas límite configuradas. Configúralas antes de crear órdenes.',
+      );
+    }
+
+    const ordenesCreadas: any[] = [];
 
     for (const empleadoId of empleadoIds) {
       const orden = await this.create({ ...createDto, empleadoId }, creadorId);

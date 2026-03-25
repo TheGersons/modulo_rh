@@ -102,13 +102,15 @@ model KPI {
   // Criticidad
   tipoCriticidad String @default("no_critico") // "critico", "no_critico"
 
-  periodicidad String
-  sentido      String // "Mayor es mejor", "Menor es mejor"
-  unidad       String?
-  orden        Int      @default(0)
-  activo       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  periodicidad       String
+  sentido            String // "Mayor es mejor", "Menor es mejor"
+  unidad             String?
+  aplicaOrdenTrabajo Boolean  @default(false) @map("aplica_orden_trabajo")
+  horasLimiteOrden   Int      @default(0) @map("horas_limite_orden")
+  orden              Int      @default(0)
+  activo             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   // Relaciones
   areaRelacion       Area                @relation(fields: [areaId], references: [id], onDelete: Cascade)

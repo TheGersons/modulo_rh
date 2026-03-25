@@ -13,6 +13,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { StorageService } from './storage.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from 'src/common/database/prisma.service';
+import { AlertasService } from '../alertas/alertas.service';
 
 const TIPOS_PERMITIDOS = [
   'image/jpeg',
@@ -44,6 +45,7 @@ export class StorageController {
   constructor(
     private storageService: StorageService,
     private prisma: PrismaService,
+    private alertasService: AlertasService,
   ) {}
 
   @Post('evidencia-kpi')
@@ -158,6 +160,12 @@ export class StorageController {
         esFueraDeTiempo,
       },
     });
+
+    // Generar alerta para el jefe cuando el empleado sube evidencia
+    await this.alertasService
+      .alertaEvidenciaSubida(orden, esFueraDeTiempo)
+      .catch(() => null);
+
     return { success: true, evidencia, archivoUrl };
   }
 }

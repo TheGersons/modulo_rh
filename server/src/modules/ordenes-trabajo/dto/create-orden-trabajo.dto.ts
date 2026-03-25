@@ -42,7 +42,8 @@ export class CreateOrdenTrabajoDto {
   cantidadTareas: number;
 
   @IsDateString()
-  fechaLimite: string;
+  @IsOptional()
+  fechaLimite?: string;
 
   @IsString()
   @IsOptional()

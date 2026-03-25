@@ -578,4 +578,50 @@ export class AlertasService {
       alertasGeneradas,
     };
   }
+  async alertaEvidenciaSubida(orden: any, esFueraDeTiempo: boolean) {
+    const empleado = await this.prisma.user.findUnique({
+      where: { id: orden.empleadoId },
+      select: { areaId: true, nombre: true, apellido: true },
+    });
+
+    if (!empleado?.areaId) return;
+
+    const nivel = esFueraDeTiempo ? 'MEDIO' : 'BAJO';
+    const titulo = esFueraDeTiempo
+      ? 'Evidencia subida fuera de tiempo'
+      : 'Evidencia pendiente de revisión';
+    const descripcion = esFueraDeTiempo
+      ? `${empleado.nombre} ${empleado.apellido} subió evidencia fuera de tiempo en la orden "${orden.titulo}"`
+      : `${empleado.nombre} ${empleado.apellido} subió evidencia en la orden "${orden.titulo}" — requiere revisión`;
+
+    return this.create({
+      areaId: empleado.areaId,
+      empleadoId: orden.empleadoId,
+      tipo: 'evidencia_pendiente',
+      nivel,
+      titulo,
+      descripcion,
+      accionSugerida: 'Revisar la evidencia y aprobar o rechazar',
+      responsable: 'Jefe de área',
+    });
+  }
+  async alertaOrdenAsignada(orden: any) {
+    const empleado = await this.prisma.user.findUnique({
+      where: { id: orden.empleadoId },
+      select: { areaId: true, nombre: true, apellido: true },
+    });
+
+    if (!empleado?.areaId) return;
+
+    return this.create({
+      areaId: empleado.areaId,
+      empleadoId: orden.empleadoId,
+      tipo: 'orden_asignada',
+      nivel: 'BAJO',
+      titulo: 'Nueva orden de trabajo asignada',
+      descripcion: `Se te asignó la orden "${orden.titulo}" — tienes hasta ${new Date(orden.fechaLimite).toLocaleDateString('es-HN')} para completarla`,
+      accionSugerida: 'Revisar la orden y subir evidencias en tiempo y forma',
+      responsable: 'Empleado',
+    });
+  }
 }

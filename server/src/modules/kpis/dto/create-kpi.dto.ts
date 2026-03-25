@@ -101,4 +101,12 @@ export class CreateKpiDto {
   @IsUUID()
   @IsOptional()
   puestoId?: string; // NUEVO: referencia a tabla Puesto
+
+  @IsBoolean()
+  @IsOptional()
+  aplicaOrdenTrabajo?: boolean;
+
+  @IsInt()
+  @IsOptional()
+  horasLimiteOrden?: number;
 }
