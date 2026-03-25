@@ -35,6 +35,7 @@ interface KPI {
     unidad?: string;
     tipoCriticidad: string;
     periodicidad: string;
+    aplicaOrdenTrabajo: boolean;
     sentido: string;
 }
 
@@ -484,6 +485,7 @@ export default function MisKPIsPage() {
                                                         {esMenorMejor && <span className="flex items-center gap-0.5 text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full"><ArrowDown className="w-3 h-3" /> Menor es mejor</span>}
                                                         {!esMenorMejor && !esBinario && <span className="flex items-center gap-0.5 text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full"><ArrowUp className="w-3 h-3" /> Mayor es mejor</span>}
                                                         {esBinario && <span className="flex items-center gap-0.5 text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full"><Minus className="w-3 h-3" /> Sí / No</span>}
+                                                        {kpi.aplicaOrdenTrabajo && <span className="text-xs text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full font-medium">🔧 Orden de Trabajo</span>}
                                                     </div>
                                                     <p className="text-sm font-semibold text-gray-900 mt-0.5">{kpi.descripcion}</p>
                                                 </div>
@@ -534,9 +536,9 @@ export default function MisKPIsPage() {
 
                                             {/* Instrucción por tipo */}
                                             <div className={`flex items-start gap-2 p-3 rounded-lg text-xs ${esBinario ? 'bg-gray-50 border border-gray-200' :
-                                                    esPrecision ? 'bg-teal-50 border border-teal-100' :
-                                                        esMenorMejor ? 'bg-purple-50 border border-purple-100' :
-                                                            'bg-green-50 border border-green-100'
+                                                esPrecision ? 'bg-teal-50 border border-teal-100' :
+                                                    esMenorMejor ? 'bg-purple-50 border border-purple-100' :
+                                                        'bg-green-50 border border-green-100'
                                                 }`}>
                                                 <Info className={`w-4 h-4 flex-shrink-0 mt-0.5 ${esBinario ? 'text-gray-500' : esPrecision ? 'text-teal-500' : esMenorMejor ? 'text-purple-500' : 'text-green-500'}`} />
                                                 <div className="space-y-1">
@@ -586,13 +588,13 @@ export default function MisKPIsPage() {
 
                                                         return (
                                                             <div key={idx} className={`flex items-start gap-3 p-3 rounded-lg border ${ss === 'aprobada' ? 'bg-green-50 border-green-200' :
-                                                                    ss === 'pendiente_revision' ? 'bg-orange-50 border-orange-200' :
-                                                                        ss === 'rechazada' ? 'bg-red-50 border-red-200' :
-                                                                            'bg-gray-50 border-gray-200 border-dashed'
+                                                                ss === 'pendiente_revision' ? 'bg-orange-50 border-orange-200' :
+                                                                    ss === 'rechazada' ? 'bg-red-50 border-red-200' :
+                                                                        'bg-gray-50 border-gray-200 border-dashed'
                                                                 }`}>
                                                                 <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5 ${ss === 'aprobada' ? 'bg-green-500 text-white' :
-                                                                        ss === 'pendiente_revision' ? 'bg-orange-400 text-white' :
-                                                                            ss === 'rechazada' ? 'bg-red-400 text-white' : 'bg-gray-200 text-gray-500'
+                                                                    ss === 'pendiente_revision' ? 'bg-orange-400 text-white' :
+                                                                        ss === 'rechazada' ? 'bg-red-400 text-white' : 'bg-gray-200 text-gray-500'
                                                                     }`}>
                                                                     {ss === 'aprobada' ? '✓' : ss === 'pendiente_revision' ? '⏳' : ss === 'rechazada' ? '✗' : idx + 1}
                                                                 </div>

@@ -67,7 +67,7 @@ export interface CreateOrdenDto {
   titulo: string;
   descripcion: string;
   cantidadTareas: number;
-  fechaLimite: string;
+  //fechaLimite: string;
   tipoOrden?: string;
   tareas?: Array<{
     descripcion: string;

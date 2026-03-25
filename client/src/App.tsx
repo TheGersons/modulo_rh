@@ -24,6 +24,7 @@ import DetalleOrdenEmpleadoPage from './pages/DetalleOrdenEmpleadoPage';
 import MisKPIsPage from './pages/MisKpisPage';
 import RevisionEvidenciasPage from './pages/RevisionEvidenciasPage';
 import RevisoresAsignadosPage from './pages/RevisoresAsignadosPage';
+import MiEquipoPage from './pages/MiEquipoPage';
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -128,6 +129,15 @@ function AppRoutes() {
             <Layout>
               <CerrarPeriodoPage />
             </Layout>
+          </PrivateRoute>
+        }
+      />
+
+      <Route
+        path="/mi-equipo"
+        element={
+          <PrivateRoute allowedRoles={['admin', 'jefe', 'rrhh']}>
+            <MiEquipoPage />
           </PrivateRoute>
         }
       />

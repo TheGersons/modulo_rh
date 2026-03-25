@@ -38,11 +38,13 @@ interface KPI {
   indicador: string;
   meta: number;
   unidad: string;
+  aplicaOrdenTrabajo: boolean;
+  horasLimiteOrden: number;
   areaRelacion?: {
     id: string;
     nombre: string;
   } | null;
-  puestoRelacion?: {
+  puesto?: {
     id: string;
     nombre: string;
   } | null;
@@ -73,7 +75,6 @@ export default function CrearOrdenPage() {
   const [kpiId, setKpiId] = useState('');
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
-  const [fechaLimite, setFechaLimite] = useState('');
   const [tipoAsignacion, setTipoAsignacion] = useState<'individual' | 'multiple'>('individual');
 
   // UI state
@@ -106,34 +107,17 @@ export default function CrearOrdenPage() {
     setEmpleadosFiltrados(filtrados);
   }, [filtroArea, filtroSubArea, empleados, areas]);
 
-  // Filtrar KPIs según empleados seleccionados y filtros de área
+  // Filtrar KPIs según empleados seleccionados — solo por puesto
   useEffect(() => {
-    // Sin selección ni filtro → todos los KPIs
-    if (empleadosSeleccionados.length === 0 && filtroArea === 'todas') {
-      setKpisFiltrados(kpis);
+    if (empleadosSeleccionados.length === 0) {
+      setKpisFiltrados([]);
       return;
     }
 
-    // Empleados de referencia: los seleccionados tienen prioridad,
-    // si no hay seleccionados usamos los filtrados por área
-    const empleadosReferencia = empleadosSeleccionados.length > 0
-      ? empleados.filter((e) => empleadosSeleccionados.includes(e.id))
-      : empleadosFiltrados;
+    const empleadosReferencia = empleados.filter((e) =>
+      empleadosSeleccionados.includes(e.id)
+    );
 
-    // Construir el set de areaIds relevantes incluyendo área padre
-    // Ej: empleado en sub-área "Contabilidad" (padre: "Administrativa")
-    //     → incluir ambas para que los KPIs de área padre también aparezcan
-    const areaIdsDirectas = empleadosReferencia
-      .map((e) => e.area?.id)
-      .filter(Boolean) as string[];
-
-    const areaIdsConPadre = new Set<string>(areaIdsDirectas);
-    areaIdsDirectas.forEach((areaId) => {
-      const areaDato = areas.find((a) => a.id === areaId);
-      if (areaDato?.areaPadreId) areaIdsConPadre.add(areaDato.areaPadreId);
-    });
-
-    // Puestos — solo de empleados que SÍ tienen puesto asignado
     const puestoIds = new Set(
       empleadosReferencia
         .map((e) => e.puesto?.id)
@@ -141,30 +125,14 @@ export default function CrearOrdenPage() {
     );
 
     const filtrados = kpis.filter((kpi) => {
-      const tieneArea = !!kpi.areaRelacion;
-      const tienePuesto = !!kpi.puestoRelacion;
-
-      // KPI genérico (sin área ni puesto) → siempre visible
-      if (!tieneArea && !tienePuesto) return true;
-
-      // KPI con puesto específico → mostrar solo si algún empleado
-      // seleccionado tiene ese puesto
-      if (tienePuesto) {
-        return puestoIds.has(kpi.puestoRelacion!.id);
-      }
-
-      // KPI de área → mostrar si el área del KPI está en el set
-      // (área directa del empleado o área padre)
-      if (tieneArea) {
-        return areaIdsConPadre.has(kpi.areaRelacion!.id);
-      }
-
-      return false;
+      if (!kpi.puesto) return false;
+      return puestoIds.has(kpi.puesto.id);
     });
 
-    // NUNCA hacer fallback a todos — si no hay coincidencia, lista vacía
+    // Sin coincidencia → lista vacía
     setKpisFiltrados(filtrados);
-  }, [empleadosSeleccionados, filtroArea, filtroSubArea, kpis, empleados, empleadosFiltrados, areas]);
+    setKpiId('');
+  }, [empleadosSeleccionados, kpis, empleados]);
 
   const cargarDatos = async () => {
     try {
@@ -177,8 +145,10 @@ export default function CrearOrdenPage() {
       setEmpleados(empleadosData.filter((e: Empleado) => e.activo));
       setEmpleadosFiltrados(empleadosData.filter((e: Empleado) => e.activo));
       setAreas(areasData);
-      setKpis(kpisData);
-      setKpisFiltrados(kpisData);
+      // Solo mostrar KPIs que aplican a orden de trabajo
+      const kpisConOrden = kpisData.filter((k: KPI) => k.aplicaOrdenTrabajo);
+      setKpis(kpisConOrden);
+      setKpisFiltrados(kpisConOrden);
     } catch (error) {
       console.error('Error al cargar datos:', error);
       setError('Error al cargar los datos necesarios');
@@ -227,30 +197,16 @@ export default function CrearOrdenPage() {
       return;
     }
 
-    if (!fechaLimite) {
-      setError('La fecha límite es requerida');
-      return;
-    }
-
-    const fechaSeleccionada = new Date(fechaLimite);
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-
-    if (fechaSeleccionada < hoy) {
-      setError('La fecha límite debe ser mayor o igual a hoy');
-      return;
-    }
-
     try {
       setGuardando(true);
 
       const ordenData = {
         kpiId,
-        empleadoId: empleadosSeleccionados[0], // Requerido por DTO
+        empleadoId: empleadosSeleccionados[0],
         titulo: titulo.trim(),
         descripcion: descripcion.trim(),
         cantidadTareas: 1,
-        fechaLimite: new Date(fechaLimite).toISOString(),
+        // ← sin fechaLimite, el backend la calcula
         tipoOrden: 'kpi_sistema',
         tareas: [
           {
@@ -289,7 +245,6 @@ export default function CrearOrdenPage() {
   }
 
   const kpiSeleccionado = kpis.find((k) => k.id === kpiId);
-  const today = new Date().toISOString().split('T')[0];
 
   return (
     <Layout>
@@ -495,31 +450,58 @@ export default function CrearOrdenPage() {
                 <h2 className="text-xl font-bold text-gray-900">KPI</h2>
               </div>
 
+              {/* Warning si no hay empleado seleccionado */}
+              {empleadosSeleccionados.length === 0 ? (
+                <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4">
+                  <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-700">
+                    Selecciona al menos un empleado para ver los KPIs disponibles según su puesto.
+                  </p>
+                </div>
+              ) : kpisFiltrados.length === 0 ? (
+                <div className="flex items-start gap-2 p-3 bg-gray-50 border border-gray-200 rounded-lg mb-4">
+                  <AlertCircle className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-gray-500">
+                    No hay KPIs con orden de trabajo configurados para el puesto de este empleado.
+                  </p>
+                </div>
+              ) : null}
+
               <select
                 value={kpiId}
                 onChange={(e) => setKpiId(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-4"
+                disabled={empleadosSeleccionados.length === 0}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-4 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
               >
-                <option value="">Selecciona un KPI</option>
-                {kpisFiltrados.map((kpi) => {
-                  //const areaNombre = kpi.areaRelacion?.nombre ?? 'Sin área';
-                  return (
-                    <option key={kpi.id} value={kpi.id}>
-                      {kpi.indicador}
-                    </option>
-                  );
-                })}
+                <option value="">
+                  {empleadosSeleccionados.length === 0
+                    ? 'Primero selecciona un empleado'
+                    : 'Selecciona un KPI'}
+                </option>
+                {kpisFiltrados.map((kpi) => (
+                  <option key={kpi.id} value={kpi.id}>
+                    {kpi.indicador}
+                  </option>
+                ))}
               </select>
 
               {kpiSeleccionado && (
-                <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-                  <p className="text-sm font-semibold text-purple-900 mb-1">{kpiSeleccionado.indicador}</p>
+                <div className="p-4 bg-purple-50 rounded-lg border border-purple-200 space-y-2">
+                  <p className="text-sm font-semibold text-purple-900">{kpiSeleccionado.indicador}</p>
                   <p className="text-xs text-purple-700">
-                    Meta: {kpiSeleccionado.meta}
-                    {kpiSeleccionado.unidad}
+                    Meta: {kpiSeleccionado.meta}{kpiSeleccionado.unidad}
                   </p>
-                  <p className="text-xs text-purple-600 mt-1">
+                  <p className="text-xs text-purple-600">
                     {kpiSeleccionado.areaRelacion?.nombre ?? 'Sin área'}
+                  </p>
+                  <div className="flex items-center gap-2 pt-1 border-t border-purple-200">
+                    <Calendar className="w-3.5 h-3.5 text-purple-500" />
+                    <p className="text-xs text-purple-700 font-medium">
+                      Plazo: <span className="font-bold">{kpiSeleccionado.horasLimiteOrden} horas laborales</span>
+                    </p>
+                  </div>
+                  <p className="text-xs text-purple-500">
+                    La fecha límite se calculará automáticamente al crear la orden.
                   </p>
                 </div>
               )}
@@ -559,21 +541,6 @@ export default function CrearOrdenPage() {
                   placeholder="Describe la orden de trabajo..."
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
                   rows={4}
-                />
-              </div>
-
-              {/* Fecha Límite */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <Calendar className="w-4 h-4 inline mr-1" />
-                  Fecha Límite <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={fechaLimite}
-                  onChange={(e) => setFechaLimite(e.target.value)}
-                  min={today}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>

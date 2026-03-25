@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -46,6 +46,8 @@ interface FormulaCalculo {
 
 export default function GestionKPIsPage() {
   const navigate = useNavigate();
+  // Ref para bloquear los efectos de área/subárea durante la carga inicial de edición
+  const skipPuestosEffectRef = useRef(false);
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('edit');
   const duplicarId = searchParams.get('duplicar');
@@ -94,6 +96,8 @@ export default function GestionKPIsPage() {
   const [criticidad, setCriticidad] = useState('no_critico');
   const [periodicidad, setPeriodicidad] = useState('mensual');
   const [sentido, setSentido] = useState('Mayor es mejor');
+  const [aplicaOrdenTrabajo, setAplicaOrdenTrabajo] = useState(false);
+  const [horasLimiteOrden, setHorasLimiteOrden] = useState('0');
 
   useEffect(() => {
     cargarAreas();
@@ -141,12 +145,14 @@ export default function GestionKPIsPage() {
   };
 
   const cargarPuestos = async (areaIdParam: string) => {
+    // Si estamos cargando un KPI en modo edición, ignoramos esta llamada
+    // (los efectos de areaId/subAreaId no deben interferir con la carga inicial)
+    if (skipPuestosEffectRef.current) return;
     try {
       const data = await puestosService.getAll(areaIdParam);
       setPuestos(data);
-      if (puestoId && !data.find((p: Puesto) => p.id === puestoId)) {
-        setPuestoId('');
-      }
+      // El reset de puestoId lo hacen los onChange del select de área/subárea,
+      // no debe hacerse aquí para evitar borrar el valor cargado al editar.
     } catch (error) {
       console.error('Error al cargar puestos:', error);
       setPuestos([]);
@@ -156,20 +162,37 @@ export default function GestionKPIsPage() {
   const cargarKPI = async () => {
     try {
       setLoading(true);
+      // Bloquear los efectos de área para que no interfieran con la carga inicial
+      skipPuestosEffectRef.current = true;
+
       const kpi = await kpisService.getById(editId!);
 
       setKeyOriginal(kpi.key);
       setIndicador(kpi.indicador);
       setDescripcion(kpi.descripcion || '');
-      setAreaId(kpi.areaId);
 
       const kpiArea = await areasService.getById(kpi.areaId);
       if (kpiArea.areaPadreId) {
+        // El área del KPI es un sub-área: setear padre y sub-área
         setAreaId(kpiArea.areaPadreId);
         setSubAreaId(kpi.areaId);
+        // Calcular sub-áreas del padre para que el select las muestre
+      } else {
+        setAreaId(kpi.areaId);
       }
 
+      // Cargar puestos directamente para el área real del KPI (puede ser sub-área)
+      try {
+        const puestosData = await puestosService.getAll(kpi.areaId);
+        setPuestos(puestosData);
+      } catch (e) {
+        console.error('Error al cargar puestos del KPI:', e);
+      }
+
+      // Liberar el bloqueo ANTES de setear puestoId para que el render lo pinte
+      skipPuestosEffectRef.current = false;
       setPuestoId(kpi.puestoId || '');
+
       setTipoCalculo(kpi.tipoCalculo);
       setMeta(kpi.meta?.toString() || '');
       setOperador(kpi.operadorMeta || '>');
@@ -178,6 +201,8 @@ export default function GestionKPIsPage() {
       setCriticidad(kpi.tipoCriticidad || 'no_critico');
       setPeriodicidad(kpi.periodicidad);
       setSentido(kpi.sentido || 'Mayor es mejor');
+      setAplicaOrdenTrabajo(kpi.aplicaOrdenTrabajo ?? false);
+      setHorasLimiteOrden(kpi.horasLimiteOrden?.toString() ?? '0');
 
       if (kpi.formulaCalculo) {
         const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
@@ -223,6 +248,8 @@ export default function GestionKPIsPage() {
       setCriticidad(kpi.tipoCriticidad || 'no_critico');
       setPeriodicidad(kpi.periodicidad);
       setSentido(kpi.sentido || 'Mayor es mejor');
+      setAplicaOrdenTrabajo(kpi.aplicaOrdenTrabajo ?? false);
+      setHorasLimiteOrden(kpi.horasLimiteOrden?.toString() ?? '0');
 
       if (kpi.formulaCalculo) {
         const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
@@ -326,6 +353,11 @@ export default function GestionKPIsPage() {
       }
     }
 
+    if (aplicaOrdenTrabajo && (!horasLimiteOrden || parseInt(horasLimiteOrden) <= 0)) {
+      setError('Debes definir las horas límite para la orden de trabajo (mínimo 1 hora)');
+      return;
+    }
+
     const areaFinal = subAreaId || areaId;
     const areaNombre = areas.find(a => a.id === areaFinal)?.nombre ?? 'AREA';
     const puestoNombre = puestos.find(p => p.id === puestoId)?.nombre ?? 'PUESTO';
@@ -362,6 +394,8 @@ export default function GestionKPIsPage() {
         periodicidad,
         sentido,
         activo: true,
+        aplicaOrdenTrabajo,
+        horasLimiteOrden: parseInt(horasLimiteOrden) || 0,
       };
 
       if (isEdit) {
@@ -542,6 +576,49 @@ export default function GestionKPIsPage() {
             )}
           </div>
         </div>
+
+        {/* Aplica Orden de Trabajo + Horas límite */}
+        <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={aplicaOrdenTrabajo}
+              onChange={(e) => {
+                setAplicaOrdenTrabajo(e.target.checked);
+                if (!e.target.checked) setHorasLimiteOrden('0');
+              }}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+            />
+            <div>
+              <span className="text-sm font-medium text-gray-700">Aplica Orden de Trabajo</span>
+              <p className="text-xs text-gray-500 mt-0.5">Indica si este KPI requiere una orden de trabajo asociada</p>
+            </div>
+          </label>
+
+          {aplicaOrdenTrabajo && (
+            <div className="ml-7">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Horas límite para completar la orden <span className="text-red-500">*</span>
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  value={horasLimiteOrden}
+                  onChange={(e) => setHorasLimiteOrden(e.target.value)}
+                  placeholder="Ej: 24"
+                  min="1"
+                  step="1"
+                  className="w-36 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <span className="text-sm text-gray-500">horas laborales</span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                La fecha límite se calculará automáticamente al crear la orden, contando solo horas laborales
+                (Lun–Jue 07:30–17:30, Vie 07:30–16:30).
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tipo de Cálculo */}
@@ -702,8 +779,8 @@ export default function GestionKPIsPage() {
               </label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${precisionModo === 'tolerancia'
-                    ? 'border-teal-500 bg-teal-50'
-                    : 'border-gray-200 bg-white hover:border-gray-300'
+                  ? 'border-teal-500 bg-teal-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}>
                   <input
                     type="radio"
@@ -726,8 +803,8 @@ export default function GestionKPIsPage() {
                 </label>
 
                 <label className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${precisionModo === 'umbral'
-                    ? 'border-teal-500 bg-teal-50'
-                    : 'border-gray-200 bg-white hover:border-gray-300'
+                  ? 'border-teal-500 bg-teal-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}>
                   <input
                     type="radio"

@@ -7,7 +7,6 @@ import {
     ChevronRight,
     Briefcase,
     ClipboardCheck,
-    Inbox,
     Award,
     Plus,
     Edit,
@@ -90,13 +89,14 @@ export default function Sidebar() {
                     exact: true,
                 },
                 { icon: Plus, label: 'Nueva Orden', path: '/ordenes/crear' },
-                {
-                    icon: Inbox,
-                    label: 'Solicitudes',
-                    path: '/solicitudes',
-                    allowedRoles: ['admin', 'jefe', 'empleado', 'rrhh'],
-                },
             ],
+        },
+        {
+            icon: Users,
+            label: 'Mi Equipo',
+            path: '/mi-equipo',
+            exact: true,
+            allowedRoles: ['admin', 'jefe', 'rrhh'],
         },
         {
             icon: Award,

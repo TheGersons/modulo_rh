@@ -96,7 +96,7 @@ export default function MisOrdenesPage() {
         activas: ordenes.filter((o) => ['pendiente', 'en_proceso'].includes(o.status)).length,
         completadas: ordenes.filter((o) => ['completada', 'aprobada'].includes(o.status)).length,
         vencidas: ordenes.filter((o) => o.status === 'vencida').length,
-        revision: ordenes.filter((o) => o.status === 'completada').length,
+        revision: ordenes.filter((o) => o.status === 'pendiente_revision').length, // ← era 'completada'
     };
 
     const getDiasRestantes = (fechaLimite: string) => {
@@ -192,8 +192,8 @@ export default function MisOrdenesPage() {
                                     key={f.value}
                                     onClick={() => setFiltroStatus(f.value)}
                                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filtroStatus === f.value
-                                            ? 'bg-blue-600 text-white'
-                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                         }`}
                                 >
                                     {f.label}

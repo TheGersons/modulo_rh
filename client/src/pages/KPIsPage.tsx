@@ -36,6 +36,7 @@ interface KPI {
   sentido: string;
   unidad?: string;
   activo: boolean;
+  aplicaOrdenTrabajo: boolean;
   areaRelacion?: {
     nombre: string;
   };
@@ -56,9 +57,8 @@ export default function KPIsPage() {
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
-  const [filtroArea, _setFiltroArea] = useState<string>('todas');
   const [filtroCriticidad, setFiltroCriticidad] = useState<string>('todas');
-  const [filtroTipo, setFiltroTipo] = useState<string>('todos');
+  const [filtroPuesto, setFiltroPuesto] = useState<string>('todos');
   const [filtroEstado, setFiltroEstado] = useState<boolean | undefined>(undefined);
   const [filtroAreaPadre, setFiltroAreaPadre] = useState<string>('todas');
   const [filtroSubArea, setFiltroSubArea] = useState<string>('todas');
@@ -79,11 +79,12 @@ export default function KPIsPage() {
 
   useEffect(() => {
     setPaginaActual(1);
-  }, [searchTerm, filtroArea, filtroCriticidad, filtroTipo, filtroEstado]);
+  }, [searchTerm, filtroAreaPadre, filtroSubArea, filtroCriticidad, filtroPuesto, filtroEstado]);
 
+  // Resetear puesto seleccionado cuando cambia el área
   useEffect(() => {
-    setPaginaActual(1);
-  }, [searchTerm, filtroAreaPadre, filtroSubArea, filtroCriticidad, filtroTipo, filtroEstado]);
+    setFiltroPuesto('todos');
+  }, [filtroAreaPadre, filtroSubArea]);
 
   const cargarDatos = async () => {
     try {
@@ -154,11 +155,47 @@ export default function KPIsPage() {
     return badges[tipo] || 'bg-gray-100 text-gray-700';
   };
 
+  // Helper: normaliza texto quitando tildes, apóstrofes y mayúsculas
+  const normalizar = (texto: string) =>
+    texto
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // quita diacríticos (tildes, diéresis, etc.)
+      .replace(/[''`]/g, '')           // quita apóstrofes
+      .toLowerCase();
+
   // Filtrado
+  const termNorm = normalizar(searchTerm);
+
+  // KPIs que pasan el filtro de área (sin aplicar el resto) → para derivar puestos disponibles
+  const kpisPorArea = kpis.filter((kpi) => {
+    if (filtroAreaPadre === 'todas') return true;
+    if (filtroSubArea !== 'todas') return kpi.areaId === filtroSubArea;
+    return subAreasFiltradas.some((sa) => sa.id === kpi.areaId);
+  });
+
+  // Lista de puestos únicos presentes en los KPIs del área seleccionada
+  const puestosDisponibles: { id: string; nombre: string }[] = [];
+  const puestosVistos = new Set<string>();
+  for (const kpi of kpisPorArea) {
+    if (kpi.puesto) {
+      const id = typeof kpi.puesto === 'object' ? kpi.puesto.id : kpi.puesto;
+      const nombre = typeof kpi.puesto === 'object' ? kpi.puesto.nombre : kpi.puesto;
+      if (!puestosVistos.has(id)) {
+        puestosVistos.add(id);
+        puestosDisponibles.push({ id, nombre });
+      }
+    }
+  }
+  puestosDisponibles.sort((a, b) => a.nombre.localeCompare(b.nombre));
+
   const kpisFiltrados = kpis.filter((kpi) => {
+    const areaNombre = kpi.areaRelacion?.nombre ?? (typeof kpi.area === 'object' ? (kpi.area as any)?.nombre : kpi.area) ?? '';
     const matchSearch =
-      kpi.key.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      kpi.indicador.toLowerCase().includes(searchTerm.toLowerCase());
+      searchTerm === '' ||
+      normalizar(kpi.key).includes(termNorm) ||
+      normalizar(kpi.indicador).includes(termNorm) ||
+      (kpi.descripcion && normalizar(kpi.descripcion).includes(termNorm)) ||
+      normalizar(areaNombre).includes(termNorm);
 
     const matchArea =
       filtroAreaPadre === 'todas' ||
@@ -166,10 +203,13 @@ export default function KPIsPage() {
         ? kpi.areaId === filtroSubArea
         : subAreasFiltradas.some((sa) => sa.id === kpi.areaId));
     const matchCriticidad = filtroCriticidad === 'todas' || kpi.tipoCriticidad === filtroCriticidad;
-    const matchTipo = filtroTipo === 'todos' || kpi.tipoCalculo === filtroTipo;
+    const matchPuesto =
+      filtroPuesto === 'todos' ||
+      (kpi.puesto &&
+        (typeof kpi.puesto === 'object' ? kpi.puesto.id : kpi.puesto) === filtroPuesto);
     const matchEstado = filtroEstado === undefined || kpi.activo === filtroEstado;
 
-    return matchSearch && matchArea && matchCriticidad && matchTipo && matchEstado;
+    return matchSearch && matchArea && matchCriticidad && matchPuesto && matchEstado;
   });
 
   // Paginación
@@ -322,18 +362,21 @@ export default function KPIsPage() {
               <option value="no_critico">No Crítico</option>
             </select>
 
-            {/* Tipo de Cálculo */}
+            {/* Puesto */}
             <select
-              value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              value={filtroPuesto}
+              onChange={(e) => setFiltroPuesto(e.target.value)}
+              disabled={puestosDisponibles.length === 0}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
             >
-              <option value="todos">Todos los tipos</option>
-              <option value="binario">Binario</option>
-              <option value="division">División</option>
-              <option value="conteo">Conteo</option>
-              <option value="porcentaje_kpis_equipo">% KPIs Equipo</option>
-              <option value="dashboard_presentado">Dashboard</option>
+              <option value="todos">
+                {puestosDisponibles.length === 0 ? 'Sin puestos' : 'Todos los puestos'}
+              </option>
+              {puestosDisponibles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nombre}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -422,6 +465,11 @@ export default function KPIsPage() {
                           ) : (
                             <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
                               Inactivo
+                            </span>
+                          )}
+                          {kpi.aplicaOrdenTrabajo && (
+                            <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
+                              🔧 Orden de Trabajo
                             </span>
                           )}
                         </div>

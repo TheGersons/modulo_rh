@@ -40,6 +40,7 @@ export interface KPI {
   sentido: string;
   unidad?: string;
   activo: boolean;
+  aplicaOrdenTrabajo: boolean;
   orden: number;
 }
 
@@ -54,7 +55,7 @@ export interface EvaluacionDetalle {
   sentido: string;
   resultadoPorcentaje: number;
   brechaVsMeta: number;
-  estado: 'verde' | 'amarillo' | 'rojo';
+  estado: "verde" | "amarillo" | "rojo";
   comentarios?: string;
 }
 
@@ -65,9 +66,9 @@ export interface Evaluacion {
   evaluadorId: string;
   evaluador?: User;
   periodo: string;
-  tipoPeriodo: 'mensual' | 'trimestral';
+  tipoPeriodo: "mensual" | "trimestral";
   anio: number;
-  status: 'borrador' | 'enviada' | 'validada' | 'en_revision';
+  status: "borrador" | "enviada" | "validada" | "en_revision";
   promedioGeneral?: number;
   kpisRojos: number;
   porcentajeRojos?: number;
@@ -81,7 +82,7 @@ export interface Validacion {
   id: string;
   evaluacionId: string;
   empleadoId: string;
-  status: 'aceptada' | 'revision_solicitada';
+  status: "aceptada" | "revision_solicitada";
   motivoRevision?: string;
   respuestaJefe?: string;
   fechaValidacion: string;
@@ -92,12 +93,12 @@ export interface Alerta {
   areaId: string;
   area?: Area;
   tipo: string;
-  nivel: 'BAJO' | 'MEDIO' | 'ALTO';
+  nivel: "BAJO" | "MEDIO" | "ALTO";
   titulo: string;
   descripcion: string;
   accionSugerida?: string;
   responsable?: string;
-  status: 'activa' | 'en_proceso' | 'resuelta';
+  status: "activa" | "en_proceso" | "resuelta";
   fechaDeteccion: string;
   fechaResolucion?: string;
 }

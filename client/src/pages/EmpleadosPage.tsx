@@ -420,7 +420,7 @@ export default function EmpleadosPage() {
               <input
                 type="text"
                 value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
+                onChange={(e) => { setBusqueda(e.target.value); setPaginaActual(1); }}
                 placeholder="Buscar por nombre, email o DNI..."
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -432,6 +432,7 @@ export default function EmpleadosPage() {
               onChange={(e) => {
                 setFiltroArea(e.target.value);
                 setFiltroSubArea('todas'); // Reset sub-área al cambiar área
+                setPaginaActual(1);
               }}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[180px]"
             >
@@ -449,7 +450,7 @@ export default function EmpleadosPage() {
             {filtroArea !== 'todas' && (
               <select
                 value={filtroSubArea}
-                onChange={(e) => setFiltroSubArea(e.target.value)}
+                onChange={(e) => { setFiltroSubArea(e.target.value); setPaginaActual(1); }}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[180px]"
               >
                 <option value="todas">Todas las sub-áreas</option>
@@ -468,7 +469,7 @@ export default function EmpleadosPage() {
               <input
                 type="checkbox"
                 checked={mostrarInactivos}
-                onChange={(e) => setMostrarInactivos(e.target.checked)}
+                onChange={(e) => { setMostrarInactivos(e.target.checked); setPaginaActual(1); }}
                 className="w-4 h-4 rounded border-gray-300 text-blue-600"
               />
               <span className="text-sm text-gray-700 whitespace-nowrap">Inactivos</span>
