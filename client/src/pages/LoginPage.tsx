@@ -37,7 +37,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full bg-gray-50 flex">
-      
+
       {/* Panel Izquierdo - Branding (oculto en móvil) */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 relative overflow-hidden">
         {/* Decoraciones de fondo */}
@@ -49,9 +49,9 @@ export default function LoginPage() {
         <div className="relative h-10 z-10 flex flex-col justify-between w-full p-20">
           {/* Logo y título */}
           <div>
-            <img 
-              src="/logo-pd.svg" 
-              alt="Energía PD Logo" 
+            <img
+              src="/logo-pd.svg"
+              alt="Energía PD Logo"
               className="w-48 h-50 mb-0"
             />
             <h1 className="text-6xl font-bold text-white mb-10 leading-tight">
@@ -72,7 +72,7 @@ export default function LoginPage() {
               </div>
               <div>
                 <h3 className="text-xl font-semibold text-white mb-3">Control Total</h3>
-                <p className="text-lg text-blue-100">Gestiona empleados, nóminas y asistencias</p>
+                <p className="text-lg text-blue-100">Gestiona empleados, desempeño y asistencias</p>
               </div>
             </div>
 
@@ -94,12 +94,12 @@ export default function LoginPage() {
       {/* Panel Derecho - Formulario */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-16">
         <div className="w-full max-w-xl">
-          
+
           {/* Logo móvil , lo haremos mas corto */}
           <div className="lg:hidden flex justify-center mb-20">
-            <img 
-              src="/logo-pd.svg" 
-              alt="Energía PD Logo" 
+            <img
+              src="/logo-pd.svg"
+              alt="Energía PD Logo"
               className="w-20 h-20"
             />
           </div>
@@ -116,11 +116,11 @@ export default function LoginPage() {
 
           {/* Formulario */}
           <form onSubmit={handleSubmit} className="space-y-3">
-            
+
             {/* Email Input */}
             <div>
-              <label 
-                htmlFor="email" 
+              <label
+                htmlFor="email"
                 className="block text-base font-semibold text-gray-700 mb-1"
               >
                 Correo Electrónico
@@ -145,8 +145,8 @@ export default function LoginPage() {
 
             {/* Password Input */}
             <div>
-              <label 
-                htmlFor="password" 
+              <label
+                htmlFor="password"
                 className="block text-base font-semibold text-gray-700 mb-1"
               >
                 Contraseña
@@ -188,8 +188,8 @@ export default function LoginPage() {
             {/* Recordar y Olvidé contraseña */}
             <div className="flex items-center justify-between pt-3">
               <label className="flex items-center gap-4 cursor-pointer group">
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   className="w-5 h-5 rounded border-2 border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-200 cursor-pointer"
                 />
                 <span className="text-base text-gray-600 group-hover:text-gray-900 transition-colors select-none">
@@ -203,11 +203,10 @@ export default function LoginPage() {
 
             {/* Alert Message */}
             {message && (
-              <div className={`p-5 rounded-xl text-base font-medium border-2 mt-8 ${
-                message.includes('exitoso') 
-                  ? 'bg-green-50 text-green-800 border-green-200' 
-                  : 'bg-red-50 text-red-800 border-red-200'
-              }`}>
+              <div className={`p-5 rounded-xl text-base font-medium border-2 mt-8 ${message.includes('exitoso')
+                ? 'bg-green-50 text-green-800 border-green-200'
+                : 'bg-red-50 text-red-800 border-red-200'
+                }`}>
                 <div className="flex items-center gap-4">
                   {message.includes('exitoso') ? (
                     <svg className="w-6 h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -247,33 +246,6 @@ export default function LoginPage() {
               )}
             </button>
           </form>
-
-          {/* Credenciales de prueba */}
-          <div className="mt-5 pt-5 border-t-2 border-gray-200">
-            <p className="text-sm text-center text-gray-500 mb-4 font-semibold uppercase tracking-wider">
-              Credenciales de Prueba
-            </p>
-            <div className="bg-blue-50 rounded-xl p-2 border-2 border-blue-100">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-10">
-                <div>
-                  <span className="block text-sm font-semibold text-gray-500 uppercase mb-4 tracking-wide">
-                    Usuario
-                  </span>
-                  <span className="block text-base text-blue-700 font-mono font-semibold break-all">
-                    test@example.com
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-sm font-semibold text-gray-500 uppercase mb-4 tracking-wide">
-                    Contraseña
-                  </span>
-                  <span className="block text-base text-blue-700 font-mono font-semibold">
-                    password123
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -13,7 +13,7 @@ async function bootstrap() {
       'http://localhost:3000',
       'http://192.168.67.18:5173',
       'http://89.167.20.163:8082',
-    ], // URL del frontend
+    ],
     credentials: true,
   });
 

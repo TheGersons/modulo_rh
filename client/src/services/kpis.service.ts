@@ -124,4 +124,12 @@ export const kpisService = {
     );
     return response.data;
   },
+
+  getResultadosAutoEquipo: async (periodo?: string) => {
+    const url = periodo
+      ? `${API_ENDPOINTS.kpis}/resultados-auto-equipo?periodo=${periodo}`
+      : `${API_ENDPOINTS.kpis}/resultados-auto-equipo`;
+    const response = await apiClient.get(url);
+    return response.data;
+  },
 };

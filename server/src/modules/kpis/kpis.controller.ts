@@ -58,12 +58,44 @@ export class KpisController {
     );
   }
 
+  @Get('mis-notas')
+  getMisNotas(@Request() req, @Query('periodo') periodo?: string) {
+    return this.kpisService.getMisNotas(
+      req.user.userId,
+      periodo ?? getPeriodoActual(),
+    );
+  }
+
   @Get('pendientes-revision')
   getEvidenciasPendientes(@Request() req) {
     return this.kpisService.getEvidenciasPendientesKPI(req.user.userId);
   }
 
+  @Get('resultados-auto-equipo')
+  getResultadosAutoEquipo(
+    @Request() req,
+    @Query('periodo') periodo?: string,
+  ) {
+    return this.kpisService.getResultadosAutoEquipo(
+      req.user.userId,
+      periodo ?? getPeriodoActual(),
+    );
+  }
+
   // ── GET con parámetro (siempre al final de los GETs) ───────
+
+  @Get(':id/resultado-automatico')
+  getResultadoAutomatico(
+    @Param('id') id: string,
+    @Request() req,
+    @Query('periodo') periodo?: string,
+  ) {
+    return this.kpisService.getResultadoAutomatico(
+      id,
+      req.user.userId,
+      periodo ?? getPeriodoActual(),
+    );
+  }
 
   @Get(':id')
   findOne(@Param('id') id: string) {
@@ -85,6 +117,20 @@ export class KpisController {
   @Patch(':id/toggle')
   toggle(@Param('id') id: string) {
     return this.kpisService.toggle(id);
+  }
+
+  @Post(':id/nota')
+  guardarNota(
+    @Param('id') id: string,
+    @Request() req,
+    @Body() body: { nota: string; periodo?: string },
+  ) {
+    return this.kpisService.guardarNotaKPI(
+      id,
+      req.user.userId,
+      body.periodo ?? getPeriodoActual(),
+      body.nota,
+    );
   }
 
   // ── POST con paths fijos ───────────────────────────────────

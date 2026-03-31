@@ -90,6 +90,7 @@ export default function EmpleadosPage() {
   const [filtroSubArea, setFiltroSubArea] = useState('todas');
 
   const puedeGestionarEmpleados = isAdmin || isRRHH;
+  const puedeVerDni = isAdmin || isRRHH;
 
   useEffect(() => {
     cargarDatos();
@@ -540,7 +541,7 @@ export default function EmpleadosPage() {
                           >
                             {empleado.nombre} {empleado.apellido}
                           </p>
-                          {empleado.dni && <p className="text-sm text-gray-500">DNI: {empleado.dni}</p>}
+                          {empleado.dni && puedeVerDni && <p className="text-sm text-gray-500">DNI: {empleado.dni}</p>}
                         </div>
                       </div>
                     </td>
@@ -732,18 +733,20 @@ export default function EmpleadosPage() {
                 </div>
 
                 {/* DNI */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    DNI / Identidad
-                  </label>
-                  <input
-                    type="text"
-                    value={formDni}
-                    onChange={(e) => setFormDni(e.target.value)}
-                    placeholder="0801199012345"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                {puedeVerDni && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      DNI / Identidad
+                    </label>
+                    <input
+                      type="text"
+                      value={formDni}
+                      onChange={(e) => setFormDni(e.target.value)}
+                      placeholder="0801199012345"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
 
                 {/* Área Principal */}
                 <div>

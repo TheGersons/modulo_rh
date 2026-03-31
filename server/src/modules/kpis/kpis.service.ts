@@ -647,7 +647,7 @@ export class KpisService {
 
   async getMisEvidencias(empleadoId: string, periodo: string) {
     const evidencias = await this.prisma.evidenciaKPI.findMany({
-      where: { empleadoId, periodo },
+      where: { empleadoId, periodo, tipo: { not: 'nota_kpi' } },
       orderBy: { createdAt: 'asc' },
     });
     const agrupadas: Record<string, any[]> = {};
@@ -656,6 +656,215 @@ export class KpisService {
       agrupadas[ev.kpiId].push(ev);
     }
     return agrupadas;
+  }
+
+  // ============================================
+  // NOTAS DEL PERÍODO
+  // ============================================
+  async getMisNotas(
+    empleadoId: string,
+    periodo: string,
+  ): Promise<Record<string, string>> {
+    const notas = await this.prisma.evidenciaKPI.findMany({
+      where: { empleadoId, periodo, tipo: 'nota_kpi' },
+    });
+    const result: Record<string, string> = {};
+    for (const n of notas) {
+      if (n.nota) result[n.kpiId] = n.nota;
+    }
+    return result;
+  }
+
+  async guardarNotaKPI(
+    kpiId: string,
+    empleadoId: string,
+    periodo: string,
+    nota: string,
+  ) {
+    const existente = await this.prisma.evidenciaKPI.findFirst({
+      where: { kpiId, empleadoId, periodo, tipo: 'nota_kpi' },
+    });
+    if (existente) {
+      return this.prisma.evidenciaKPI.update({
+        where: { id: existente.id },
+        data: { nota },
+      });
+    }
+    return this.prisma.evidenciaKPI.create({
+      data: {
+        kpiId,
+        empleadoId,
+        periodo,
+        archivoUrl: '_nota_',
+        tipo: 'nota_kpi',
+        nombre: 'Nota del período',
+        nota,
+        intento: 1,
+        status: 'aprobada',
+      },
+    });
+  }
+
+  // ============================================
+  // RESULTADO AUTOMÁTICO (division + aplicaOrdenTrabajo)
+  // ============================================
+  async getResultadoAutomatico(
+    kpiId: string,
+    empleadoId: string,
+    periodo: string,
+  ) {
+    const kpi = await this.findOne(kpiId);
+    const [anio, mes] = periodo.split('-').map(Number);
+    const periodoStart = new Date(anio, mes - 1, 1);
+    const periodoEnd = new Date(anio, mes, 0, 23, 59, 59, 999);
+
+    const ordenes = await this.prisma.ordenTrabajo.findMany({
+      where: {
+        kpiId,
+        empleadoId,
+        status: { not: 'cancelada' },
+        fechaInicio: { gte: periodoStart, lte: periodoEnd },
+      },
+      include: {
+        tareas: {
+          include: {
+            evidencias: {
+              where: { status: 'aprobada' },
+              select: { archivoUrl: true, tipo: true, nombre: true },
+            },
+          },
+        },
+      },
+    });
+
+    const total = ordenes.length;
+    const aprobadas = ordenes.filter(
+      (o) => o.status === 'aprobada' || o.status === 'completada',
+    ).length;
+    const resultado = total > 0 ? (aprobadas / total) * 100 : 0;
+
+    const evidenciasOrdenes = ordenes.flatMap((o) =>
+      o.tareas.flatMap((t) =>
+        t.evidencias.map((ev) => ({
+          archivoUrl: ev.archivoUrl,
+          tipo: ev.tipo,
+          nombre: ev.nombre,
+          ordenTitulo: o.titulo,
+        })),
+      ),
+    );
+
+    let estado: 'verde' | 'amarillo' | 'rojo' | null = null;
+    if (kpi.meta !== null && kpi.meta !== undefined) {
+      const cumpleMeta = this.evaluarMeta(
+        resultado,
+        kpi.meta,
+        kpi.operadorMeta ?? '>=',
+      );
+      if (cumpleMeta) {
+        estado = 'verde';
+      } else if (
+        kpi.umbralAmarillo !== null &&
+        kpi.umbralAmarillo !== undefined
+      ) {
+        estado = this.evaluarMeta(
+          resultado,
+          kpi.umbralAmarillo,
+          kpi.operadorMeta ?? '>=',
+        )
+          ? 'amarillo'
+          : 'rojo';
+      } else {
+        estado = 'rojo';
+      }
+    }
+
+    return {
+      resultado: Math.round(resultado * 100) / 100,
+      ordenesAprobadas: aprobadas,
+      totalOrdenes: total,
+      evidenciasOrdenes,
+      estado,
+      meta: kpi.meta,
+      periodo,
+    };
+  }
+
+  // ============================================
+  // RESULTADOS AUTO PARA EL EQUIPO (jefe)
+  // ============================================
+  async getResultadosAutoEquipo(jefeId: string, periodo: string) {
+    const asignaciones = await this.prisma.revisorAsignado.findMany({
+      where: { revisorId: jefeId, activo: true },
+      select: { empleadoId: true },
+    });
+    const empleadosAsignados = asignaciones.map((a) => a.empleadoId);
+
+    const areaJefe = await this.prisma.area.findFirst({
+      where: { jefeId },
+      include: { subAreas: { select: { id: true } } },
+    });
+    const areaIds = areaJefe
+      ? [areaJefe.id, ...areaJefe.subAreas.map((s) => s.id)]
+      : [];
+
+    let empleadosDelArea: string[] = [];
+    if (areaIds.length > 0) {
+      const empleadosArea = await this.prisma.user.findMany({
+        where: { areaId: { in: areaIds }, activo: true },
+        select: { id: true, nombre: true, apellido: true },
+      });
+      const idsArea = empleadosArea.map((e) => e.id);
+      const conRevisorOtro = await this.prisma.revisorAsignado.findMany({
+        where: {
+          empleadoId: { in: idsArea },
+          activo: true,
+          revisorId: { not: jefeId },
+        },
+        select: { empleadoId: true },
+      });
+      const excluidos = new Set(conRevisorOtro.map((r) => r.empleadoId));
+      empleadosDelArea = idsArea.filter((id) => !excluidos.has(id));
+    }
+
+    const todosEmpleadosIds = [
+      ...new Set([...empleadosAsignados, ...empleadosDelArea]),
+    ];
+    if (todosEmpleadosIds.length === 0) return [];
+
+    const todosEmpleados = await this.prisma.user.findMany({
+      where: { id: { in: todosEmpleadosIds } },
+      select: { id: true, nombre: true, apellido: true },
+    });
+
+    const kpisAuto = await this.prisma.kPI.findMany({
+      where: { tipoCalculo: 'division', aplicaOrdenTrabajo: true, activo: true },
+      select: { id: true, key: true, indicador: true, meta: true, unidad: true },
+    });
+
+    if (kpisAuto.length === 0) return [];
+
+    const resultados: any[] = [];
+    for (const empleado of todosEmpleados) {
+      for (const kpi of kpisAuto) {
+        const res = await this.getResultadoAutomatico(
+          kpi.id,
+          empleado.id,
+          periodo,
+        );
+        if (res.totalOrdenes > 0) {
+          resultados.push({
+            empleado: `${empleado.nombre} ${empleado.apellido}`,
+            empleadoId: empleado.id,
+            kpiKey: kpi.key,
+            kpiIndicador: kpi.indicador,
+            unidad: kpi.unidad,
+            ...res,
+          });
+        }
+      }
+    }
+    return resultados;
   }
 
   async revisarEvidenciaKPI(
@@ -768,6 +977,7 @@ export class KpisService {
     return this.prisma.evidenciaKPI.findMany({
       where: {
         status: 'pendiente_revision',
+        tipo: { not: 'nota_kpi' },
         empleadoId: { in: todosEmpleados },
       },
       include: {
@@ -776,12 +986,22 @@ export class KpisService {
             id: true,
             key: true,
             indicador: true,
+            tipoCalculo: true, // ← AGREGAR
+            meta: true, // ← AGREGAR
+            operadorMeta: true, // ← AGREGAR
+            unidad: true, // ← AGREGAR
             tipoCriticidad: true,
             area: true,
           },
         },
         empleado: {
-          select: { id: true, nombre: true, apellido: true, areaId: true },
+          select: {
+            id: true,
+            nombre: true,
+            apellido: true,
+            areaId: true,
+            puesto: { select: { nombre: true } },
+          },
         },
       },
       orderBy: { createdAt: 'asc' },

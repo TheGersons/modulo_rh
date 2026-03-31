@@ -244,23 +244,28 @@ export class EvaluacionesService {
         break;
 
       case 'division':
-        // Buscar en valoresCalculo de las órdenes
-        const formula = JSON.parse(kpi.formulaCalculo);
-
-        // Sumar valores de todas las órdenes
-        let numeradorTotal = 0;
-        let denominadorTotal = 0;
-
-        for (const orden of ordenes) {
-          if (orden.valoresCalculo) {
-            const vals = JSON.parse(orden.valoresCalculo);
-            numeradorTotal += vals[formula.numerador] || 0;
-            denominadorTotal += vals[formula.denominador] || 0;
+        if (kpi.aplicaOrdenTrabajo) {
+          // Cálculo automático: órdenes aprobadas/completadas vs total no-canceladas
+          const aprobadas = ordenes.filter(
+            (o) => o.status === 'aprobada' || o.status === 'completada',
+          ).length;
+          valores['numerador'] = aprobadas;
+          valores['denominador'] = ordenes.length;
+        } else {
+          // Buscar en valoresCalculo de las órdenes
+          const formula = JSON.parse(kpi.formulaCalculo);
+          let numeradorTotal = 0;
+          let denominadorTotal = 0;
+          for (const orden of ordenes) {
+            if (orden.valoresCalculo) {
+              const vals = JSON.parse(orden.valoresCalculo);
+              numeradorTotal += vals[formula.numerador] || 0;
+              denominadorTotal += vals[formula.denominador] || 0;
+            }
           }
+          valores[formula.numerador] = numeradorTotal;
+          valores[formula.denominador] = denominadorTotal;
         }
-
-        valores[formula.numerador] = numeradorTotal;
-        valores[formula.denominador] = denominadorTotal;
         break;
 
       case 'conteo':

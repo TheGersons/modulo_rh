@@ -56,6 +56,15 @@ interface Evidencia {
     nota?: string;
 }
 
+interface ResultadoAuto {
+    resultado: number;
+    ordenesAprobadas: number;
+    totalOrdenes: number;
+    evidenciasOrdenes: { archivoUrl: string; tipo: string; nombre: string; ordenTitulo: string }[];
+    estado: 'verde' | 'amarillo' | 'rojo' | null;
+    meta?: number;
+}
+
 interface KPIConEvidencias extends KPI {
     evidencias: Evidencia[];
     statusKPI: 'pendiente' | 'en_progreso' | 'pendiente_revision' | 'aprobado' | 'rechazado';
@@ -218,6 +227,8 @@ export default function MisKPIsPage() {
     const [valorEsperado, setValorEsperado] = useState<string>('');
     const [valorObtenido, setValorObtenido] = useState<string>('');
 
+    const [resultadosAuto, setResultadosAuto] = useState<Record<string, ResultadoAuto>>({});
+
     const [editandoNota, setEditandoNota] = useState<string | null>(null);
     const [textoNota, setTextoNota] = useState<string>('');
     const [guardandoNota, setGuardandoNota] = useState(false);
@@ -252,6 +263,21 @@ export default function MisKPIsPage() {
             });
 
             setKpis(combinados);
+
+            // Cargar resultados automáticos para KPIs de tipo division + aplicaOrdenTrabajo
+            const autoKpis = combinados.filter((k) => k.tipoCalculo === 'division' && k.aplicaOrdenTrabajo);
+            if (autoKpis.length > 0) {
+                const autoResults: Record<string, ResultadoAuto> = {};
+                await Promise.all(autoKpis.map(async (kpi) => {
+                    try {
+                        const res = await fetch(`/api/kpis/${kpi.id}/resultado-automatico?periodo=${periodo}`, {
+                            headers: { Authorization: `Bearer ${token}` },
+                        });
+                        if (res.ok) autoResults[kpi.id] = await res.json();
+                    } catch { /* silencioso */ }
+                }));
+                setResultadosAuto(autoResults);
+            }
         } catch (error) {
             console.error('Error al cargar KPIs:', error);
         } finally {
@@ -451,18 +477,27 @@ export default function MisKPIsPage() {
                             const necesitaValor = necesitaValorNumerico(kpi);
                             const mostrandoForm = mostrarFormSubida === kpi.id;
                             const cargando = subiendoEvidencia === kpi.id;
+                            const isAutomatic = kpi.tipoCalculo === 'division' && kpi.aplicaOrdenTrabajo;
+                            const autoData = isAutomatic ? resultadosAuto[kpi.id] : undefined;
 
                             const aprobadas = kpi.evidenciasAprobadas;
                             const requeridas = kpi.evidenciasRequeridas;
                             const enRevision = kpi.evidencias.filter((e) => e.status === 'pendiente_revision').length;
                             const falta = Math.max(0, requeridas - aprobadas - enRevision);
-                            const puedeSubir = kpi.statusKPI !== 'aprobado';
+                            const puedeSubir = !isAutomatic && kpi.statusKPI !== 'aprobado';
 
                             const ultimaEvidenciaConValor = kpi.evidencias
                                 .filter((e) => e.valorNumerico !== undefined)
                                 .sort((a, b) => new Date(b.fechaSubida).getTime() - new Date(a.fechaSubida).getTime())[0];
                             const cumplimiento = ultimaEvidenciaConValor?.valorNumerico !== undefined
                                 ? evaluarCumplimiento(kpi, ultimaEvidenciaConValor.valorNumerico)
+                                : null;
+
+                            // Para KPIs automáticos, el statusKPI se deriva del resultado calculado
+                            const autoStatusCfg = isAutomatic && autoData
+                                ? autoData.totalOrdenes === 0
+                                    ? KPI_STATUS_CONFIG['pendiente']
+                                    : KPI_STATUS_CONFIG['en_progreso']
                                 : null;
 
                             return (
@@ -489,19 +524,37 @@ export default function MisKPIsPage() {
                                                     </div>
                                                     <p className="text-sm font-semibold text-gray-900 mt-0.5">{kpi.descripcion}</p>
                                                 </div>
-                                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${statusCfg.bg} ${statusCfg.color}`}>
-                                                    {statusCfg.label}
+                                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${(autoStatusCfg ?? statusCfg).bg} ${(autoStatusCfg ?? statusCfg).color}`}>
+                                                    {isAutomatic ? (autoData?.totalOrdenes === 0 ? 'Sin órdenes' : 'Automático') : statusCfg.label}
                                                 </span>
                                             </div>
                                             <p className="text-xs text-gray-500 mb-2">{formulaDesc}</p>
                                             <div className="flex items-center gap-3 mb-1">
-                                                <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                                                    <div className={`h-1.5 rounded-full transition-all ${aprobadas >= requeridas ? 'bg-green-500' : cumplimiento === 'no_cumple' ? 'bg-red-400' : 'bg-blue-500'}`}
-                                                        style={{ width: `${Math.min((aprobadas / Math.max(requeridas, 1)) * 100, 100)}%` }} />
-                                                </div>
-                                                <span className="text-xs text-gray-500 flex-shrink-0">
-                                                    {aprobadas}/{requeridas} evidencias{enRevision > 0 && ` · ${enRevision} en revisión`}
-                                                </span>
+                                                {isAutomatic ? (
+                                                    autoData ? (
+                                                        <>
+                                                            <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                                                                <div className={`h-1.5 rounded-full transition-all ${autoData.estado === 'verde' ? 'bg-green-500' : autoData.estado === 'amarillo' ? 'bg-yellow-400' : autoData.totalOrdenes > 0 ? 'bg-red-400' : 'bg-gray-300'}`}
+                                                                    style={{ width: `${Math.min(autoData.resultado, 100)}%` }} />
+                                                            </div>
+                                                            <span className="text-xs text-gray-500 flex-shrink-0">
+                                                                {autoData.ordenesAprobadas}/{autoData.totalOrdenes} órdenes · {autoData.resultado.toFixed(1)}%
+                                                            </span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-xs text-gray-400">Calculando...</span>
+                                                    )
+                                                ) : (
+                                                    <>
+                                                        <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                                                            <div className={`h-1.5 rounded-full transition-all ${aprobadas >= requeridas ? 'bg-green-500' : cumplimiento === 'no_cumple' ? 'bg-red-400' : 'bg-blue-500'}`}
+                                                                style={{ width: `${Math.min((aprobadas / Math.max(requeridas, 1)) * 100, 100)}%` }} />
+                                                        </div>
+                                                        <span className="text-xs text-gray-500 flex-shrink-0">
+                                                            {aprobadas}/{requeridas} evidencias{enRevision > 0 && ` · ${enRevision} en revisión`}
+                                                        </span>
+                                                    </>
+                                                )}
                                             </div>
                                             <div className="flex items-center gap-3 flex-wrap">
                                                 {kpi.meta !== undefined && !esBinario && (
@@ -510,7 +563,12 @@ export default function MisKPIsPage() {
                                                         <span className="ml-1 text-gray-400 capitalize">· {kpi.periodicidad}</span>
                                                     </p>
                                                 )}
-                                                {cumplimiento && ultimaEvidenciaConValor && (
+                                                {isAutomatic && autoData && autoData.totalOrdenes > 0 && (
+                                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${autoData.estado === 'verde' ? 'bg-green-100 text-green-700' : autoData.estado === 'amarillo' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                                                        {autoData.estado === 'verde' ? '✓ Cumple meta' : autoData.estado === 'amarillo' ? '⚠ Cerca de meta' : '✗ No cumple meta'} ({autoData.resultado.toFixed(1)}%)
+                                                    </span>
+                                                )}
+                                                {!isAutomatic && cumplimiento && ultimaEvidenciaConValor && (
                                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cumplimiento === 'cumple' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                                         {cumplimiento === 'cumple' ? '✓ Cumple meta' : '✗ No cumple meta'} ({ultimaEvidenciaConValor.valorNumerico}{esPrecision ? '%' : ` ${kpi.unidad}`})
                                                     </span>
@@ -534,8 +592,62 @@ export default function MisKPIsPage() {
                                                 </div>
                                             )}
 
-                                            {/* Instrucción por tipo */}
-                                            <div className={`flex items-start gap-2 p-3 rounded-lg text-xs ${esBinario ? 'bg-gray-50 border border-gray-200' :
+                                            {/* Panel de resultado automático */}
+                                            {isAutomatic && (
+                                                <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <Calculator className="w-4 h-4 text-blue-600" />
+                                                        <p className="text-sm font-semibold text-blue-800">Resultado calculado automáticamente</p>
+                                                    </div>
+                                                    {autoData ? (
+                                                        <>
+                                                            <div className="grid grid-cols-3 gap-3">
+                                                                <div className="bg-white rounded-lg p-3 text-center border border-blue-100">
+                                                                    <p className="text-xs text-gray-500 mb-1">Órdenes recibidas</p>
+                                                                    <p className="text-xl font-bold text-gray-800">{autoData.totalOrdenes}</p>
+                                                                </div>
+                                                                <div className="bg-white rounded-lg p-3 text-center border border-blue-100">
+                                                                    <p className="text-xs text-gray-500 mb-1">Órdenes completadas</p>
+                                                                    <p className="text-xl font-bold text-green-700">{autoData.ordenesAprobadas}</p>
+                                                                </div>
+                                                                <div className={`rounded-lg p-3 text-center border ${autoData.estado === 'verde' ? 'bg-green-50 border-green-200' : autoData.estado === 'amarillo' ? 'bg-yellow-50 border-yellow-200' : autoData.totalOrdenes > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-blue-100'}`}>
+                                                                    <p className="text-xs text-gray-500 mb-1">Resultado</p>
+                                                                    <p className={`text-xl font-bold ${autoData.estado === 'verde' ? 'text-green-700' : autoData.estado === 'amarillo' ? 'text-yellow-700' : autoData.totalOrdenes > 0 ? 'text-red-700' : 'text-gray-400'}`}>
+                                                                        {autoData.resultado.toFixed(1)}%
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            {kpi.meta !== undefined && (
+                                                                <p className="text-xs text-blue-600">Meta: {kpi.operadorMeta} {kpi.meta}% · Fórmula: (órdenes completadas / órdenes recibidas) × 100</p>
+                                                            )}
+                                                            {autoData.evidenciasOrdenes.length > 0 && (
+                                                                <div>
+                                                                    <p className="text-xs font-semibold text-gray-600 mb-2">Evidencias de órdenes de trabajo ({autoData.evidenciasOrdenes.length})</p>
+                                                                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                                                                        {autoData.evidenciasOrdenes.map((ev, idx) => (
+                                                                            <div key={idx} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200">
+                                                                                {ev.tipo.startsWith('image/') ? <Image className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" /> : <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
+                                                                                <span className="text-xs text-gray-500 truncate flex-1">{ev.ordenTitulo}</span>
+                                                                                <a href={ev.archivoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex-shrink-0 flex items-center gap-1">
+                                                                                    <Eye className="w-3 h-3" />Ver
+                                                                                </a>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {autoData.evidenciasOrdenes.length === 0 && autoData.totalOrdenes > 0 && (
+                                                                <p className="text-xs text-gray-400 italic">Las evidencias de las órdenes aún no han sido aprobadas.</p>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <p className="text-xs text-blue-600">Cargando resultado...</p>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Instrucción por tipo (solo para KPIs no automáticos) */}
+                                            {!isAutomatic && <div className={`flex items-start gap-2 p-3 rounded-lg text-xs ${esBinario ? 'bg-gray-50 border border-gray-200' :
                                                 esPrecision ? 'bg-teal-50 border border-teal-100' :
                                                     esMenorMejor ? 'bg-purple-50 border border-purple-100' :
                                                         'bg-green-50 border border-green-100'
@@ -565,10 +677,10 @@ export default function MisKPIsPage() {
                                                         return <p className="text-purple-700">Fórmula: <strong>({f.numerador} / {f.denominador}) × {f.multiplicador}</strong>. Ingresa el resultado.</p>;
                                                     })()}
                                                 </div>
-                                            </div>
+                                            </div>}
 
-                                            {/* Slots de evidencias */}
-                                            <div>
+                                            {/* Slots de evidencias (solo para KPIs no automáticos) */}
+                                            {!isAutomatic && <div>
                                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                                                     Evidencias {esBinario ? '' : `requeridas (${requeridas})`}
                                                 </p>
@@ -647,10 +759,10 @@ export default function MisKPIsPage() {
                                                         );
                                                     })}
                                                 </div>
-                                            </div>
+                                            </div>}
 
-                                            {/* Evidencias adicionales */}
-                                            {kpi.evidencias.length > requeridas && (
+                                            {/* Evidencias adicionales (solo para KPIs no automáticos) */}
+                                            {!isAutomatic && kpi.evidencias.length > requeridas && (
                                                 <div>
                                                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Evidencias adicionales</p>
                                                     <div className="space-y-2">

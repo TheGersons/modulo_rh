@@ -211,6 +211,9 @@ export class OrdenesTrabajoService {
             descripcion: true,
             completada: true,
             fueraDeTiempo: true,
+            evidencias: {
+              select: { status: true },
+            },
           },
         },
       },
