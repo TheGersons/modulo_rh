@@ -739,6 +739,7 @@ export default function MisKPIsPage() {
                                                                                     <div className="space-y-1.5">
                                                                                         <textarea value={textoApelacion} onChange={(e) => setTextoApelacion(e.target.value)}
                                                                                             placeholder="¿Por qué consideras válida esta evidencia?" rows={2}
+                                                                                            spellCheck={false}
                                                                                             className="w-full text-xs p-2 border border-gray-300 rounded-lg resize-none focus:ring-1 focus:ring-blue-500" />
                                                                                         <div className="flex gap-2">
                                                                                             <button onClick={() => handleApelar(slot!.id)} disabled={!textoApelacion.trim()} className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50">Enviar</button>
@@ -880,6 +881,7 @@ export default function MisKPIsPage() {
                                                                 <label className="text-xs font-medium text-gray-600 mb-1 block">Nota (opcional)</label>
                                                                 <textarea value={notaEvidencia} onChange={(e) => setNotaEvidencia(e.target.value)}
                                                                     placeholder="Describe brevemente qué evidencia es..." rows={2}
+                                                                    spellCheck={false}
                                                                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500" />
                                                             </div>
 
@@ -916,6 +918,7 @@ export default function MisKPIsPage() {
                                                     <div className="space-y-2">
                                                         <textarea value={textoNota} onChange={(e) => setTextoNota(e.target.value)}
                                                             placeholder="Agrega observaciones, contexto o comentarios sobre este KPI..." rows={3}
+                                                            spellCheck={false}
                                                             className="w-full text-xs p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500" />
                                                         <div className="flex gap-2">
                                                             <button onClick={() => handleGuardarNota(kpi.id)} disabled={guardandoNota}

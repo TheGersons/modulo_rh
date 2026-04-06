@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'C:\\\\Repositorio Energia PD\\\\energiapdrh' -type f -name *misKpis*)",
+      "Bash(grep -rn \"periodicidad\\\\|cerrarPeriodo\\\\|period\\\\|Cron\\\\|@Schedule\" '/C/Repositorio Energia PD/energiapdrh/server/src' --include=*.ts)",
+      "Bash(grep:*)"
+    ]
+  }
+}

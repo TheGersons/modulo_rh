@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
 import { EvaluacionesService } from './evaluaciones.service';
 import { EvaluacionesController } from './evaluaciones.controller';
+import { EvaluacionesCron } from './evaluaciones.cron';
 import { PrismaService } from '../../common/database/prisma.service';
-import { KpisModule } from '../kpis/kpis.module'; // ← AGREGAR
+import { KpisModule } from '../kpis/kpis.module';
 
 @Module({
-  imports: [KpisModule], // ← AGREGAR
+  imports: [KpisModule],
   controllers: [EvaluacionesController],
-  providers: [EvaluacionesService, PrismaService],
+  providers: [EvaluacionesService, EvaluacionesCron, PrismaService],
   exports: [EvaluacionesService],
 })
 export class EvaluacionesModule {}

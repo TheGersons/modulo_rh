@@ -17,7 +17,21 @@ export class EvaluacionesService {
   // ============================================
   // CERRAR PERIODO Y GENERAR EVALUACIONES
   // ============================================
-  async cerrarPeriodo(cerrarDto: CerrarPeriodoDto, evaluadorId: string) {
+  // Llamado por el cron automático — filtra KPIs por periodicidad
+  async cerrarPeriodoAuto(
+    periodicidad: string,
+    periodo: string,
+    anio: number,
+  ) {
+    const dto: CerrarPeriodoDto = { periodo, anio };
+    return this.cerrarPeriodo(dto, 'SISTEMA', periodicidad);
+  }
+
+  async cerrarPeriodo(
+    cerrarDto: CerrarPeriodoDto,
+    evaluadorId: string,
+    periodicidadFiltro?: string,
+  ) {
     console.log(
       `📊 Iniciando cierre de periodo ${cerrarDto.periodo} ${cerrarDto.anio}...`,
     );
@@ -108,11 +122,30 @@ export class EvaluacionesService {
           `📋 ${empleado.nombre} ${empleado.apellido}: ${ordenes.length} órdenes completadas`,
         );
 
-        // Crear evaluación
+        // Calcular detalles por KPI
+        const todosLosKpis = this.agruparOrdenesPorKpi(ordenes);
+
+        // Si hay filtro de periodicidad, solo procesar KPIs que correspondan
+        const detallesPorKpi = periodicidadFiltro
+          ? Object.fromEntries(
+              Object.entries(todosLosKpis).filter(
+                ([, ords]) => ords[0].kpi?.periodicidad === periodicidadFiltro,
+              ),
+            )
+          : todosLosKpis;
+
+        if (Object.keys(detallesPorKpi).length === 0) {
+          console.log(
+            `⏭️  ${empleado.nombre} ${empleado.apellido} no tiene KPIs de periodicidad "${periodicidadFiltro}" en este periodo`,
+          );
+          continue;
+        }
+
+        // Crear evaluación (solo si hay KPIs que procesar)
         const evaluacion = await this.prisma.evaluacion.create({
           data: {
             empleadoId: empleado.id,
-            evaluadorId, // Sistema o ID del evaluador
+            evaluadorId,
             periodo: cerrarDto.periodo,
             anio: cerrarDto.anio,
             calculadaAutomaticamente: true,
@@ -120,8 +153,6 @@ export class EvaluacionesService {
           },
         });
 
-        // Calcular detalles por KPI
-        const detallesPorKpi = this.agruparOrdenesPorKpi(ordenes);
         const detallesCreados: any[] = [];
 
         for (const [kpiId, ordenesKpi] of Object.entries(detallesPorKpi)) {
