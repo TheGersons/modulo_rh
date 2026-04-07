@@ -3,7 +3,7 @@ import {
     Target, CheckCircle, AlertCircle, Clock, Upload, ChevronDown, ChevronUp,
     Plus, FileText, Image, Film, File, Info, TrendingUp, Hash, Timer,
     Calculator, ToggleLeft, Eye, Download, StickyNote, ArrowUp, ArrowDown,
-    Minus, Crosshair,
+    Minus, Crosshair, Trash2,
 } from 'lucide-react';
 import Layout from '../components/layout/Layout';
 import { useAuth } from '../contexts/AuthContext';
@@ -103,10 +103,9 @@ const KPI_STATUS_CONFIG: Record<string, { label: string; color: string; bg: stri
     rechazado: { label: 'Rechazado', color: 'text-red-700', bg: 'bg-red-100', border: 'border-red-200' },
 };
 
-function getEvidenciasRequeridas(kpi: KPI): number {
-    if (kpi.tipoCalculo === 'conteo' && kpi.meta !== undefined && kpi.meta > 0 && kpi.sentido !== 'Menor es mejor') {
-        return kpi.meta;
-    }
+function getEvidenciasRequeridas(_kpi: KPI): number {
+    // Siempre 1 evidencia requerida — para conteo la meta es el VALOR a alcanzar,
+    // no la cantidad de evidencias a subir.
     return 1;
 }
 
@@ -234,6 +233,7 @@ export default function MisKPIsPage() {
     const [guardandoNota, setGuardandoNota] = useState(false);
     const [apelandoEvidencia, setApelandoEvidencia] = useState<string | null>(null);
     const [textoApelacion, setTextoApelacion] = useState('');
+    const [eliminandoEvidencia, setEliminandoEvidencia] = useState<string | null>(null);
 
     useEffect(() => { if (user?.id) cargarKPIs(); }, [user]);
 
@@ -382,6 +382,27 @@ export default function MisKPIsPage() {
             setApelandoEvidencia(null); setTextoApelacion('');
             await cargarKPIs();
         } catch { alert('Error al enviar la apelación.'); }
+    };
+
+    const handleEliminarEvidencia = async (evidenciaId: string) => {
+        if (!confirm('¿Eliminar esta evidencia? Solo puedes eliminar evidencias en revisión.')) return;
+        try {
+            setEliminandoEvidencia(evidenciaId);
+            const token = localStorage.getItem('accessToken');
+            const res = await fetch(`/api/kpis/evidencias/${evidenciaId}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.message || 'Error al eliminar');
+            }
+            await cargarKPIs();
+        } catch (error: any) {
+            alert(error.message || 'Error al eliminar la evidencia.');
+        } finally {
+            setEliminandoEvidencia(null);
+        }
     };
 
     const kpisFiltrados = kpis.filter((k) => filtro === 'todos' || k.statusKPI === filtro);
@@ -718,6 +739,15 @@ export default function MisKPIsPage() {
                                                                             <div className="flex items-center gap-1.5 flex-shrink-0">
                                                                                 <a href={slot.archivoUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-gray-400 hover:text-blue-600 rounded"><Eye className="w-3.5 h-3.5" /></a>
                                                                                 <a href={slot.archivoUrl} download={slot.nombre} className="p-1 text-gray-400 hover:text-gray-700 rounded"><Download className="w-3.5 h-3.5" /></a>
+                                                                                {slot.status === 'pendiente_revision' && (
+                                                                                    <button
+                                                                                        onClick={(e) => { e.stopPropagation(); handleEliminarEvidencia(slot!.id); }}
+                                                                                        disabled={eliminandoEvidencia === slot.id}
+                                                                                        title="Eliminar evidencia"
+                                                                                        className="p-1 text-gray-400 hover:text-red-600 rounded disabled:opacity-50 transition-colors">
+                                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                                    </button>
+                                                                                )}
                                                                                 {sCfg && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sCfg.bg} ${sCfg.color}`}>{sCfg.label}</span>}
                                                                             </div>
                                                                         </div>

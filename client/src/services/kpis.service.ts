@@ -125,6 +125,13 @@ export const kpisService = {
     return response.data;
   },
 
+  eliminarEvidencia: async (id: string) => {
+    const response = await apiClient.delete(
+      `${API_ENDPOINTS.kpis}/evidencias/${id}`,
+    );
+    return response.data;
+  },
+
   getResultadosAutoEquipo: async (periodo?: string) => {
     const url = periodo
       ? `${API_ENDPOINTS.kpis}/resultados-auto-equipo?periodo=${periodo}`

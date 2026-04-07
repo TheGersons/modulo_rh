@@ -77,12 +77,14 @@ export class KpisService {
     }
 
     // Calcular umbralAmarillo si hay meta y tolerancia
+    // "Mayor es mejor": umbral = meta - tolerancia (zona amarilla DEBAJO de la meta)
+    // "Menor es mejor": umbral = meta + tolerancia (zona amarilla ENCIMA de la meta)
     let umbralAmarillo = createKpiDto.umbralAmarillo;
     if (createKpiDto.meta && createKpiDto.tolerancia && !umbralAmarillo) {
       if (createKpiDto.sentido === 'Mayor es mejor') {
-        umbralAmarillo = createKpiDto.meta + createKpiDto.tolerancia;
-      } else {
         umbralAmarillo = createKpiDto.meta - createKpiDto.tolerancia;
+      } else {
+        umbralAmarillo = createKpiDto.meta + createKpiDto.tolerancia;
       }
     }
 
@@ -94,7 +96,7 @@ export class KpisService {
         ...dataWithoutPuesto,
         umbralAmarillo,
         tipoCriticidad: createKpiDto.tipoCriticidad || 'no_critico',
-        operadorMeta: createKpiDto.operadorMeta || '=',
+        operadorMeta: createKpiDto.operadorMeta || '>=',
       },
       include: {
         areaRelacion: {
@@ -253,12 +255,14 @@ export class KpisService {
     }
 
     // Recalcular umbralAmarillo si se actualizan meta o tolerancia
+    // "Mayor es mejor": umbral = meta - tolerancia (zona amarilla DEBAJO de la meta)
+    // "Menor es mejor": umbral = meta + tolerancia (zona amarilla ENCIMA de la meta)
     let umbralAmarillo = updateKpiDto.umbralAmarillo;
     if (updateKpiDto.meta && updateKpiDto.tolerancia && !umbralAmarillo) {
       if (updateKpiDto.sentido === 'Mayor es mejor') {
-        umbralAmarillo = updateKpiDto.meta + updateKpiDto.tolerancia;
-      } else {
         umbralAmarillo = updateKpiDto.meta - updateKpiDto.tolerancia;
+      } else {
+        umbralAmarillo = updateKpiDto.meta + updateKpiDto.tolerancia;
       }
     }
 
@@ -509,11 +513,8 @@ export class KpisService {
     // Determinar estado según meta y umbrales
     let estado: 'verde' | 'amarillo' | 'rojo' | null = null;
     if (kpi.meta !== null && kpi.meta !== undefined && resultado !== null) {
-      const cumpleMeta = this.evaluarMeta(
-        resultado,
-        kpi.meta,
-        kpi.operadorMeta ?? '=',
-      );
+      const operador = kpi.operadorMeta ?? '>=';
+      const cumpleMeta = this.evaluarMeta(resultado, kpi.meta, operador);
       if (cumpleMeta) {
         estado = 'verde';
       } else if (
@@ -523,7 +524,7 @@ export class KpisService {
         const cumpleAmarillo = this.evaluarMeta(
           resultado,
           kpi.umbralAmarillo,
-          kpi.operadorMeta ?? '=',
+          operador,
         );
         estado = cumpleAmarillo ? 'amarillo' : 'rojo';
       } else {
@@ -891,6 +892,21 @@ export class KpisService {
         empleado: { select: { id: true, nombre: true, apellido: true } },
       },
     });
+  }
+
+  async eliminarEvidenciaKPI(evidenciaId: string, empleadoId: string) {
+    const ev = await this.prisma.evidenciaKPI.findUnique({
+      where: { id: evidenciaId },
+    });
+    if (!ev) throw new NotFoundException('Evidencia no encontrada');
+    if (ev.empleadoId !== empleadoId)
+      throw new BadRequestException('No tienes permiso para eliminar esta evidencia');
+    if (ev.status !== 'pendiente_revision')
+      throw new BadRequestException(
+        'Solo se pueden eliminar evidencias en estado "pendiente de revisión"',
+      );
+    await this.prisma.evidenciaKPI.delete({ where: { id: evidenciaId } });
+    return { message: 'Evidencia eliminada exitosamente' };
   }
 
   async apelarEvidenciaKPI(evidenciaId: string, apelacion: string) {

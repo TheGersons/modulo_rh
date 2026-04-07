@@ -95,7 +95,7 @@ model KPI {
 
   // Metas
   meta           Float?
-  operadorMeta   String? @default("=") // ">", ">=", "=", "<=", "<"
+  operadorMeta   String? @default(">=") // ">", ">=", "=", "<=", "<"
   tolerancia     Float?
   umbralAmarillo Float?
 

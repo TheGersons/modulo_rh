@@ -158,8 +158,21 @@ export class EvaluacionesService {
         for (const [kpiId, ordenesKpi] of Object.entries(detallesPorKpi)) {
           const kpi = ordenesKpi[0].kpi;
 
+          // Para division+OT el denominador debe ser todas las órdenes no-canceladas del período
+          let totalNoCanceladas: number | undefined;
+          if (kpi.tipoCalculo === 'division' && kpi.aplicaOrdenTrabajo) {
+            totalNoCanceladas = await this.prisma.ordenTrabajo.count({
+              where: {
+                kpiId,
+                empleadoId: empleado.id,
+                status: { not: 'cancelada' },
+                fechaInicio: { gte: fechaInicio, lte: fechaFin },
+              },
+            });
+          }
+
           // Preparar valores para cálculo
-          const valores = this.extraerValoresParaCalculo(ordenesKpi, kpi);
+          const valores = this.extraerValoresParaCalculo(ordenesKpi, kpi, totalNoCanceladas);
 
           // Calcular resultado usando el motor de KPIs
           const resultadoCalculo = await this.kpisService.calcularResultado({
@@ -264,24 +277,26 @@ export class EvaluacionesService {
   private extraerValoresParaCalculo(
     ordenes: any[],
     kpi: any,
+    totalNoCanceladas?: number,
   ): Record<string, any> {
     const valores: Record<string, any> = {};
 
     // Según el tipo de cálculo, extraer valores
     switch (kpi.tipoCalculo) {
       case 'binario':
-        // Todas las órdenes completadas = cumplido
-        valores.cumplido = ordenes.every((o) => o.status === 'aprobada');
+        // 1 si todas las órdenes están aprobadas, 0 si no
+        valores['valor'] = ordenes.every((o) => o.status === 'aprobada') ? 1 : 0;
         break;
 
       case 'division':
         if (kpi.aplicaOrdenTrabajo) {
-          // Cálculo automático: órdenes aprobadas/completadas vs total no-canceladas
+          // Numerador: órdenes aprobadas/completadas
+          // Denominador: totalNoCanceladas (todas menos canceladas) — se recibe desde cerrarPeriodo
           const aprobadas = ordenes.filter(
             (o) => o.status === 'aprobada' || o.status === 'completada',
           ).length;
           valores['numerador'] = aprobadas;
-          valores['denominador'] = ordenes.length;
+          valores['denominador'] = totalNoCanceladas ?? ordenes.length;
         } else {
           // Buscar en valoresCalculo de las órdenes
           const formula = JSON.parse(kpi.formulaCalculo);
@@ -300,24 +315,27 @@ export class EvaluacionesService {
         break;
 
       case 'conteo':
-        // Contar órdenes completadas
-        valores.total = ordenes.length;
+        // El valor registrado en la orden (valorNumerico) es la cantidad real medida
+        // Si hay múltiples órdenes, se suma el total
+        valores['cantidad'] = ordenes.reduce((sum, o) => {
+          const v = o.valoresCalculo ? JSON.parse(o.valoresCalculo) : {};
+          return sum + (v.cantidad ?? 0);
+        }, 0) || ordenes.length;
         break;
 
       case 'porcentaje_kpis_equipo':
-        // Este requiere lógica especial (obtener KPIs del equipo)
-        // Por ahora, placeholder
-        valores.total_kpis = 10;
-        valores.kpis_verdes = 8;
+        // TODO: implementar cálculo real del % de KPIs verdes del equipo
+        valores['kpisVerdes'] = 8;  // placeholder
+        valores['totalKpis'] = 10; // placeholder
         break;
 
       case 'dashboard_presentado':
         // Verificar si todas las órdenes están aprobadas
-        valores.presentado = ordenes.every((o) => o.status === 'aprobada');
+        valores['presentado'] = ordenes.every((o) => o.status === 'aprobada');
         break;
 
       default:
-        valores.custom = ordenes.length;
+        valores['resultado'] = ordenes.length;
     }
 
     return valores;

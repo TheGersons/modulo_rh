@@ -183,6 +183,11 @@ export class KpisController {
     return this.kpisService.revisarEvidenciaKPI(id, req.user.userId, body);
   }
 
+  @Delete('evidencias/:id')
+  eliminarEvidencia(@Param('id') id: string, @Request() req) {
+    return this.kpisService.eliminarEvidenciaKPI(id, req.user.userId);
+  }
+
   @Post('evidencias/:id/apelar')
   apelarEvidencia(
     @Param('id') id: string,
