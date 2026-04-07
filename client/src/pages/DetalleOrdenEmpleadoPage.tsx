@@ -88,6 +88,7 @@ export default function DetalleOrdenEmpleadoPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [tareaSeleccionada, setTareaSeleccionada] = useState<string | null>(null);
     const [subiendoEvidencia, setSubiendoEvidencia] = useState<string | null>(null);
+    const [uploadProgress, setUploadProgress] = useState<number>(0);
 
     const [apelandoEvidencia, setApelandoEvidencia] = useState<string | null>(null);
     const [textoApelacion, setTextoApelacion] = useState('');
@@ -135,33 +136,52 @@ export default function DetalleOrdenEmpleadoPage() {
         fileInputRef.current?.click();
     };
 
-    const handleArchivoSeleccionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleArchivoSeleccionado = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !tareaSeleccionada) return;
-        try {
-            setSubiendoEvidencia(tareaSeleccionada);
-            const token = localStorage.getItem('accessToken');
-            const formData = new FormData();
-            formData.append('archivo', file);
-            formData.append('tareaId', tareaSeleccionada);
-            formData.append('ordenTitulo', orden?.titulo ?? '');
-            const res = await fetch('/api/storage/evidencia-orden', {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
-            });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err.message || 'Error al subir evidencia');
+
+        const token = localStorage.getItem('accessToken');
+        const formData = new FormData();
+        formData.append('archivo', file);
+        formData.append('tareaId', tareaSeleccionada);
+        formData.append('ordenTitulo', orden?.titulo ?? '');
+
+        setSubiendoEvidencia(tareaSeleccionada);
+        setUploadProgress(0);
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.onprogress = (ev) => {
+            if (ev.lengthComputable) {
+                setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
             }
-            await cargarOrden();
-        } catch (error: any) {
-            alert(error.message || 'Error al subir la evidencia.');
-        } finally {
+        };
+
+        xhr.onload = async () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                setUploadProgress(0);
+                await cargarOrden();
+            } else {
+                let msg = 'Error al subir evidencia';
+                try { msg = JSON.parse(xhr.responseText)?.message || msg; } catch { /* noop */ }
+                alert(msg);
+            }
             setSubiendoEvidencia(null);
             setTareaSeleccionada(null);
             if (fileInputRef.current) fileInputRef.current.value = '';
-        }
+        };
+
+        xhr.onerror = () => {
+            alert('Error de red al subir la evidencia.');
+            setSubiendoEvidencia(null);
+            setTareaSeleccionada(null);
+            setUploadProgress(0);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+
+        xhr.open('POST', '/api/storage/evidencia-orden');
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.send(formData);
     };
 
     const handleApelar = async (evidenciaId: string) => {
@@ -427,11 +447,19 @@ export default function DetalleOrdenEmpleadoPage() {
                                                 {cargando
                                                     ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
                                                     : <Upload className="w-3 h-3" />}
-                                                {tarea.completada ? 'Re-subir' : 'Subir evidencia'}
+                                                {cargando ? `${uploadProgress}%` : tarea.completada ? 'Re-subir' : 'Subir evidencia'}
                                             </button>
                                         )}
                                         {expandida ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                                     </div>
+                                    {cargando && (
+                                        <div className="px-4 pt-1 pb-2">
+                                            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                                <div className="h-1.5 rounded-full bg-blue-500 transition-all duration-200"
+                                                    style={{ width: `${uploadProgress}%` }} />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {expandida && (

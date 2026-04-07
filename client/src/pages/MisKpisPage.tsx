@@ -234,6 +234,7 @@ export default function MisKPIsPage() {
     const [apelandoEvidencia, setApelandoEvidencia] = useState<string | null>(null);
     const [textoApelacion, setTextoApelacion] = useState('');
     const [eliminandoEvidencia, setEliminandoEvidencia] = useState<string | null>(null);
+    const [uploadProgress, setUploadProgress] = useState<number>(0);
 
     useEffect(() => { if (user?.id) cargarKPIs(); }, [user]);
 
@@ -304,55 +305,69 @@ export default function MisKPIsPage() {
         fileInputRef.current?.click();
     };
 
-    const handleArchivoSeleccionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleArchivoSeleccionado = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !kpiSeleccionado) return;
         const kpi = kpis.find((k) => k.id === kpiSeleccionado);
         if (!kpi) return;
 
-        try {
-            setSubiendoEvidencia(kpiSeleccionado);
-            const token = localStorage.getItem('accessToken');
-            const formData = new FormData();
-            formData.append('archivo', file);
-            formData.append('kpiId', kpiSeleccionado);
-            formData.append('kpiKey', kpi.key);
-            formData.append('periodo', getPeriodoActual());
-            formData.append('anio', String(new Date().getFullYear()));
+        const token = localStorage.getItem('accessToken');
+        const formData = new FormData();
+        formData.append('archivo', file);
+        formData.append('kpiId', kpiSeleccionado);
+        formData.append('kpiKey', kpi.key);
+        formData.append('periodo', getPeriodoActual());
+        formData.append('anio', String(new Date().getFullYear()));
 
-            if (necesitaValorNumerico(kpi) && valorNumerico) formData.append('valorNumerico', valorNumerico);
-            if (kpi.tipoCalculo === 'binario') formData.append('valorNumerico', '1');
-            if (notaEvidencia) formData.append('nota', notaEvidencia);
+        if (necesitaValorNumerico(kpi) && valorNumerico) formData.append('valorNumerico', valorNumerico);
+        if (kpi.tipoCalculo === 'binario') formData.append('valorNumerico', '1');
+        if (notaEvidencia) formData.append('nota', notaEvidencia);
 
-            // Precisión: calcular según modo y enviar
-            if (kpi.tipoCalculo === 'precision' && valorObtenido) {
-                const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
-                const { precision } = calcularPrecision(formula, valorObtenido, kpi.meta, kpi.operadorMeta);
-                if (precision !== null) formData.append('valorNumerico', precision.toFixed(2));
-                formData.append('valorObtenido', valorObtenido);
+        if (kpi.tipoCalculo === 'precision' && valorObtenido) {
+            const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+            const { precision } = calcularPrecision(formula, valorObtenido, kpi.meta, kpi.operadorMeta);
+            if (precision !== null) formData.append('valorNumerico', precision.toFixed(2));
+            formData.append('valorObtenido', valorObtenido);
+        }
+
+        setSubiendoEvidencia(kpiSeleccionado);
+        setUploadProgress(0);
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.onprogress = (ev) => {
+            if (ev.lengthComputable) {
+                setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
             }
+        };
 
-            const res = await fetch('/api/storage/evidencia-kpi', {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
-            });
-
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err.message || 'Error al subir evidencia');
+        xhr.onload = async () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                setMostrarFormSubida(null);
+                setValorNumerico(''); setNotaEvidencia(''); setConfirmadoBinario(false); setValorObtenido('');
+                setUploadProgress(0);
+                await cargarKPIs();
+            } else {
+                let msg = 'Error al subir evidencia';
+                try { msg = JSON.parse(xhr.responseText)?.message || msg; } catch { /* noop */ }
+                alert(msg);
             }
-
-            setMostrarFormSubida(null);
-            setValorNumerico(''); setNotaEvidencia(''); setConfirmadoBinario(false); setValorObtenido('');
-            await cargarKPIs();
-        } catch (error: any) {
-            alert(error.message || 'Error al subir la evidencia.');
-        } finally {
             setSubiendoEvidencia(null);
             setKpiSeleccionado(null);
             if (fileInputRef.current) fileInputRef.current.value = '';
-        }
+        };
+
+        xhr.onerror = () => {
+            alert('Error de red al subir la evidencia.');
+            setSubiendoEvidencia(null);
+            setKpiSeleccionado(null);
+            setUploadProgress(0);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+
+        xhr.open('POST', '/api/storage/evidencia-kpi');
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.send(formData);
     };
 
     const handleGuardarNota = async (kpiId: string) => {
@@ -927,17 +942,38 @@ export default function MisKPIsPage() {
                                                                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500" />
                                                             </div>
 
+                                                            {/* Barra de progreso */}
+                                                            {cargando && (
+                                                                <div className="space-y-1.5">
+                                                                    <div className="flex justify-between text-xs text-gray-500">
+                                                                        <span>Subiendo archivo...</span>
+                                                                        <span className="font-medium">{uploadProgress}%</span>
+                                                                    </div>
+                                                                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                                                                        <div
+                                                                            className="h-2 rounded-full bg-blue-500 transition-all duration-200"
+                                                                            style={{ width: `${uploadProgress}%` }}
+                                                                        />
+                                                                    </div>
+                                                                    {uploadProgress === 100 && (
+                                                                        <p className="text-xs text-blue-600">Procesando en el servidor...</p>
+                                                                    )}
+                                                                </div>
+                                                            )}
+
                                                             <div className="flex gap-2">
                                                                 <button onClick={() => handleSeleccionarArchivo(kpi.id)}
                                                                     disabled={cargando || (esBinario && !confirmadoBinario) || (necesitaValor && !valorNumerico) || (esPrecision && !valorObtenido)}
                                                                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
                                                                     {cargando ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
-                                                                    Seleccionar archivo
+                                                                    {cargando ? 'Subiendo...' : 'Seleccionar archivo'}
                                                                 </button>
-                                                                <button onClick={() => setMostrarFormSubida(null)}
-                                                                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">
-                                                                    Cancelar
-                                                                </button>
+                                                                {!cargando && (
+                                                                    <button onClick={() => setMostrarFormSubida(null)}
+                                                                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">
+                                                                        Cancelar
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     )}
