@@ -36,7 +36,9 @@ export class StorageService {
   /**
    * Ruta para evidencia de KPI predefinido:
    * {basePath}/areas/{area}/{empleado}_{id}/{anio}-{periodo}/kpis/{kpiKey}_{archivo}
-   *
+   
+
+  
    * Ejemplo real:
    * Aplicativos/kpis/areas/administrativa/juan_perez_abc123/2025-marzo/kpis/adm-001_reporte.pdf
    */
