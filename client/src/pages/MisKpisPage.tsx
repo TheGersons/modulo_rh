@@ -580,17 +580,50 @@ export default function MisKPIsPage() {
                                                     ) : (
                                                         <span className="text-xs text-gray-400">Calculando...</span>
                                                     )
-                                                ) : (
-                                                    <>
-                                                        <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                                                            <div className={`h-1.5 rounded-full transition-all ${aprobadas >= requeridas ? 'bg-green-500' : cumplimiento === 'no_cumple' ? 'bg-red-400' : 'bg-blue-500'}`}
-                                                                style={{ width: `${Math.min((aprobadas / Math.max(requeridas, 1)) * 100, 100)}%` }} />
+                                                ) : (() => {
+                                                    // Progreso en 3 etapas:
+                                                    // 0%  → sin evidencia
+                                                    // 50% → evidencia subida, en revisión
+                                                    // 100%→ aprobada
+                                                    const progresoPorc = aprobadas >= requeridas
+                                                        ? 100
+                                                        : enRevision > 0
+                                                            ? 50
+                                                            : 0;
+                                                    const barColor = progresoPorc === 100
+                                                        ? 'bg-green-500'
+                                                        : progresoPorc === 50
+                                                            ? 'bg-orange-400'
+                                                            : 'bg-gray-300';
+                                                    const etiqueta = progresoPorc === 100
+                                                        ? 'Aprobada'
+                                                        : progresoPorc === 50
+                                                            ? 'En revisión'
+                                                            : 'Pendiente';
+                                                    return (
+                                                        <div className="flex-1 space-y-1 min-w-0">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                                                                    <div className={`h-1.5 rounded-full transition-all duration-500 ${barColor}`}
+                                                                        style={{ width: `${progresoPorc}%` }} />
+                                                                </div>
+                                                                <span className="text-xs text-gray-500 flex-shrink-0">
+                                                                    {aprobadas}/{requeridas} · {etiqueta}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs text-gray-400 px-0.5">
+                                                                <span>Pendiente</span>
+                                                                <span>En revisión</span>
+                                                                <span>Aprobada</span>
+                                                            </div>
+                                                            <p className="text-xs text-gray-400 mt-0.5">
+                                                                {progresoPorc === 0 && 'Sube tu evidencia para avanzar.'}
+                                                                {progresoPorc === 50 && 'Evidencia recibida — esperando aprobación de tu jefe.'}
+                                                                {progresoPorc === 100 && '¡Evidencia aprobada! Este KPI está completado.'}
+                                                            </p>
                                                         </div>
-                                                        <span className="text-xs text-gray-500 flex-shrink-0">
-                                                            {aprobadas}/{requeridas} evidencias{enRevision > 0 && ` · ${enRevision} en revisión`}
-                                                        </span>
-                                                    </>
-                                                )}
+                                                    );
+                                                })()}
                                             </div>
                                             <div className="flex items-center gap-3 flex-wrap">
                                                 {kpi.meta !== undefined && !esBinario && (
