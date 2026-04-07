@@ -1,0 +1,19 @@
+#!/bin/sh
+# Hook que se ejecuta automáticamente después de cada `git pull`
+# Reconstruye y reinicia los contenedores server y client (sin tocar db)
+
+echo ""
+echo "🔄 post-merge: reconstruyendo contenedores..."
+echo ""
+
+docker compose up --build -d server client
+
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "✅ Contenedores actualizados correctamente."
+else
+    echo ""
+    echo "❌ Error al reconstruir los contenedores. Revisa los logs con:"
+    echo "   docker compose logs -f server client"
+    exit 1
+fi
