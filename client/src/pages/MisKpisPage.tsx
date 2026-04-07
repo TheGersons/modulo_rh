@@ -807,7 +807,19 @@ export default function MisKPIsPage() {
                                                                         <p className="text-xs font-medium text-gray-700 truncate">{ev.nombre}</p>
                                                                         <p className="text-xs text-gray-400">{formatBytes(ev.tamanio)}</p>
                                                                     </div>
-                                                                    {evCfg && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${evCfg.bg} ${evCfg.color}`}>{evCfg.label}</span>}
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <a href={ev.archivoUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-gray-400 hover:text-blue-600 rounded"><Eye className="w-3.5 h-3.5" /></a>
+                                                                        {ev.status === 'pendiente_revision' && (
+                                                                            <button
+                                                                                onClick={() => handleEliminarEvidencia(ev.id)}
+                                                                                disabled={eliminandoEvidencia === ev.id}
+                                                                                title="Eliminar evidencia"
+                                                                                className="p-1 text-gray-400 hover:text-red-600 rounded disabled:opacity-50 transition-colors">
+                                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                        )}
+                                                                        {evCfg && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${evCfg.bg} ${evCfg.color}`}>{evCfg.label}</span>}
+                                                                    </div>
                                                                 </div>
                                                             );
                                                         })}
