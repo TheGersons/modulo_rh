@@ -961,6 +961,10 @@ export default function MisKPIsPage() {
                                                                 </div>
                                                             )}
 
+                                                            <p className="text-xs text-gray-400">
+                                                                Formatos: imágenes, video, PDF, Word, Excel · Máximo <span className="font-medium">30 MB</span> por archivo
+                                                            </p>
+
                                                             <div className="flex gap-2">
                                                                 <button onClick={() => handleSeleccionarArchivo(kpi.id)}
                                                                     disabled={cargando || (esBinario && !confirmadoBinario) || (necesitaValor && !valorNumerico) || (esPrecision && !valorObtenido)}

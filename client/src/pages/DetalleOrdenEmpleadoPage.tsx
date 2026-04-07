@@ -464,6 +464,11 @@ export default function DetalleOrdenEmpleadoPage() {
 
                                 {expandida && (
                                     <div className="px-4 pb-4 border-t border-gray-100 pt-4">
+                                        {puedeSubir && !ordenCerrada && (
+                                            <p className="text-xs text-gray-400 mb-3">
+                                                Formatos: imágenes, video, PDF, Word, Excel · Máximo <span className="font-medium">30 MB</span> por archivo
+                                            </p>
+                                        )}
                                         {tarea.evidencias?.length > 0 ? (
                                             <div className="space-y-3">
                                                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Historial de evidencias</p>
