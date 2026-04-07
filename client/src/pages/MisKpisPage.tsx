@@ -236,24 +236,38 @@ export default function MisKPIsPage() {
     const [eliminandoEvidencia, setEliminandoEvidencia] = useState<string | null>(null);
     const [uploadProgress, setUploadProgress] = useState<number>(0);
 
-    useEffect(() => { if (user?.id) cargarKPIs(); }, [user]);
+    // Usar user?.id como dependencia evita re-fires cuando el objeto user
+    // cambia referencia sin cambiar datos (causa de race conditions)
+    useEffect(() => {
+        if (!user?.id) return;
+        const controller = new AbortController();
+        cargarKPIs(controller.signal);
+        return () => controller.abort();
+    }, [user?.id]);
 
     const getPeriodoActual = () => {
         const now = new Date();
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     };
 
-    const cargarKPIs = async () => {
+    const cargarKPIs = async (signal?: AbortSignal) => {
         try {
             setLoading(true);
             const token = localStorage.getItem('accessToken');
-            const kpisData = await kpisService.getMisKpis();
             const periodo = getPeriodoActual();
+            const headers = { Authorization: `Bearer ${token}` };
 
-            const resEv = await fetch(`/api/kpis/mis-evidencias?periodo=${periodo}`, { headers: { Authorization: `Bearer ${token}` } });
+            // Las 3 peticiones iniciales en paralelo
+            const [kpisData, resEv, resNotas] = await Promise.all([
+                kpisService.getMisKpis(),
+                fetch(`/api/kpis/mis-evidencias?periodo=${periodo}`, { headers, signal }),
+                fetch(`/api/kpis/mis-notas?periodo=${periodo}`, { headers, signal }).catch(() => null),
+            ]);
+
+            // Si el componente se desmontó durante la carga, no actualizar estado
+            if (signal?.aborted) return;
+
             const evidenciasData: Record<string, Evidencia[]> = resEv.ok ? await resEv.json() : {};
-
-            const resNotas = await fetch(`/api/kpis/mis-notas?periodo=${periodo}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
             const notasData: Record<string, string> = resNotas?.ok ? await resNotas.json() : {};
 
             const combinados: KPIConEvidencias[] = (Array.isArray(kpisData) ? kpisData : []).map((kpi) => {
@@ -265,24 +279,23 @@ export default function MisKPIsPage() {
 
             setKpis(combinados);
 
-            // Cargar resultados automáticos para KPIs de tipo division + aplicaOrdenTrabajo
+            // Resultados automáticos en paralelo también
             const autoKpis = combinados.filter((k) => k.tipoCalculo === 'division' && k.aplicaOrdenTrabajo);
             if (autoKpis.length > 0) {
                 const autoResults: Record<string, ResultadoAuto> = {};
                 await Promise.all(autoKpis.map(async (kpi) => {
                     try {
-                        const res = await fetch(`/api/kpis/${kpi.id}/resultado-automatico?periodo=${periodo}`, {
-                            headers: { Authorization: `Bearer ${token}` },
-                        });
-                        if (res.ok) autoResults[kpi.id] = await res.json();
+                        const res = await fetch(`/api/kpis/${kpi.id}/resultado-automatico?periodo=${periodo}`, { headers, signal });
+                        if (res.ok && !signal?.aborted) autoResults[kpi.id] = await res.json();
                     } catch { /* silencioso */ }
                 }));
-                setResultadosAuto(autoResults);
+                if (!signal?.aborted) setResultadosAuto(autoResults);
             }
-        } catch (error) {
+        } catch (error: any) {
+            if (error?.name === 'AbortError') return; // navegó antes de que terminara — ignorar
             console.error('Error al cargar KPIs:', error);
         } finally {
-            setLoading(false);
+            if (!signal?.aborted) setLoading(false);
         }
     };
 
