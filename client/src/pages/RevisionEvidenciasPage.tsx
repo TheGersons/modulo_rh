@@ -32,7 +32,9 @@ interface EvidenciaKPI {
     kpi: {
         key: string;
         indicador: string;
+        descripcion?: string;
         tipoCalculo: string;
+        formulaCalculo?: string;
         tipoCriticidad: string;
         meta?: number;
         operadorMeta?: string;
@@ -97,6 +99,70 @@ const CRITICIDAD_CFG: Record<string, { bg: string; text: string; label: string }
 };
 
 const POR_PAGINA = 10;
+
+// ─── Helper: fórmula legible ──────────────────────────────────────────────────
+
+const TIPO_CALCULO_LABEL: Record<string, string> = {
+    binario: 'Binario (Sí / No)',
+    division: 'División',
+    conteo: 'Conteo',
+    precision: 'Precisión',
+    porcentaje_kpis_equipo: '% KPIs del equipo',
+    dashboard_presentado: 'Dashboard presentado',
+};
+
+function renderFormulaLegible(tipoCalculo: string, formulaCalculo?: string): React.ReactNode {
+    if (!formulaCalculo) return null;
+    let formula: Record<string, any> = {};
+    try { formula = JSON.parse(formulaCalculo); } catch { return null; }
+
+    switch (tipoCalculo) {
+        case 'binario':
+            return formula.descripcion
+                ? <span>Condición: <strong>{formula.descripcion}</strong></span>
+                : <span>Debe cumplirse la condición (Sí / No)</span>;
+
+        case 'division': {
+            const mult = formula.multiplicador && formula.multiplicador !== 1
+                ? ` × ${formula.multiplicador}`
+                : '';
+            const inv = formula.invertir ? ' (invertido)' : '';
+            return (
+                <span>
+                    <strong>{formula.numerador || '—'}</strong>
+                    {' / '}
+                    <strong>{formula.denominador || '—'}</strong>
+                    {mult}{inv}
+                </span>
+            );
+        }
+
+        case 'conteo':
+            return formula.target
+                ? <span>Conteo de: <strong>{formula.target}</strong>{formula.filtro ? ` — filtro: ${formula.filtro}` : ''}</span>
+                : <span>Conteo de registros</span>;
+
+        case 'precision':
+            return (
+                <span>
+                    {formula.labelEsperado && <><strong>{formula.labelEsperado}</strong>{' = '}</>}
+                    <strong>{formula.valorEsperado ?? '—'}</strong>
+                    {formula.modoEvaluacion === 'tolerancia' && formula.toleranciaPorc != null
+                        ? ` (tolerancia ±${formula.toleranciaPorc}%)`
+                        : ''}
+                </span>
+            );
+
+        case 'porcentaje_kpis_equipo':
+            return <span>Porcentaje de KPIs del equipo que cumplen la meta</span>;
+
+        case 'dashboard_presentado':
+            return <span>Se valida si el dashboard fue presentado</span>;
+
+        default:
+            return null;
+    }
+}
 
 // ─── Tarjeta KPI ──────────────────────────────────────────────────────────────
 
@@ -223,6 +289,55 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
 
             {expandida && (
                 <div className="border-t border-gray-100 p-5 bg-gray-50 space-y-3">
+
+                    {/* ── Requisitos del KPI ── */}
+                    <div className="p-4 bg-white rounded-lg border border-blue-100">
+                        <p className="text-xs font-semibold text-blue-700 mb-3 flex items-center gap-1.5">
+                            <TrendingUp className="w-3.5 h-3.5" />Requisitos del KPI
+                        </p>
+                        <div className="space-y-2">
+                            {/* Nombre */}
+                            <div className="flex gap-2">
+                                <span className="text-xs text-gray-500 w-24 shrink-0">Nombre</span>
+                                <span className="text-xs font-medium text-gray-900">{evidencia.kpi.indicador}</span>
+                            </div>
+                            {/* Descripción */}
+                            {evidencia.kpi.descripcion && (
+                                <div className="flex gap-2">
+                                    <span className="text-xs text-gray-500 w-24 shrink-0">Descripción</span>
+                                    <span className="text-xs text-gray-700">{evidencia.kpi.descripcion}</span>
+                                </div>
+                            )}
+                            {/* Tipo de cálculo */}
+                            <div className="flex gap-2">
+                                <span className="text-xs text-gray-500 w-24 shrink-0">Tipo</span>
+                                <span className="text-xs font-medium text-gray-700">
+                                    {TIPO_CALCULO_LABEL[evidencia.kpi.tipoCalculo] ?? evidencia.kpi.tipoCalculo}
+                                </span>
+                            </div>
+                            {/* Fórmula */}
+                            {(() => {
+                                const fl = renderFormulaLegible(evidencia.kpi.tipoCalculo, evidencia.kpi.formulaCalculo);
+                                return fl ? (
+                                    <div className="flex gap-2">
+                                        <span className="text-xs text-gray-500 w-24 shrink-0">Fórmula</span>
+                                        <span className="text-xs text-gray-700">{fl}</span>
+                                    </div>
+                                ) : null;
+                            })()}
+                            {/* Meta */}
+                            {evidencia.kpi.meta !== undefined && evidencia.kpi.meta !== null && (
+                                <div className="flex gap-2">
+                                    <span className="text-xs text-gray-500 w-24 shrink-0">Meta</span>
+                                    <span className="text-xs font-semibold text-green-700">
+                                        {evidencia.kpi.operadorMeta} {evidencia.kpi.meta} {evidencia.kpi.unidad}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* ── Archivo de evidencia ── */}
                     <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
                         <div className="p-2 bg-gray-100 rounded-lg"><IconoArchivo className="w-5 h-5 text-gray-600" /></div>
                         <div className="flex-1 min-w-0">

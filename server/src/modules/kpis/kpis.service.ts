@@ -1025,10 +1025,12 @@ export class KpisService {
             id: true,
             key: true,
             indicador: true,
-            tipoCalculo: true, // ← AGREGAR
-            meta: true, // ← AGREGAR
-            operadorMeta: true, // ← AGREGAR
-            unidad: true, // ← AGREGAR
+            descripcion: true,
+            tipoCalculo: true,
+            formulaCalculo: true,
+            meta: true,
+            operadorMeta: true,
+            unidad: true,
             tipoCriticidad: true,
             area: true,
           },
