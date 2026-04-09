@@ -100,6 +100,122 @@ const CRITICIDAD_CFG: Record<string, { bg: string; text: string; label: string }
 
 const POR_PAGINA = 10;
 
+// ─── Helper: evaluar cumplimiento ────────────────────────────────────────────
+
+function evalOp(valor: number, op: string, meta: number): boolean {
+    switch (op) {
+        case '>=': return valor >= meta;
+        case '>':  return valor > meta;
+        case '<=': return valor <= meta;
+        case '<':  return valor < meta;
+        case '=':  return valor === meta;
+        default:   return valor >= meta;
+    }
+}
+
+function BadgeCumple({ cumple }: { cumple: boolean }) {
+    return cumple
+        ? <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">✓ Cumple meta</span>
+        : <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">✗ No cumple meta</span>;
+}
+
+function ValorReportado({ evidencia }: { evidencia: EvidenciaKPI }) {
+    const { tipoCalculo, formulaCalculo, meta, operadorMeta, unidad } = evidencia.kpi;
+    const val = evidencia.valorNumerico;
+
+    if (val === undefined || val === null) return null;
+
+    let formula: Record<string, any> = {};
+    try { if (formulaCalculo) formula = JSON.parse(formulaCalculo); } catch { /* noop */ }
+
+    const op = operadorMeta ?? '>=';
+    const cumple = meta !== undefined ? evalOp(val, op, meta) : null;
+
+    const Wrap = ({ children }: { children: React.ReactNode }) => (
+        <div className="flex items-center gap-3 flex-wrap p-3 bg-blue-50 rounded-lg border border-blue-100">
+            <span className="text-sm font-medium text-blue-700 shrink-0">Valor reportado:</span>
+            {children}
+        </div>
+    );
+
+    switch (tipoCalculo) {
+        case 'binario':
+        case 'dashboard_presentado':
+            return (
+                <Wrap>
+                    <span className="text-sm font-semibold text-green-700">
+                        ✓ Empleado reporta haber cumplido la actividad
+                    </span>
+                </Wrap>
+            );
+
+        case 'division':
+        case 'formula': {
+            const mult = formula.multiplicador && formula.multiplicador !== 1 ? ` × ${formula.multiplicador}` : '';
+            const desc = formula.numerador && formula.denominador
+                ? <span className="text-xs text-blue-600">({formula.numerador} / {formula.denominador}{mult})</span>
+                : null;
+            return (
+                <Wrap>
+                    <span className="text-sm font-bold text-blue-900">{val} {unidad}</span>
+                    {desc}
+                    {cumple !== null && <BadgeCumple cumple={cumple} />}
+                    {meta !== undefined && (
+                        <span className="text-xs text-gray-500">Meta: {op} {meta} {unidad}</span>
+                    )}
+                </Wrap>
+            );
+        }
+
+        case 'conteo': {
+            const target = formula.target ? <span className="text-xs text-blue-600">de {formula.target}</span> : null;
+            return (
+                <Wrap>
+                    <span className="text-sm font-bold text-blue-900">{val} {unidad}</span>
+                    {target}
+                    {cumple !== null && <BadgeCumple cumple={cumple} />}
+                    {meta !== undefined && (
+                        <span className="text-xs text-gray-500">Meta: {op} {meta}</span>
+                    )}
+                </Wrap>
+            );
+        }
+
+        case 'precision': {
+            const labelEsp = formula.labelEsperado ? `${formula.labelEsperado} = ${formula.valorEsperado}` : null;
+            return (
+                <Wrap>
+                    <span className="text-sm font-bold text-blue-900">Precisión: {val}%</span>
+                    {labelEsp && <span className="text-xs text-blue-600">Esperado: {labelEsp}</span>}
+                    {cumple !== null && <BadgeCumple cumple={cumple} />}
+                    {meta !== undefined && (
+                        <span className="text-xs text-gray-500">Meta: {op} {meta}%</span>
+                    )}
+                </Wrap>
+            );
+        }
+
+        case 'porcentaje_kpis_equipo':
+            return (
+                <Wrap>
+                    <span className="text-sm font-bold text-blue-900">{val}% del equipo</span>
+                    {cumple !== null && <BadgeCumple cumple={cumple} />}
+                    {meta !== undefined && (
+                        <span className="text-xs text-gray-500">Meta: {op} {meta}%</span>
+                    )}
+                </Wrap>
+            );
+
+        default:
+            return (
+                <Wrap>
+                    <span className="text-sm font-bold text-blue-900">{val} {unidad}</span>
+                    {cumple !== null && <BadgeCumple cumple={cumple} />}
+                </Wrap>
+            );
+    }
+}
+
 // ─── Helper: fórmula legible ──────────────────────────────────────────────────
 
 const TIPO_CALCULO_LABEL: Record<string, string> = {
@@ -358,12 +474,7 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
                             <img src={evidencia.archivoUrl} alt="Evidencia" className="w-full h-full object-contain bg-gray-100" />
                         </div>
                     )}
-                    {evidencia.valorNumerico !== undefined && evidencia.valorNumerico !== null && (
-                        <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
-                            <span className="text-sm text-blue-700 font-medium">Valor reportado:</span>
-                            <span className="text-sm font-bold text-blue-900">{evidencia.valorNumerico} {evidencia.kpi.unidad}</span>
-                        </div>
-                    )}
+                    <ValorReportado evidencia={evidencia} />
                     {evidencia.nota && (
                         <div className="p-3 bg-white rounded-lg border border-gray-200">
                             <p className="text-xs font-semibold text-gray-500 mb-1 flex items-center gap-1"><MessageSquare className="w-3 h-3" />Nota del empleado:</p>
