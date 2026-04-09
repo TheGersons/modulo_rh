@@ -28,22 +28,38 @@ export class OrdenesTrabajoService {
   // CREAR ORDEN DE TRABAJO
   // ============================================
   async create(createDto: CreateOrdenTrabajoDto, creadorId: string) {
-    // 1. Validar que el KPI existe
-    const kpi = await this.prisma.kPI.findUnique({
-      where: { id: createDto.kpiId },
-    });
+    const esPersonalizado = !createDto.kpiId;
 
-    if (!kpi) {
-      throw new NotFoundException(
-        `KPI con ID ${createDto.kpiId} no encontrado`,
-      );
-    }
+    let horas: number;
 
-    // 2. Validar horas límite configuradas
-    if (!kpi.horasLimiteOrden || kpi.horasLimiteOrden <= 0) {
-      throw new BadRequestException(
-        'Este KPI no tiene horas límite configuradas. Configúralas antes de crear órdenes.',
-      );
+    if (esPersonalizado) {
+      // Orden personalizada: requiere horasLimitePersonalizado
+      if (!createDto.horasLimitePersonalizado || createDto.horasLimitePersonalizado <= 0) {
+        throw new BadRequestException(
+          'Para órdenes personalizadas debes indicar las horas límite (mínimo 1).',
+        );
+      }
+      horas = createDto.horasLimitePersonalizado;
+    } else {
+      // 1. Validar que el KPI existe
+      const kpi = await this.prisma.kPI.findUnique({
+        where: { id: createDto.kpiId },
+      });
+
+      if (!kpi) {
+        throw new NotFoundException(
+          `KPI con ID ${createDto.kpiId} no encontrado`,
+        );
+      }
+
+      // 2. Validar horas límite configuradas en el KPI
+      if (!kpi.horasLimiteOrden || kpi.horasLimiteOrden <= 0) {
+        throw new BadRequestException(
+          'Este KPI no tiene horas límite configuradas. Configúralas antes de crear órdenes.',
+        );
+      }
+
+      horas = kpi.horasLimiteOrden;
     }
 
     // 3. Validar que el empleado existe
@@ -57,16 +73,13 @@ export class OrdenesTrabajoService {
       );
     }
 
-    // 4. Calcular fecha límite automáticamente desde horas laborales del KPI
-    const fechaLimite = calcularFechaLimiteLaboral(
-      new Date(),
-      kpi.horasLimiteOrden,
-    );
+    // 4. Calcular fecha límite en horas laborales
+    const fechaLimite = calcularFechaLimiteLaboral(new Date(), horas);
 
     // 5. Crear orden
     const orden = await this.prisma.ordenTrabajo.create({
       data: {
-        kpiId: createDto.kpiId,
+        kpiId: createDto.kpiId ?? null,
         empleadoId: createDto.empleadoId,
         creadorId,
         titulo: createDto.titulo,
@@ -74,7 +87,7 @@ export class OrdenesTrabajoService {
         cantidadTareas: createDto.cantidadTareas,
         fechaLimite,
         fechaLimiteOriginal: fechaLimite,
-        tipoOrden: createDto.tipoOrden || 'kpi_sistema',
+        tipoOrden: createDto.tipoOrden || (esPersonalizado ? 'personalizado' : 'kpi_sistema'),
         status: 'pendiente',
       },
       include: {
@@ -126,21 +139,31 @@ export class OrdenesTrabajoService {
     empleadoIds: string[],
     creadorId: string,
   ) {
-    // Validar KPI y horas límite una sola vez antes del loop
-    const kpi = await this.prisma.kPI.findUnique({
-      where: { id: createDto.kpiId },
-    });
+    const esPersonalizado = !createDto.kpiId;
 
-    if (!kpi) {
-      throw new NotFoundException(
-        `KPI con ID ${createDto.kpiId} no encontrado`,
-      );
-    }
+    // Validar una sola vez antes del loop
+    if (esPersonalizado) {
+      if (!createDto.horasLimitePersonalizado || createDto.horasLimitePersonalizado <= 0) {
+        throw new BadRequestException(
+          'Para órdenes personalizadas debes indicar las horas límite (mínimo 1).',
+        );
+      }
+    } else {
+      const kpi = await this.prisma.kPI.findUnique({
+        where: { id: createDto.kpiId },
+      });
 
-    if (!kpi.horasLimiteOrden || kpi.horasLimiteOrden <= 0) {
-      throw new BadRequestException(
-        'Este KPI no tiene horas límite configuradas. Configúralas antes de crear órdenes.',
-      );
+      if (!kpi) {
+        throw new NotFoundException(
+          `KPI con ID ${createDto.kpiId} no encontrado`,
+        );
+      }
+
+      if (!kpi.horasLimiteOrden || kpi.horasLimiteOrden <= 0) {
+        throw new BadRequestException(
+          'Este KPI no tiene horas límite configuradas. Configúralas antes de crear órdenes.',
+        );
+      }
     }
 
     const ordenesCreadas: any[] = [];

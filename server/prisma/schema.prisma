@@ -129,8 +129,8 @@ model KPI {
 }
 
 model OrdenTrabajo {
-  id         String @id @default(cuid())
-  kpiId      String
+  id         String  @id @default(cuid())
+  kpiId      String? // null cuando tipoOrden = 'personalizado'
   empleadoId String
   creadorId  String
 
@@ -168,7 +168,7 @@ model OrdenTrabajo {
   updatedAt DateTime @updatedAt
 
   // Relaciones
-  kpi                KPI                @relation(fields: [kpiId], references: [id])
+  kpi                KPI?               @relation(fields: [kpiId], references: [id])
   empleado           User               @relation("EmpleadoOrden", fields: [empleadoId], references: [id])
   creador            User               @relation("CreadorOrden", fields: [creadorId], references: [id])
   tareas             Tarea[]

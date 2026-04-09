@@ -2,6 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   IsInt,
+  IsNumber,
   Min,
   IsDateString,
   IsOptional,
@@ -22,8 +23,13 @@ class TareaDto {
 
 export class CreateOrdenTrabajoDto {
   @IsString()
-  @IsNotEmpty()
-  kpiId: string;
+  @IsOptional()
+  kpiId?: string; // null/undefined cuando tipoOrden = 'personalizado'
+
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  horasLimitePersonalizado?: number; // requerido cuando kpiId es null
 
   @IsString()
   @IsNotEmpty()

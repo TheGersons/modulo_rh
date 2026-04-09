@@ -70,9 +70,12 @@ export default function CrearOrdenPage() {
   const [filtroSubArea, setFiltroSubArea] = useState('todas');
   const [empleadosFiltrados, setEmpleadosFiltrados] = useState<Empleado[]>([]);
 
+  const PERSONALIZADO_ID = '__personalizado__';
+
   // Form state
   const [empleadosSeleccionados, setEmpleadosSeleccionados] = useState<string[]>([]);
   const [kpiId, setKpiId] = useState('');
+  const [horasPersonalizado, setHorasPersonalizado] = useState<number>(8);
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [tipoAsignacion, setTipoAsignacion] = useState<'individual' | 'multiple'>('individual');
@@ -129,9 +132,13 @@ export default function CrearOrdenPage() {
       return puestoIds.has(kpi.puesto.id);
     });
 
-    // Sin coincidencia → lista vacía
     setKpisFiltrados(filtrados);
-    setKpiId('');
+    // Solo resetear si el kpi seleccionado no es personalizado ni está en la lista filtrada
+    setKpiId((prev) => {
+      if (prev === PERSONALIZADO_ID) return prev;
+      if (filtrados.some((k) => k.id === prev)) return prev;
+      return '';
+    });
   }, [empleadosSeleccionados, kpis, empleados]);
 
   const cargarDatos = async () => {
@@ -187,6 +194,11 @@ export default function CrearOrdenPage() {
       return;
     }
 
+    if (kpiId === PERSONALIZADO_ID && (!horasPersonalizado || horasPersonalizado < 1)) {
+      setError('Ingresa las horas límite para la orden personalizada (mínimo 1)');
+      return;
+    }
+
     if (!titulo.trim()) {
       setError('El título es requerido');
       return;
@@ -200,21 +212,21 @@ export default function CrearOrdenPage() {
     try {
       setGuardando(true);
 
-      const ordenData = {
-        kpiId,
+      const esPersonalizado = kpiId === PERSONALIZADO_ID;
+      const ordenData: Record<string, unknown> = {
         empleadoId: empleadosSeleccionados[0],
         titulo: titulo.trim(),
         descripcion: descripcion.trim(),
         cantidadTareas: 1,
-        // ← sin fechaLimite, el backend la calcula
-        tipoOrden: 'kpi_sistema',
-        tareas: [
-          {
-            descripcion: descripcion.trim(),
-            orden: 1,
-          },
-        ],
+        tipoOrden: esPersonalizado ? 'personalizado' : 'kpi_sistema',
+        tareas: [{ descripcion: descripcion.trim(), orden: 1 }],
       };
+
+      if (esPersonalizado) {
+        ordenData.horasLimitePersonalizado = horasPersonalizado;
+      } else {
+        ordenData.kpiId = kpiId;
+      }
 
       if (empleadosSeleccionados.length === 1) {
         await ordenesTrabajoService.create(ordenData);
@@ -455,14 +467,14 @@ export default function CrearOrdenPage() {
                 <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4">
                   <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-700">
-                    Selecciona al menos un empleado para ver los KPIs disponibles según su puesto.
+                    Selecciona al menos un empleado para ver los KPIs disponibles.
                   </p>
                 </div>
               ) : kpisFiltrados.length === 0 ? (
-                <div className="flex items-start gap-2 p-3 bg-gray-50 border border-gray-200 rounded-lg mb-4">
-                  <AlertCircle className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-gray-500">
-                    No hay KPIs con orden de trabajo configurados para el puesto de este empleado.
+                <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+                  <AlertCircle className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-blue-600">
+                    No hay KPIs configurados para el puesto de este empleado. Puedes usar <strong>KPI Personalizado</strong>.
                   </p>
                 </div>
               ) : null}
@@ -478,6 +490,10 @@ export default function CrearOrdenPage() {
                     ? 'Primero selecciona un empleado'
                     : 'Selecciona un KPI'}
                 </option>
+                {/* Opción personalizado siempre disponible */}
+                {empleadosSeleccionados.length > 0 && (
+                  <option value={PERSONALIZADO_ID}>⚙ KPI Personalizado</option>
+                )}
                 {kpisFiltrados.map((kpi) => (
                   <option key={kpi.id} value={kpi.id}>
                     {kpi.indicador}
@@ -485,7 +501,40 @@ export default function CrearOrdenPage() {
                 ))}
               </select>
 
-              {kpiSeleccionado && (
+              {/* Card: KPI Personalizado */}
+              {kpiId === PERSONALIZADO_ID && (
+                <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-200 space-y-3">
+                  <p className="text-sm font-semibold text-indigo-900">KPI Personalizado</p>
+                  <p className="text-xs text-indigo-600">
+                    Define el tiempo límite para completar esta orden en horas laborales (07:30 – 17:30).
+                  </p>
+                  <div>
+                    <label className="block text-xs font-medium text-indigo-700 mb-1">
+                      Horas límite <span className="text-red-500">*</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        max={999}
+                        value={horasPersonalizado}
+                        onChange={(e) => setHorasPersonalizado(Math.max(1, Number(e.target.value)))}
+                        className="w-24 px-3 py-2 border border-indigo-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 text-center"
+                      />
+                      <span className="text-xs text-indigo-600">horas laborales</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 border-t border-indigo-200">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                    <p className="text-xs text-indigo-700 font-medium">
+                      La fecha límite se calculará automáticamente al crear la orden.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Card: KPI normal seleccionado */}
+              {kpiSeleccionado && kpiId !== PERSONALIZADO_ID && (
                 <div className="p-4 bg-purple-50 rounded-lg border border-purple-200 space-y-2">
                   <p className="text-sm font-semibold text-purple-900">{kpiSeleccionado.indicador}</p>
                   <p className="text-xs text-purple-700">
