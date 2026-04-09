@@ -15,7 +15,7 @@ import Layout from '../components/layout/Layout';
 import { empleadosService } from '../services/empleados.service';
 import { kpisService } from '../services/kpis.service';
 import { areasService } from '../services/areas.service';
-import { ordenesTrabajoService } from '../services/ordenes-trabajo.service';
+import { ordenesTrabajoService, type CreateOrdenDto } from '../services/ordenes-trabajo.service';
 
 interface Empleado {
   id: string;
@@ -213,20 +213,17 @@ export default function CrearOrdenPage() {
       setGuardando(true);
 
       const esPersonalizado = kpiId === PERSONALIZADO_ID;
-      const ordenData: Record<string, unknown> = {
+      const ordenData: CreateOrdenDto = {
         empleadoId: empleadosSeleccionados[0],
         titulo: titulo.trim(),
         descripcion: descripcion.trim(),
         cantidadTareas: 1,
         tipoOrden: esPersonalizado ? 'personalizado' : 'kpi_sistema',
         tareas: [{ descripcion: descripcion.trim(), orden: 1 }],
+        ...(esPersonalizado
+          ? { horasLimitePersonalizado: horasPersonalizado }
+          : { kpiId }),
       };
-
-      if (esPersonalizado) {
-        ordenData.horasLimitePersonalizado = horasPersonalizado;
-      } else {
-        ordenData.kpiId = kpiId;
-      }
 
       if (empleadosSeleccionados.length === 1) {
         await ordenesTrabajoService.create(ordenData);

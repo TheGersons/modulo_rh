@@ -62,12 +62,12 @@ export interface Evidencia {
 }
 
 export interface CreateOrdenDto {
-  kpiId: string;
+  kpiId?: string; // opcional cuando tipoOrden = 'personalizado'
+  horasLimitePersonalizado?: number; // requerido cuando kpiId es null
   empleadoId: string;
   titulo: string;
   descripcion: string;
   cantidadTareas: number;
-  //fechaLimite: string;
   tipoOrden?: string;
   tareas?: Array<{
     descripcion: string;
