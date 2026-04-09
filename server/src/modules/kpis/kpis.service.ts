@@ -945,33 +945,56 @@ export class KpisService {
   }
 
   async getEvidenciasPendientesKPI(userId: string) {
-    // 1. Evidencias por revisores asignados manualmente
+    // ── 1. Resolver áreas bajo responsabilidad (misma lógica que MiEquipo) ──────
+    const revisor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, areaId: true },
+    });
+
+    const areaIds = new Set<string>();
+
+    if (revisor?.role === 'rrhh' || revisor?.role === 'administrador') {
+      // RRHH / admin → todas las áreas
+      const todas = await this.prisma.area.findMany({ select: { id: true } });
+      todas.forEach((a) => areaIds.add(a.id));
+    } else if (revisor?.areaId) {
+      // Jefe → usar User.areaId (igual que MiEquipo)
+      const areaPropia = await this.prisma.area.findUnique({
+        where: { id: revisor.areaId },
+        select: { areaPadreId: true },
+      });
+
+      if (!areaPropia?.areaPadreId) {
+        // Área padre → gestiona las sub-áreas
+        const subAreas = await this.prisma.area.findMany({
+          where: { areaPadreId: revisor.areaId },
+          select: { id: true },
+        });
+        subAreas.forEach((sa) => areaIds.add(sa.id));
+        // También incluir el área padre por si tiene empleados directos
+        areaIds.add(revisor.areaId);
+      } else {
+        // Sub-área → solo la propia
+        areaIds.add(revisor.areaId);
+      }
+    }
+
+    // ── 2. Revisores asignados manualmente ─────────────────────────────────────
     const asignaciones = await this.prisma.revisorAsignado.findMany({
       where: { revisorId: userId, activo: true },
       select: { empleadoId: true },
     });
     const empleadosAsignados = asignaciones.map((a) => a.empleadoId);
 
-    // 2. Evidencias por jerarquía normal (jefe de área)
-    const areaJefe = await this.prisma.area.findFirst({
-      where: { jefeId: userId },
-      include: { subAreas: { select: { id: true } } },
-    });
-    const areaIds = areaJefe
-      ? [areaJefe.id, ...areaJefe.subAreas.map((s) => s.id)]
-      : [];
-
-    // Empleados del área pero excluir los que tienen revisor asignado a otro
-    // (para no mostrar duplicados si un empleado tiene revisor manual diferente)
+    // ── 3. Empleados de las áreas, excluyendo los que tienen otro revisor manual ─
     let empleadosDelArea: string[] = [];
-    if (areaIds.length > 0) {
+    if (areaIds.size > 0) {
       const empleadosArea = await this.prisma.user.findMany({
-        where: { areaId: { in: areaIds }, activo: true },
+        where: { areaId: { in: Array.from(areaIds) }, activo: true },
         select: { id: true },
       });
       const idsArea = empleadosArea.map((e) => e.id);
 
-      // Excluir empleados del área que tienen revisor asignado a OTRO (no a userId)
       const conRevisorOtro = await this.prisma.revisorAsignado.findMany({
         where: {
           empleadoId: { in: idsArea },
@@ -984,7 +1007,7 @@ export class KpisService {
       empleadosDelArea = idsArea.filter((id) => !excluidos.has(id));
     }
 
-    // 3. Union de ambos grupos
+    // ── 4. Unión de ambos grupos ────────────────────────────────────────────────
     const todosEmpleados = [
       ...new Set([...empleadosAsignados, ...empleadosDelArea]),
     ];
