@@ -43,8 +43,19 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
+    // Extraer mensaje legible del servidor para propagarlo
+    if (error.response?.data?.message) {
+      error.message = Array.isArray(error.response.data.message)
+        ? error.response.data.message.join(', ')
+        : error.response.data.message;
+    }
+
+    // Rutas públicas: nunca intentar refresh ni redirigir
+    const urlPublica = originalRequest.url?.includes('/auth/login') ||
+      originalRequest.url?.includes('/auth/forgot-password');
+
     // Si es 401 y no hemos intentado refrescar
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest._retry && !urlPublica) {
       if (isRefreshing) {
         // Si ya estamos refrescando, agregar a la cola
         return new Promise((resolve, reject) => {
