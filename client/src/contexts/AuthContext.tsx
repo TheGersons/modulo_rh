@@ -8,13 +8,15 @@ interface User {
   nombre: string;
   apellido?: string;
   areaId?: string;
+  necesitaCambioPassword?: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{ necesitaCambioPassword: boolean }>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
+  clearNecesitaCambioPassword: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -72,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<{ necesitaCambioPassword: boolean }> => {
     const response = await apiClient.post('/auth/login', { email, password });
 
     if (response.data.success && response.data.accessToken) {
@@ -87,9 +89,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(userData);
       setIsAuthenticated(true);
       setupTokenRefresh();
+
+      return { necesitaCambioPassword: !!userData.necesitaCambioPassword };
     } else {
       throw new Error(response.data.message || 'Error en el login');
     }
+  };
+
+  const clearNecesitaCambioPassword = () => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, necesitaCambioPassword: false };
+      localStorage.setItem('user', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const logout = async () => {
@@ -111,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated }}>
+    <AuthContext.Provider value={{ user, login, logout, isAuthenticated, clearNecesitaCambioPassword }}>
       {children}
     </AuthContext.Provider>
   );

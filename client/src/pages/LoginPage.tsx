@@ -25,9 +25,12 @@ export default function LoginPage() {
     setMessage('');
 
     try {
-      await login(formData.email, formData.password);
-      // Si el login es exitoso, redirige al dashboard
-      navigate('/dashboard');
+      const result = await login(formData.email, formData.password);
+      if (result.necesitaCambioPassword) {
+        navigate('/cambiar-password');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (error: any) {
       setMessage(error.message || 'Error al conectar con el servidor');
     } finally {
@@ -196,7 +199,11 @@ export default function LoginPage() {
                   Recordar sesión
                 </span>
               </label>
-              <a href="#" className="text-base text-blue-600 hover:text-blue-700 font-semibold transition-colors">
+              <a
+                href="/forgot-password"
+                onClick={(e) => { e.preventDefault(); navigate('/forgot-password'); }}
+                className="text-base text-blue-600 hover:text-blue-700 font-semibold transition-colors"
+              >
                 ¿Olvidaste tu contraseña?
               </a>
             </div>

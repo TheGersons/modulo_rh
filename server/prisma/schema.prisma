@@ -16,9 +16,10 @@ model User {
   apellido  String
   role      String   @default("empleado")
   areaId    String?
-  activo    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  activo                  Boolean  @default(true)
+  necesitaCambioPassword  Boolean  @default(false) @map("necesita_cambio_password")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   // Relaciones
   area                    Area?              @relation("AreaEmpleados", fields: [areaId], references: [id])

@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
@@ -36,6 +38,17 @@ export class AuthController {
   async logout(@Request() req, @Headers('authorization') authHeader: string) {
     const token = authHeader?.replace('Bearer ', '');
     return this.authService.logout(req.user.userId, token);
+  }
+
+  @Post('forgot-password')
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('cambiar-password')
+  async changePassword(@Request() req, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(req.user.userId, dto.nuevaPassword);
   }
 
   @UseGuards(JwtAuthGuard)

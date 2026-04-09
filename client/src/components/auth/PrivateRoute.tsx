@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface PrivateRouteProps {
@@ -8,9 +8,15 @@ interface PrivateRouteProps {
 
 export default function PrivateRoute({ children, allowedRoles }: PrivateRouteProps) {
     const { isAuthenticated, user } = useAuth();
+    const location = useLocation();
 
     if (!isAuthenticated) {
         return <Navigate to="/login" replace />;
+    }
+
+    // Si necesita cambiar contraseña, bloquear navegación a cualquier otra ruta
+    if (user?.necesitaCambioPassword && location.pathname !== '/cambiar-password') {
+        return <Navigate to="/cambiar-password" replace />;
     }
 
     // Si se especifican roles permitidos, validar

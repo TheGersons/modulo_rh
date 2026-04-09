@@ -1,9 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { PrismaService } from 'src/common/database/prisma.service';
 import { AlertasService } from '../alertas/alertas.service';
+import { MailService } from './mail.service';
 
 @Injectable()
 export class AuthService {
@@ -11,6 +12,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private alertasService: AlertasService,
+    private mailService: MailService,
   ) {}
 
   async login(
@@ -86,6 +88,7 @@ export class AuthService {
       accessToken,
       refreshToken,
       expiresIn: 900,
+      necesitaCambioPassword: user.necesitaCambioPassword,
       user: {
         id: user.id,
         email: user.email,
@@ -95,8 +98,63 @@ export class AuthService {
         areaId: user.areaId,
         area: user.area,
         puesto: user.puesto,
+        necesitaCambioPassword: user.necesitaCambioPassword,
       },
     };
+  }
+
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+
+    // Respuesta genérica para no revelar si el email existe
+    if (!user || !user.activo) {
+      return { success: true, message: 'Si el correo existe, recibirás la contraseña temporal.' };
+    }
+
+    // Generar contraseña temporal de 10 caracteres
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let contrasenaTemp = '';
+    const bytes = randomBytes(10);
+    for (let i = 0; i < 10; i++) {
+      contrasenaTemp += chars[bytes[i] % chars.length];
+    }
+
+    const hashedTemp = await bcrypt.hash(contrasenaTemp, 10);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedTemp,
+        necesitaCambioPassword: true,
+      },
+    });
+
+    // Invalidar sesiones activas
+    await this.prisma.session.deleteMany({ where: { userId: user.id } });
+
+    await this.mailService.enviarContrasenaTemp(user.email, user.nombre, contrasenaTemp);
+
+    return { success: true, message: 'Si el correo existe, recibirás la contraseña temporal.' };
+  }
+
+  async changePassword(userId: string, nuevaPassword: string): Promise<{ success: boolean; message: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+
+    const hashedPassword = await bcrypt.hash(nuevaPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        password: hashedPassword,
+        necesitaCambioPassword: false,
+      },
+    });
+
+    return { success: true, message: 'Contraseña actualizada correctamente' };
   }
 
   async refreshAccessToken(refreshToken: string) {

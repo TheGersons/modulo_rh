@@ -8,6 +8,7 @@ import { PrismaService } from 'src/common/database/prisma.service';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AuthCron } from './auth.cron';
 import { AlertasModule } from '../alertas/alertas.module';
+import { MailService } from './mail.service';
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { AlertasModule } from '../alertas/alertas.module';
     AlertasModule, // ← para inyectar AlertasService en AuthService y AuthCron
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, PrismaService, AuthCron],
+  providers: [AuthService, JwtStrategy, PrismaService, AuthCron, MailService],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

@@ -3,6 +3,8 @@ export const API_URL = "/api";
 export const API_ENDPOINTS = {
   // Auth
   login: "/auth/login",
+  forgotPassword: "/auth/forgot-password",
+  cambiarPassword: "/auth/cambiar-password",
 
   // Areas
   areas: "/areas",

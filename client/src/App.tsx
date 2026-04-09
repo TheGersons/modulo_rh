@@ -25,6 +25,8 @@ import MisKPIsPage from './pages/MisKpisPage';
 import RevisionEvidenciasPage from './pages/RevisionEvidenciasPage';
 import RevisoresAsignadosPage from './pages/RevisoresAsignadosPage';
 import MiEquipoPage from './pages/MiEquipoPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import CambiarContrasenaPage from './pages/CambiarContrasenaPage';
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -41,6 +43,24 @@ function AppRoutes() {
           <PublicRoute>
             <LoginPage />
           </PublicRoute>
+        }
+      />
+      <Route
+        path="/forgot-password"
+        element={
+          <PublicRoute>
+            <ForgotPasswordPage />
+          </PublicRoute>
+        }
+      />
+
+      {/* Cambio de contraseña obligatorio - requiere auth */}
+      <Route
+        path="/cambiar-password"
+        element={
+          <PrivateRoute>
+            <CambiarContrasenaPage />
+          </PrivateRoute>
         }
       />
 
