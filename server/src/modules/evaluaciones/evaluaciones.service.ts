@@ -166,13 +166,23 @@ export class EvaluacionesService {
                 kpiId,
                 empleadoId: empleado.id,
                 status: { not: 'cancelada' },
-                fechaInicio: { gte: fechaInicio, lte: fechaFin },
+                fechaCompletada: { gte: fechaInicio, lte: fechaFin },
               },
             });
           }
 
           // Preparar valores para cálculo
-          const valores = this.extraerValoresParaCalculo(ordenesKpi, kpi, totalNoCanceladas);
+          const valores = await this.extraerValoresParaCalculo(
+            ordenesKpi,
+            kpi,
+            totalNoCanceladas,
+            {
+              empleadoId: empleado.id,
+              areaId: empleado.areaId,
+              periodo: cerrarDto.periodo,
+              anio: cerrarDto.anio,
+            },
+          );
 
           // Calcular resultado usando el motor de KPIs
           const resultadoCalculo = await this.kpisService.calcularResultado({
@@ -262,6 +272,7 @@ export class EvaluacionesService {
     const grupos: Record<string, any[]> = {};
 
     for (const orden of ordenes) {
+      if (!orden.kpiId) continue; // saltar órdenes personalizadas (sin KPI)
       if (!grupos[orden.kpiId]) {
         grupos[orden.kpiId] = [];
       }
@@ -274,11 +285,12 @@ export class EvaluacionesService {
   // ============================================
   // EXTRAER VALORES PARA CÁLCULO
   // ============================================
-  private extraerValoresParaCalculo(
+  private async extraerValoresParaCalculo(
     ordenes: any[],
     kpi: any,
     totalNoCanceladas?: number,
-  ): Record<string, any> {
+    context?: { empleadoId: string; areaId: string | null; periodo: string; anio: number },
+  ): Promise<Record<string, any>> {
     const valores: Record<string, any> = {};
 
     // Según el tipo de cálculo, extraer valores
@@ -291,7 +303,7 @@ export class EvaluacionesService {
       case 'division':
         if (kpi.aplicaOrdenTrabajo) {
           // Numerador: órdenes aprobadas/completadas
-          // Denominador: totalNoCanceladas (todas menos canceladas) — se recibe desde cerrarPeriodo
+          // Denominador: totalNoCanceladas (todas las completadas/no-canceladas del período)
           const aprobadas = ordenes.filter(
             (o) => o.status === 'aprobada' || o.status === 'completada',
           ).length;
@@ -323,11 +335,37 @@ export class EvaluacionesService {
         }, 0) || ordenes.length;
         break;
 
-      case 'porcentaje_kpis_equipo':
-        // TODO: implementar cálculo real del % de KPIs verdes del equipo
-        valores['kpisVerdes'] = 8;  // placeholder
-        valores['totalKpis'] = 10; // placeholder
+      case 'porcentaje_kpis_equipo': {
+        // % de KPIs verdes del equipo del jefe en el mismo período
+        if (!context?.areaId) {
+          valores['kpisVerdes'] = 0;
+          valores['totalKpis'] = 1;
+          break;
+        }
+        const miembrosEquipo = await this.prisma.user.findMany({
+          where: { areaId: context.areaId, id: { not: context.empleadoId }, activo: true },
+          select: { id: true },
+        });
+        if (miembrosEquipo.length === 0) {
+          valores['kpisVerdes'] = 0;
+          valores['totalKpis'] = 1;
+          break;
+        }
+        const miembroIds = miembrosEquipo.map((m: any) => m.id);
+        const detallesEquipo = await this.prisma.evaluacionDetalle.findMany({
+          where: {
+            evaluacion: {
+              empleadoId: { in: miembroIds },
+              periodo: context.periodo,
+              anio: context.anio,
+            },
+          },
+          select: { estado: true },
+        });
+        valores['kpisVerdes'] = detallesEquipo.filter((d: any) => d.estado === 'verde').length;
+        valores['totalKpis'] = detallesEquipo.length || 1;
         break;
+      }
 
       case 'dashboard_presentado':
         // Verificar si todas las órdenes están aprobadas

@@ -759,6 +759,61 @@ export class OrdenesTrabajoService {
   }
 
   // ============================================
+  // EVIDENCIAS - PENDIENTES DE REVISIÓN (JEFE)
+  // ============================================
+  async getEvidenciasPendientes(jefeId: string) {
+    // Obtener el área del jefe
+    const jefe = await this.prisma.user.findUnique({
+      where: { id: jefeId },
+      select: { areaId: true },
+    });
+
+    if (!jefe?.areaId) return [];
+
+    // Obtener empleados del área
+    const empleados = await this.prisma.user.findMany({
+      where: { areaId: jefe.areaId, id: { not: jefeId }, activo: true },
+      select: { id: true },
+    });
+
+    if (empleados.length === 0) return [];
+
+    const empleadoIds = empleados.map((e) => e.id);
+
+    return this.prisma.evidencia.findMany({
+      where: {
+        tarea: {
+          ordenTrabajo: { empleadoId: { in: empleadoIds } },
+        },
+        status: { in: ['pendiente_revision', 'rechazada'] },
+        // Incluir rechazadas solo si tienen apelación pendiente
+        OR: [
+          { status: 'pendiente_revision' },
+          { status: 'rechazada', apelacion: { not: null }, respuestaApelacion: null },
+        ],
+      },
+      include: {
+        tarea: {
+          select: {
+            descripcion: true,
+            orden: true,
+            ordenTrabajo: {
+              select: {
+                id: true,
+                titulo: true,
+                fechaLimite: true,
+                empleado: { select: { nombre: true, apellido: true } },
+                kpi: { select: { key: true, indicador: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { fechaSubida: 'asc' },
+    });
+  }
+
+  // ============================================
   // EVIDENCIAS - OBTENER DE UNA TAREA
   // ============================================
   async getEvidencias(tareaId: string) {

@@ -87,6 +87,11 @@ export class OrdenesTrabajoController {
   // EVIDENCIAS — estáticas antes que /:id
   // ============================================
 
+  @Get('evidencias-pendientes')
+  getEvidenciasPendientes(@Request() req) {
+    return this.ordenesService.getEvidenciasPendientes(req.user.userId);
+  }
+
   @Post('evidencias')
   subirEvidencia(@Body() subirDto: SubirEvidenciaDto) {
     return this.ordenesService.subirEvidencia(subirDto);

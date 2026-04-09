@@ -117,17 +117,36 @@ export class MiEquipoService {
       };
     }
 
-    // 4. Evidencias KPI del período agrupadas por empleado y status
+    // 4. Evidencias KPI del período — estado efectivo por KPI (último intento gana)
+    //    Contamos KPIs distintos, no intentos, para evitar inflación del porcentaje.
     const empleadoIds = empleados.map((e) => e.id);
 
-    const evidenciasPorEmpleado = await this.prisma.evidenciaKPI.groupBy({
-      by: ['empleadoId', 'status'],
+    const todasEvidencias = await this.prisma.evidenciaKPI.findMany({
       where: {
         empleadoId: { in: empleadoIds },
         periodo,
+        tipo: { not: 'nota_kpi' },
       },
-      _count: { id: true },
+      select: { empleadoId: true, kpiId: true, status: true },
     });
+
+    // Para cada (empleadoId, kpiId) determinar estado efectivo:
+    // aprobada > pendiente_revision > rechazada
+    const kpiStatusPorEmpleado = new Map<string, Map<string, string>>();
+    for (const ev of todasEvidencias) {
+      if (!kpiStatusPorEmpleado.has(ev.empleadoId)) {
+        kpiStatusPorEmpleado.set(ev.empleadoId, new Map());
+      }
+      const kpiMap = kpiStatusPorEmpleado.get(ev.empleadoId)!;
+      const actual = kpiMap.get(ev.kpiId);
+      if (
+        !actual ||
+        ev.status === 'aprobada' ||
+        (ev.status === 'pendiente_revision' && actual !== 'aprobada')
+      ) {
+        kpiMap.set(ev.kpiId, ev.status);
+      }
+    }
 
     // 5. Evidencias pendientes de revisión con detalle (para mostrar al jefe)
     const evidenciasPendientes = await this.prisma.evidenciaKPI.findMany({
@@ -177,15 +196,11 @@ export class MiEquipoService {
 
     // 7. Construir datos por empleado
     const empleadosConData = empleados.map((emp) => {
-      const evEmp = evidenciasPorEmpleado.filter(
-        (e) => e.empleadoId === emp.id,
-      );
-      const aprobadas =
-        evEmp.find((e) => e.status === 'aprobada')?._count?.id ?? 0;
-      const enRevision =
-        evEmp.find((e) => e.status === 'pendiente_revision')?._count?.id ?? 0;
-      const rechazadas =
-        evEmp.find((e) => e.status === 'rechazada')?._count?.id ?? 0;
+      const kpiMap = kpiStatusPorEmpleado.get(emp.id) ?? new Map<string, string>();
+      const statuses = [...kpiMap.values()];
+      const aprobadas = statuses.filter((s) => s === 'aprobada').length;
+      const enRevision = statuses.filter((s) => s === 'pendiente_revision').length;
+      const rechazadas = statuses.filter((s) => s === 'rechazada').length;
       const totalKpis = kpisCountMap.get(emp.puesto?.id ?? '') ?? 0;
 
       const ordenesVencidas = emp.ordenesTrabajoRecibidas.filter(

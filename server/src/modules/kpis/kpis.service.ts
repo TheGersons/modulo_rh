@@ -990,7 +990,11 @@ export class KpisService {
     let empleadosDelArea: string[] = [];
     if (areaIds.size > 0) {
       const empleadosArea = await this.prisma.user.findMany({
-        where: { areaId: { in: Array.from(areaIds) }, activo: true },
+        where: {
+          areaId: { in: Array.from(areaIds) },
+          activo: true,
+          id: { not: userId }, // nunca revisar las propias evidencias
+        },
         select: { id: true },
       });
       const idsArea = empleadosArea.map((e) => e.id);
