@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { ordenesTrabajoService, type OrdenTrabajo } from '../services/ordenes-trabajo.service';
 import { usePermissions } from '../hooks/usePermissions';
+import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/layout/Layout';
 
 const TIPO_ICON: Record<string, any> = {
@@ -32,6 +33,7 @@ export default function DetalleOrdenPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { isJefe, isAdmin } = usePermissions();
+    const { user } = useAuth();
 
     const [orden, setOrden] = useState<OrdenTrabajo | null>(null);
     const [loading, setLoading] = useState(true);
@@ -181,7 +183,8 @@ export default function DetalleOrdenPage() {
     const ordenCerrada = ['completada', 'aprobada', 'vencida'].includes(orden.status);
     const vencida = diasRestantes !== null && diasRestantes < 0 && !ordenCerrada;
     const urgente = diasRestantes !== null && diasRestantes <= 3 && diasRestantes >= 0 && !ordenCerrada;
-    const puedeRevisar = isJefe || isAdmin;
+    const esCreador = !!user?.id && orden?.creadorId === user.id;
+    const puedeRevisar = isJefe || isAdmin || esCreador;
 
     const totalEvidenciasPendientes = orden.tareas?.reduce((acc, t) =>
         acc + (t.evidencias?.filter(e => e.status === 'pendiente_revision').length ?? 0), 0
