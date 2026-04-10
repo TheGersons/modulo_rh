@@ -380,6 +380,27 @@ export class OrdenesTrabajoService {
   }
 
   // ============================================
+  // APROBAR ORDEN (jefe valida la orden completada)
+  // ============================================
+  async aprobar(id: string) {
+    const orden = await this.findOne(id);
+
+    if (orden.status !== 'completada') {
+      throw new BadRequestException(
+        'Solo se pueden aprobar órdenes en estado completada',
+      );
+    }
+
+    return this.prisma.ordenTrabajo.update({
+      where: { id },
+      data: {
+        status: 'aprobada',
+        fechaCompletada: orden.fechaCompletada ?? new Date(),
+      },
+    });
+  }
+
+  // ============================================
   // CANCELAR ORDEN
   // ============================================
   async cancelar(id: string) {

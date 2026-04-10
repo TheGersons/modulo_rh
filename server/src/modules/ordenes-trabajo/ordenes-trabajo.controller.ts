@@ -208,6 +208,11 @@ export class OrdenesTrabajoController {
     return this.ordenesService.update(id, updateDto);
   }
 
+  @Post(':id/aprobar')
+  aprobar(@Param('id') id: string) {
+    return this.ordenesService.aprobar(id);
+  }
+
   @Post(':id/pausar')
   pausar(@Param('id') id: string, @Body() body: { motivo: string }) {
     return this.ordenesService.pausar(id, body.motivo);

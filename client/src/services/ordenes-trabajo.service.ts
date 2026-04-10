@@ -144,6 +144,11 @@ export const ordenesTrabajoService = {
     return response.data;
   },
 
+  aprobar: async (id: string): Promise<OrdenTrabajo> => {
+    const response = await apiClient.post(API_ENDPOINTS.ordenTrabajoAprobar(id));
+    return response.data;
+  },
+
   pausar: async (id: string, motivo: string): Promise<OrdenTrabajo> => {
     const response = await apiClient.post(
       API_ENDPOINTS.ordenTrabajoPausar(id),

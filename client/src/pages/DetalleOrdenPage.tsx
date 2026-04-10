@@ -47,6 +47,7 @@ export default function DetalleOrdenPage() {
     const [respuestaApelacion, setRespuestaApelacion] = useState('');
     const [confirmaRechazoApelacion, setConfirmaRechazoApelacion] = useState(false);
     const [guardandoApelacion, setGuardandoApelacion] = useState(false);
+    const [aprobandoOrden, setAprobandoOrden] = useState(false);
 
     useEffect(() => { cargarOrden(); }, [id]);
 
@@ -99,6 +100,19 @@ export default function DetalleOrdenPage() {
             alert('Error al responder la apelación');
         } finally {
             setGuardandoApelacion(false);
+        }
+    };
+
+    const handleAprobarOrden = async () => {
+        if (!confirm('¿Confirmas que la orden fue completada correctamente?')) return;
+        try {
+            setAprobandoOrden(true);
+            await ordenesTrabajoService.aprobar(id!);
+            await cargarOrden();
+        } catch (error: any) {
+            alert(error.message ?? 'Error al aprobar la orden');
+        } finally {
+            setAprobandoOrden(false);
         }
     };
 
@@ -550,6 +564,18 @@ export default function DetalleOrdenPage() {
                                         </div>
                                     ))}
                                 </div>
+
+                                {/* Aprobar orden cuando está completada */}
+                                {orden.status === 'completada' && totalEvidenciasPendientes === 0 && (
+                                    <button
+                                        onClick={handleAprobarOrden}
+                                        disabled={aprobandoOrden}
+                                        className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
+                                    >
+                                        <CheckCircle className="w-4 h-4" />
+                                        {aprobandoOrden ? 'Aprobando...' : 'Aprobar orden'}
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>

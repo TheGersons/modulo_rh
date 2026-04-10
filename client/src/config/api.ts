@@ -83,6 +83,7 @@ export const API_ENDPOINTS = {
   ordenesTrabajoByCreador: (creadorId: string) =>
     `/ordenes-trabajo?creadorId=${creadorId}`,
   ordenTrabajoBulk: "/ordenes-trabajo/bulk",
+  ordenTrabajoAprobar: (id: string) => `/ordenes-trabajo/${id}/aprobar`,
   ordenTrabajoPausar: (id: string) => `/ordenes-trabajo/${id}/pausar`,
   ordenTrabajoReanudar: (id: string) => `/ordenes-trabajo/${id}/reanudar`,
   ordenTrabajoCancelar: (id: string) => `/ordenes-trabajo/${id}/cancelar`,
