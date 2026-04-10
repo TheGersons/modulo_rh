@@ -267,7 +267,7 @@ function ModalPerfil({ empleado, periodo, onClose, navigate }: {
                                                 <div key={orden.id} className={`flex items-center justify-between p-3 rounded-lg border ${vencida ? 'bg-red-50 border-red-200' : dias <= 3 ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-200'}`}>
                                                     <div className="flex-1 min-w-0">
                                                         <p className="text-xs font-medium text-gray-800 truncate">{orden.titulo}</p>
-                                                        <p className="text-xs text-gray-400 mt-0.5">{orden.kpi.indicador}</p>
+                                                        <p className="text-xs text-gray-400 mt-0.5">{orden.kpi?.indicador ?? 'Orden personalizada'}</p>
                                                     </div>
                                                     <div className="flex items-center gap-2 ml-3 flex-shrink-0">
                                                         <div className="text-right">
@@ -442,7 +442,7 @@ function ModalPerfil({ empleado, periodo, onClose, navigate }: {
                                                                 {orden.evidenciasRechazadas > 0 && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">{orden.evidenciasRechazadas} rechazada{orden.evidenciasRechazadas > 1 ? 's' : ''}</span>}
                                                             </div>
                                                             <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap mb-3">
-                                                                <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" />{orden.kpi.indicador}</span>
+                                                                <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3" />{orden.kpi?.indicador ?? 'Orden personalizada'}</span>
                                                                 <span className="flex items-center gap-1"><Clock className="w-3 h-3" />
                                                                     {completada
                                                                         ? `Completada: ${formatFecha(orden.fechaCompletada!)}`
@@ -730,7 +730,7 @@ export default function MiEquipoPage() {
                                                         {emp.evidenciasPendientes.map((ev) => (
                                                             <div key={ev.id} className={`flex items-center justify-between p-2.5 rounded-lg border ${ev.esFueraDeTiempo ? 'bg-red-50 border-red-200' : 'bg-purple-50 border-purple-200'}`}>
                                                                 <div className="flex-1 min-w-0">
-                                                                    <p className="text-xs font-medium text-gray-800 truncate">{ev.kpi.indicador}</p>
+                                                                    <p className="text-xs font-medium text-gray-800 truncate">{ev.kpi?.indicador}</p>
                                                                     <p className="text-xs text-gray-500">{ev.esFueraDeTiempo ? '⚠ Fuera de tiempo · ' : ''}{formatFecha(ev.fechaSubida)}</p>
                                                                 </div>
                                                                 <a href={ev.archivoUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-gray-400 hover:text-purple-600 rounded ml-2">

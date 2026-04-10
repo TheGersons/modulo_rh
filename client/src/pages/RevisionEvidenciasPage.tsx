@@ -319,13 +319,13 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
                         <div className="p-2 bg-blue-50 rounded-lg shrink-0"><Target className="w-5 h-5 text-blue-600" /></div>
                         <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap mb-1">
-                                <span className="text-xs font-mono text-gray-400">{evidencia.kpi.key}</span>
+                                <span className="text-xs font-mono text-gray-400">{evidencia.kpi?.key}</span>
                                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${criticidadCfg.bg} ${criticidadCfg.text}`}>{criticidadCfg.label}</span>
                                 {evidencia.esFueraDeTiempo && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Fuera de tiempo</span>}
                                 {evidencia.intento > 1 && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Intento #{evidencia.intento}</span>}
                                 {evidencia.apelacion && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 flex items-center gap-1"><MessageSquare className="w-3 h-3" />Apelación</span>}
                             </div>
-                            <p className="text-sm font-semibold text-gray-900 truncate">{evidencia.kpi.indicador}</p>
+                            <p className="text-sm font-semibold text-gray-900 truncate">{evidencia.kpi?.indicador}</p>
                             <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
                                 <span className="flex items-center gap-1">
                                     <User className="w-3 h-3" />{evidencia.empleado.nombre} {evidencia.empleado.apellido}
@@ -415,7 +415,7 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
                             {/* Nombre */}
                             <div className="flex gap-2">
                                 <span className="text-xs text-gray-500 w-24 shrink-0">Nombre</span>
-                                <span className="text-xs font-medium text-gray-900">{evidencia.kpi.indicador}</span>
+                                <span className="text-xs font-medium text-gray-900">{evidencia.kpi?.indicador}</span>
                             </div>
                             {/* Descripción */}
                             {evidencia.kpi.descripcion && (
@@ -687,7 +687,7 @@ export default function RevisionEvidenciasPage() {
     // Filtrado
     const kpisFiltrados = evidenciasKPI.filter((e) => {
         const nombre = `${e.empleado.nombre} ${e.empleado.apellido}`.toLowerCase();
-        const kpi = e.kpi.indicador.toLowerCase();
+        const kpi = (e.kpi?.indicador ?? '').toLowerCase();
         return (!busqueda || nombre.includes(busqueda.toLowerCase()) || kpi.includes(busqueda.toLowerCase()))
             && (filtroCriticidad === 'todas' || e.kpi.tipoCriticidad === filtroCriticidad)
             && (!filtroFueraDeTiempo || e.esFueraDeTiempo)

@@ -189,7 +189,7 @@ export default function DetalleOrdenPage() {
                         </button>
                         <div>
                             <h1 className="text-3xl font-bold text-gray-900">{orden.titulo}</h1>
-                            <p className="text-gray-600 mt-1 text-sm">{orden.kpi.indicador}</p>
+                            <p className="text-gray-600 mt-1 text-sm">{orden.kpi?.indicador ?? 'Orden personalizada'}</p>
                         </div>
                     </div>
                     {getStatusBadge(orden.status)}
@@ -252,7 +252,7 @@ export default function DetalleOrdenPage() {
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <p className="text-sm text-gray-500">KPI</p>
-                                        <p className="font-semibold text-gray-900">{orden.kpi.indicador}</p>
+                                        <p className="font-semibold text-gray-900">{orden.kpi?.indicador ?? '—'}</p>
                                     </div>
                                     <div>
                                         <p className="text-sm text-gray-500">Tipo</p>

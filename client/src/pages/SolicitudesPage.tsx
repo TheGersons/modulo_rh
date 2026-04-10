@@ -344,7 +344,7 @@ export default function SolicitudesPage() {
                                                     <strong>Orden:</strong> {solicitud.ordenTrabajo.titulo}
                                                 </p>
                                                 <p className="text-sm text-gray-600">
-                                                    <strong>KPI:</strong> {solicitud.ordenTrabajo.kpi.indicador}
+                                                    <strong>KPI:</strong> {solicitud.ordenTrabajo.kpi?.indicador ?? 'Orden personalizada'}
                                                 </p>
                                             </div>
                                         </div>
@@ -423,7 +423,7 @@ export default function SolicitudesPage() {
                                                     <strong>Orden:</strong> {solicitud.ordenTrabajo.titulo}
                                                 </p>
                                                 <p className="text-sm text-gray-600">
-                                                    <strong>KPI:</strong> {solicitud.ordenTrabajo.kpi.indicador}
+                                                    <strong>KPI:</strong> {solicitud.ordenTrabajo.kpi?.indicador ?? 'Orden personalizada'}
                                                 </p>
                                             </div>
                                         </div>
