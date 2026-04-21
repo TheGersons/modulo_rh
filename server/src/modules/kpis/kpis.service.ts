@@ -504,13 +504,24 @@ export class KpisService {
         resultado = dto.valores['presentado'] ? 1 : 0;
         break;
       }
+      case 'acumulado_trimestral': {
+        // Espera { valorAcumulado: number, metaTrimestre: number }
+        // resultado = % de avance respecto a la meta del trimestre (0-100+)
+        // kpi.meta debe ser 100 (verde al alcanzar el 100% del umbral trimestral)
+        const valorAcumulado = Number(dto.valores['valorAcumulado'] ?? 0);
+        const metaTrimestre = Number(dto.valores['metaTrimestre'] ?? 1);
+        if (metaTrimestre <= 0)
+          throw new BadRequestException('metaTrimestre debe ser mayor a 0');
+        resultado = (valorAcumulado / metaTrimestre) * 100;
+        break;
+      }
       default: {
         // Tipo personalizado: retorna los valores tal cual
         resultado = Number(dto.valores['resultado'] ?? 0);
       }
     }
 
-    // Determinar estado según meta y umbrales
+    // Determinar estado según meta y umbrales — usa el resultado en escala original
     let estado: 'verde' | 'amarillo' | 'rojo' | null = null;
     if (kpi.meta !== null && kpi.meta !== undefined && resultado !== null) {
       const operador = kpi.operadorMeta ?? '>=';
@@ -529,6 +540,34 @@ export class KpisService {
         estado = cumpleAmarillo ? 'amarillo' : 'rojo';
       } else {
         estado = 'rojo';
+      }
+    }
+
+    // Normalizar resultado a escala 0-100 DESPUÉS del estado para no alterar evaluarMeta.
+    // Garantiza que promedioGeneral y resultadoPorcentaje sean siempre comparables.
+    if (resultado !== null) {
+      switch (kpi.tipoCalculo) {
+        case 'binario':
+        case 'dashboard_presentado':
+          // 0/1 → 0/100
+          resultado = resultado * 100;
+          break;
+        case 'division':
+        case 'porcentaje_kpis_equipo':
+        case 'acumulado_trimestral':
+          // Porcentajes: cap superior en 100, no pueden ser negativos
+          resultado = Math.min(Math.max(resultado, 0), 100);
+          break;
+        case 'conteo':
+          // Normaliza contra meta si está definida; si no, cap en 100
+          if (kpi.meta != null && kpi.meta > 0) {
+            resultado = Math.min((resultado / kpi.meta) * 100, 100);
+          } else {
+            resultado = Math.min(resultado, 100);
+          }
+          break;
+        default:
+          resultado = Math.min(Math.max(resultado, 0), 100);
       }
     }
 
@@ -570,6 +609,22 @@ export class KpisService {
       case 'porcentaje_kpis_equipo':
         // No requieren campos específicos en la fórmula
         break;
+      case 'acumulado_trimestral': {
+        const tieneVarianteA =
+          formula.metas &&
+          ['Q1', 'Q2', 'Q3', 'Q4'].every((q) => formula.metas[q] != null);
+        const tieneVarianteB =
+          formula.metaAnual != null &&
+          formula.porcentajes &&
+          ['Q1', 'Q2', 'Q3', 'Q4'].every((q) => formula.porcentajes[q] != null);
+        if (!tieneVarianteA && !tieneVarianteB) {
+          errores.push(
+            'acumulado_trimestral requiere Variante A: { campo, metas: { Q1, Q2, Q3, Q4 } } ' +
+            'o Variante B: { campo, metaAnual, porcentajes: { Q1, Q2, Q3, Q4 } }',
+          );
+        }
+        break;
+      }
       case 'personalizado':
         if (!formula.descripcion)
           errores.push(

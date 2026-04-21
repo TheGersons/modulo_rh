@@ -70,6 +70,15 @@ export class EvaluacionesService {
 
     const evaluacionesCreadas: any[] = [];
 
+    // porcentaje_kpis_equipo se difiere: el equipo puede no tener evaluaciones aún en la primera pasada
+    const pendingEquipoCalcs: Array<{
+      evaluacionId: string;
+      kpiId: string;
+      ordenesKpi: any[];
+      kpi: any;
+      context: { empleadoId: string; areaId: string | null; periodo: string; anio: number };
+    }> = [];
+
     // 3. Por cada empleado, generar evaluación
     for (const empleado of empleados) {
       try {
@@ -158,6 +167,23 @@ export class EvaluacionesService {
         for (const [kpiId, ordenesKpi] of Object.entries(detallesPorKpi)) {
           const kpi = ordenesKpi[0].kpi;
 
+          // Diferir a segunda pasada: el equipo del jefe puede no tener evaluaciones creadas aún
+          if (kpi.tipoCalculo === 'porcentaje_kpis_equipo') {
+            pendingEquipoCalcs.push({
+              evaluacionId: evaluacion.id,
+              kpiId,
+              ordenesKpi,
+              kpi,
+              context: {
+                empleadoId: empleado.id,
+                areaId: empleado.areaId,
+                periodo: cerrarDto.periodo,
+                anio: cerrarDto.anio,
+              },
+            });
+            continue;
+          }
+
           // Para division+OT el denominador debe ser todas las órdenes no-canceladas del período
           let totalNoCanceladas: number | undefined;
           if (kpi.tipoCalculo === 'division' && kpi.aplicaOrdenTrabajo) {
@@ -166,7 +192,7 @@ export class EvaluacionesService {
                 kpiId,
                 empleadoId: empleado.id,
                 status: { not: 'cancelada' },
-                fechaCompletada: { gte: fechaInicio, lte: fechaFin },
+                fechaInicio: { gte: fechaInicio, lte: fechaFin },
               },
             });
           }
@@ -215,26 +241,29 @@ export class EvaluacionesService {
           detallesCreados.push(detalle);
         }
 
-        // Calcular promedio y KPIs rojos
-        const promedioGeneral =
-          detallesCreados.reduce((sum, d) => sum + d.resultadoPorcentaje, 0) /
-          detallesCreados.length;
-        const kpisRojos = detallesCreados.filter(
-          (d) => d.estado === 'rojo',
-        ).length;
-        const porcentajeRojos = (kpisRojos / detallesCreados.length) * 100;
+        // Calcular promedio y KPIs rojos (excluyendo porcentaje_kpis_equipo diferidos)
+        // Si todos los KPIs del empleado son porcentaje_kpis_equipo, detallesCreados estará
+        // vacío aquí; la segunda pasada actualizará el promedio una vez que tenga los datos.
+        let promedioGeneral = 0;
+        let kpisRojos = 0;
+        if (detallesCreados.length > 0) {
+          promedioGeneral =
+            detallesCreados.reduce((sum, d) => sum + d.resultadoPorcentaje, 0) /
+            detallesCreados.length;
+          kpisRojos = detallesCreados.filter((d) => d.estado === 'rojo').length;
+          const porcentajeRojos = (kpisRojos / detallesCreados.length) * 100;
 
-        // Actualizar evaluación
-        await this.prisma.evaluacion.update({
-          where: { id: evaluacion.id },
-          data: {
-            promedioGeneral,
-            kpisRojos,
-            porcentajeRojos,
-            status: 'calculada',
-            fechaCalculo: new Date(),
-          },
-        });
+          await this.prisma.evaluacion.update({
+            where: { id: evaluacion.id },
+            data: {
+              promedioGeneral,
+              kpisRojos,
+              porcentajeRojos,
+              status: 'calculada',
+              fechaCalculo: new Date(),
+            },
+          });
+        }
 
         evaluacionesCreadas.push({
           empleado: `${empleado.nombre} ${empleado.apellido}`,
@@ -251,6 +280,71 @@ export class EvaluacionesService {
       } catch (error) {
         console.error(
           `❌ Error al evaluar ${empleado.nombre} ${empleado.apellido}:`,
+          error,
+        );
+      }
+    }
+
+    // ============================================
+    // SEGUNDA PASADA: porcentaje_kpis_equipo
+    // Ahora todos los empleados ya tienen sus evaluaciones — los datos del equipo están listos.
+    // ============================================
+    for (const pending of pendingEquipoCalcs) {
+      try {
+        const valores = await this.extraerValoresParaCalculo(
+          pending.ordenesKpi,
+          pending.kpi,
+          undefined,
+          pending.context,
+        );
+
+        const resultadoCalculo = await this.kpisService.calcularResultado({
+          kpiId: pending.kpiId,
+          valores,
+        });
+
+        const resultadoFinal = resultadoCalculo.resultado ?? 0;
+        const kpi = pending.kpi;
+
+        await this.prisma.evaluacionDetalle.create({
+          data: {
+            evaluacionId: pending.evaluacionId,
+            kpiId: pending.kpiId,
+            ordenTrabajoId: pending.ordenesKpi[0].id,
+            resultadoNumerico: resultadoFinal,
+            resultadoPorcentaje: resultadoFinal,
+            brechaVsMeta: kpi.meta != null ? resultadoFinal - kpi.meta : null,
+            estado: resultadoCalculo.estado,
+            formulaUtilizada: JSON.stringify({ tipoCalculo: kpi.tipoCalculo, valores }),
+            meta: kpi.meta,
+            umbralAmarillo: kpi.umbralAmarillo,
+          },
+        });
+
+        // Recalcular promedio con TODOS los detalles ya existentes en BD
+        const allDetalles = await this.prisma.evaluacionDetalle.findMany({
+          where: { evaluacionId: pending.evaluacionId },
+          select: { resultadoPorcentaje: true, estado: true },
+        });
+
+        const promedioFinal =
+          allDetalles.reduce((s, d) => s + (d.resultadoPorcentaje ?? 0), 0) / allDetalles.length;
+        const kpisRojosFinal = allDetalles.filter((d) => d.estado === 'rojo').length;
+        const porcentajeRojosFinal = (kpisRojosFinal / allDetalles.length) * 100;
+
+        await this.prisma.evaluacion.update({
+          where: { id: pending.evaluacionId },
+          data: {
+            promedioGeneral: promedioFinal,
+            kpisRojos: kpisRojosFinal,
+            porcentajeRojos: porcentajeRojosFinal,
+            status: 'calculada',
+            fechaCalculo: new Date(),
+          },
+        });
+      } catch (error) {
+        console.error(
+          `❌ Error en segunda pasada (porcentaje_kpis_equipo) evaluacion ${pending.evaluacionId}:`,
           error,
         );
       }
@@ -371,6 +465,65 @@ export class EvaluacionesService {
         // Verificar si todas las órdenes están aprobadas
         valores['presentado'] = ordenes.every((o) => o.status === 'aprobada');
         break;
+
+      case 'acumulado_trimestral': {
+        // Acumula el valor desde inicio del año hasta el fin del trimestre actual.
+        // Variante A: formula = { campo, metas: { Q1, Q2, Q3, Q4 } }
+        // Variante B: formula = { campo, metaAnual, porcentajes: { Q1, Q2, Q3, Q4 } }
+        const formula = JSON.parse(kpi.formulaCalculo);
+        const campo = formula.campo ?? 'valor';
+
+        // Determinar número de trimestre a partir del periodo ("trimestre_2" → 2)
+        const trimestreMatch = context?.periodo?.match(/trimestre_(\d)/);
+        const trimestreNum = trimestreMatch ? parseInt(trimestreMatch[1]) : 4;
+        const qKey = `Q${trimestreNum}`;
+
+        // Rango acumulado: 1-Ene del año hasta el último día del trimestre actual
+        const mesFinTrimestre = trimestreNum * 3;
+        const fechaInicioAnio = new Date(context?.anio ?? new Date().getFullYear(), 0, 1);
+        const fechaFinTrimestre = new Date(
+          context?.anio ?? new Date().getFullYear(),
+          mesFinTrimestre,
+          0, 23, 59, 59,
+        );
+
+        const ordenesAcumuladas = await this.prisma.ordenTrabajo.findMany({
+          where: {
+            kpiId: kpi.id,
+            empleadoId: context?.empleadoId,
+            status: { in: ['completada', 'aprobada'] },
+            fechaCompletada: { gte: fechaInicioAnio, lte: fechaFinTrimestre },
+          },
+          select: { valoresCalculo: true },
+        });
+
+        const valorAcumulado = ordenesAcumuladas.reduce((sum, o) => {
+          if (!o.valoresCalculo) return sum;
+          try {
+            const v = JSON.parse(o.valoresCalculo);
+            return sum + (Number(v[campo]) || 0);
+          } catch {
+            return sum;
+          }
+        }, 0);
+
+        // Meta del trimestre según variante
+        let metaTrimestre: number;
+        if (formula.metas) {
+          // Variante A: metas absolutas por trimestre
+          metaTrimestre = Number(formula.metas[qKey] ?? formula.metas['Q4'] ?? 1);
+        } else if (formula.metaAnual != null && formula.porcentajes) {
+          // Variante B: meta anual × porcentaje acumulado del trimestre
+          const pct = Number(formula.porcentajes[qKey] ?? 1);
+          metaTrimestre = formula.metaAnual * pct;
+        } else {
+          metaTrimestre = 1;
+        }
+
+        valores['valorAcumulado'] = valorAcumulado;
+        valores['metaTrimestre'] = metaTrimestre;
+        break;
+      }
 
       default:
         valores['resultado'] = ordenes.length;
