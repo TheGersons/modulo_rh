@@ -81,6 +81,21 @@ export default function GestionKPIsPage() {
   const [invertir, setInvertir] = useState(false);
   const [target, setTarget] = useState('');
 
+  // Campos de acumulado_trimestral
+  const [acumVariante, setAcumVariante] = useState<'A' | 'B'>('A');
+  const [acumCampo, setAcumCampo] = useState('valor');
+  // Variante A: metas absolutas por trimestre
+  const [acumMetaQ1, setAcumMetaQ1] = useState('');
+  const [acumMetaQ2, setAcumMetaQ2] = useState('');
+  const [acumMetaQ3, setAcumMetaQ3] = useState('');
+  const [acumMetaQ4, setAcumMetaQ4] = useState('');
+  // Variante B: meta anual + porcentajes acumulados
+  const [acumMetaAnual, setAcumMetaAnual] = useState('');
+  const [acumPctQ1, setAcumPctQ1] = useState('15');
+  const [acumPctQ2, setAcumPctQ2] = useState('30');
+  const [acumPctQ3, setAcumPctQ3] = useState('60');
+  const [acumPctQ4, setAcumPctQ4] = useState('100');
+
   // Campos de precision
   const [precisionLabelEsperado, setPrecisionLabelEsperado] = useState('Resultado esperado');
   const [precisionValorEsperado, setPrecisionValorEsperado] = useState('');
@@ -222,6 +237,22 @@ export default function GestionKPIsPage() {
           setPrecisionLabelObtenido(formula.labelObtenido || 'Resultado obtenido');
           setPrecisionModo(formula.modoEvaluacion ?? 'tolerancia');
           setPrecisionToleranciaPorc(formula.toleranciaPorc?.toString() || '5');
+        } else if (formula.tipo === 'acumulado_trimestral') {
+          setAcumCampo(formula.campo || 'valor');
+          if (formula.metas) {
+            setAcumVariante('A');
+            setAcumMetaQ1(formula.metas.Q1?.toString() || '');
+            setAcumMetaQ2(formula.metas.Q2?.toString() || '');
+            setAcumMetaQ3(formula.metas.Q3?.toString() || '');
+            setAcumMetaQ4(formula.metas.Q4?.toString() || '');
+          } else if (formula.metaAnual != null) {
+            setAcumVariante('B');
+            setAcumMetaAnual(formula.metaAnual?.toString() || '');
+            setAcumPctQ1(((formula.porcentajes?.Q1 ?? 0.15) * 100).toString());
+            setAcumPctQ2(((formula.porcentajes?.Q2 ?? 0.30) * 100).toString());
+            setAcumPctQ3(((formula.porcentajes?.Q3 ?? 0.60) * 100).toString());
+            setAcumPctQ4(((formula.porcentajes?.Q4 ?? 1.00) * 100).toString());
+          }
         }
       }
     } catch (error) {
@@ -268,6 +299,22 @@ export default function GestionKPIsPage() {
           setPrecisionLabelObtenido(formula.labelObtenido || 'Resultado obtenido');
           setPrecisionModo(formula.modoEvaluacion ?? 'tolerancia');
           setPrecisionToleranciaPorc(formula.toleranciaPorc?.toString() || '5');
+        } else if (formula.tipo === 'acumulado_trimestral') {
+          setAcumCampo(formula.campo || 'valor');
+          if (formula.metas) {
+            setAcumVariante('A');
+            setAcumMetaQ1(formula.metas.Q1?.toString() || '');
+            setAcumMetaQ2(formula.metas.Q2?.toString() || '');
+            setAcumMetaQ3(formula.metas.Q3?.toString() || '');
+            setAcumMetaQ4(formula.metas.Q4?.toString() || '');
+          } else if (formula.metaAnual != null) {
+            setAcumVariante('B');
+            setAcumMetaAnual(formula.metaAnual?.toString() || '');
+            setAcumPctQ1(((formula.porcentajes?.Q1 ?? 0.15) * 100).toString());
+            setAcumPctQ2(((formula.porcentajes?.Q2 ?? 0.30) * 100).toString());
+            setAcumPctQ3(((formula.porcentajes?.Q3 ?? 0.60) * 100).toString());
+            setAcumPctQ4(((formula.porcentajes?.Q4 ?? 1.00) * 100).toString());
+          }
         }
       }
     } catch (error) {
@@ -297,6 +344,24 @@ export default function GestionKPIsPage() {
       formula.modoEvaluacion = precisionModo;
       if (precisionModo === 'tolerancia') {
         formula.toleranciaPorc = parseFloat(precisionToleranciaPorc) || 5;
+      }
+    } else if (tipoCalculo === 'acumulado_trimestral') {
+      formula.campo = acumCampo || 'valor';
+      if (acumVariante === 'A') {
+        formula.metas = {
+          Q1: parseFloat(acumMetaQ1) || 0,
+          Q2: parseFloat(acumMetaQ2) || 0,
+          Q3: parseFloat(acumMetaQ3) || 0,
+          Q4: parseFloat(acumMetaQ4) || 0,
+        };
+      } else {
+        formula.metaAnual = parseFloat(acumMetaAnual) || 0;
+        formula.porcentajes = {
+          Q1: (parseFloat(acumPctQ1) || 0) / 100,
+          Q2: (parseFloat(acumPctQ2) || 0) / 100,
+          Q3: (parseFloat(acumPctQ3) || 0) / 100,
+          Q4: (parseFloat(acumPctQ4) || 0) / 100,
+        };
       }
     }
 
@@ -350,6 +415,20 @@ export default function GestionKPIsPage() {
       if (precisionModo === 'tolerancia' && !precisionToleranciaPorc) {
         setError('La tolerancia (%) es requerida para el modo tolerancia');
         return;
+      }
+    }
+
+    if (tipoCalculo === 'acumulado_trimestral') {
+      if (acumVariante === 'A') {
+        if (!acumMetaQ1 || !acumMetaQ2 || !acumMetaQ3 || !acumMetaQ4) {
+          setError('Debes definir las metas acumuladas para Q1, Q2, Q3 y Q4');
+          return;
+        }
+      } else {
+        if (!acumMetaAnual) {
+          setError('Debes definir la meta anual para el tipo acumulado trimestral');
+          return;
+        }
       }
     }
 
@@ -639,6 +718,7 @@ export default function GestionKPIsPage() {
             <option value="division">División</option>
             <option value="conteo">Conteo</option>
             <option value="precision">Precisión (resultado esperado vs obtenido)</option>
+            <option value="acumulado_trimestral">Acumulado Trimestral</option>
             <option value="porcentaje_kpis_equipo">% KPIs del Equipo</option>
             <option value="dashboard_presentado">Dashboard Presentado</option>
             <option value="personalizado">Personalizado</option>
@@ -903,6 +983,148 @@ export default function GestionKPIsPage() {
                 />
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── Acumulado Trimestral ── */}
+        {tipoCalculo === 'acumulado_trimestral' && (
+          <div className="mt-4 p-4 bg-indigo-50 rounded-lg border border-indigo-200 space-y-4">
+            <div className="flex items-start gap-2">
+              <Info className="w-5 h-5 text-indigo-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-indigo-900 font-medium">Acumulado Trimestral</p>
+                <p className="text-xs text-indigo-700 mt-0.5">
+                  El valor se acumula durante el año. Cada trimestre se evalúa contra su meta parcial.
+                </p>
+              </div>
+            </div>
+
+            {/* Nombre del campo */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Campo a acumular (nombre en valoresCalculo)
+              </label>
+              <input
+                type="text"
+                value={acumCampo}
+                onChange={(e) => setAcumCampo(e.target.value)}
+                placeholder="Ej: monto, ventas, ejecutado"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+              />
+            </div>
+
+            {/* Selector de variante */}
+            <div className="grid grid-cols-2 gap-3">
+              {(['A', 'B'] as const).map((v) => (
+                <label key={v} className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${acumVariante === v ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                  <input type="radio" name="acumVariante" value={v} checked={acumVariante === v} onChange={() => setAcumVariante(v)} className="mt-0.5 text-indigo-600" />
+                  <div>
+                    {v === 'A' ? (
+                      <>
+                        <p className="text-sm font-semibold text-gray-800">Variante A — Metas absolutas</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Defines el monto exacto que se debe alcanzar en cada trimestre acumulado.<br /><span className="text-indigo-600 font-medium">Ej: Q1 $135K, Q2 $225K…</span></p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-semibold text-gray-800">Variante B — Meta anual + %</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Defines una meta anual y el % acumulado que se debe cumplir en cada trimestre.<br /><span className="text-indigo-600 font-medium">Ej: $500K anual, Q1 15%, Q2 30%…</span></p>
+                      </>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            {/* Variante A */}
+            {acumVariante === 'A' && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: 'Q1 (acumulado)', value: acumMetaQ1, set: setAcumMetaQ1 },
+                  { label: 'Q2 (acumulado)', value: acumMetaQ2, set: setAcumMetaQ2 },
+                  { label: 'Q3 (acumulado)', value: acumMetaQ3, set: setAcumMetaQ3 },
+                  { label: 'Q4 (acumulado)', value: acumMetaQ4, set: setAcumMetaQ4 },
+                ].map(({ label, value, set }) => (
+                  <div key={label}>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">{label} <span className="text-red-500">*</span></label>
+                    <input
+                      type="number"
+                      value={value}
+                      onChange={(e) => set(e.target.value)}
+                      placeholder="0"
+                      min="0"
+                      step="any"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Variante B */}
+            {acumVariante === 'B' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Meta anual <span className="text-red-500">*</span></label>
+                  <input
+                    type="number"
+                    value={acumMetaAnual}
+                    onChange={(e) => setAcumMetaAnual(e.target.value)}
+                    placeholder="Ej: 500000"
+                    min="0"
+                    step="any"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+                  />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Q1 %', value: acumPctQ1, set: setAcumPctQ1 },
+                    { label: 'Q2 %', value: acumPctQ2, set: setAcumPctQ2 },
+                    { label: 'Q3 %', value: acumPctQ3, set: setAcumPctQ3 },
+                    { label: 'Q4 %', value: acumPctQ4, set: setAcumPctQ4 },
+                  ].map(({ label, value, set }) => (
+                    <div key={label}>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">{label}</label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          value={value}
+                          onChange={(e) => set(e.target.value)}
+                          placeholder="0"
+                          min="0"
+                          max="100"
+                          step="any"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+                        />
+                        <span className="text-sm text-gray-500">%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Preview de metas calculadas */}
+                {acumMetaAnual && (
+                  <div className="p-3 bg-white rounded-lg border border-indigo-200">
+                    <p className="text-xs font-medium text-gray-600 mb-2">Vista previa de metas por trimestre:</p>
+                    <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                      {[
+                        { q: 'Q1', pct: acumPctQ1 },
+                        { q: 'Q2', pct: acumPctQ2 },
+                        { q: 'Q3', pct: acumPctQ3 },
+                        { q: 'Q4', pct: acumPctQ4 },
+                      ].map(({ q, pct }) => {
+                        const meta = (parseFloat(acumMetaAnual) || 0) * ((parseFloat(pct) || 0) / 100);
+                        return (
+                          <div key={q} className="p-2 bg-indigo-50 rounded">
+                            <p className="font-semibold text-indigo-700">{q}</p>
+                            <p className="text-gray-700">{meta.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                            <p className="text-gray-400">{pct}%</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
