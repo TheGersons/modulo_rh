@@ -46,6 +46,7 @@ export class CreateKpiDto {
     'dashboard_presentado',
     'precision',
     'personalizado',
+    'acumulado_trimestral',
   ])
   tipoCalculo: string;
 
