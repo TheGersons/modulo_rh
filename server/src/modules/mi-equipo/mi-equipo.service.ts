@@ -65,6 +65,7 @@ export class MiEquipoService {
       where: {
         areaId: { in: Array.from(areaIds) },
         activo: true,
+        id: { not: userId },
       },
       select: {
         id: true,
