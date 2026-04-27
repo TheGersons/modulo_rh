@@ -148,6 +148,34 @@ export class MiEquipoService {
       }
     }
 
+    // Órdenes completadas/aprobadas del período → cuentan como 'aprobada' para su KPI
+    // (para KPIs con aplicaOrdenTrabajo=true cuya evidencia va por el flujo de órdenes)
+    const [pYear, pMonth] = periodo.split('-').map(Number);
+    const periodoStart = new Date(pYear, pMonth - 1, 1);
+    const periodoEnd   = new Date(pYear, pMonth, 1);
+
+    const ordenesAprobadas = await this.prisma.ordenTrabajo.findMany({
+      where: {
+        empleadoId: { in: empleadoIds },
+        kpiId: { not: null },
+        status: { in: ['completada', 'aprobada'] },
+        fechaLimite: { gte: periodoStart, lt: periodoEnd },
+      },
+      select: { empleadoId: true, kpiId: true },
+    });
+
+    for (const o of ordenesAprobadas) {
+      if (!o.kpiId) continue;
+      if (!kpiStatusPorEmpleado.has(o.empleadoId)) {
+        kpiStatusPorEmpleado.set(o.empleadoId, new Map());
+      }
+      const kpiMap = kpiStatusPorEmpleado.get(o.empleadoId)!;
+      // La EvidenciaKPI tiene prioridad; la orden solo rellena lo que falta
+      if (!kpiMap.has(o.kpiId)) {
+        kpiMap.set(o.kpiId, 'aprobada');
+      }
+    }
+
     // 5. Evidencias pendientes de revisión con detalle (para mostrar al jefe)
     const evidenciasPendientes = await this.prisma.evidenciaKPI.findMany({
       where: {
@@ -348,6 +376,25 @@ export class MiEquipoService {
       }
     }
 
+    // Órdenes completadas/aprobadas del período para KPIs con aplicaOrdenTrabajo
+    const [pYear, pMonth] = periodo.split('-').map(Number);
+    const periodoStart = new Date(pYear, pMonth - 1, 1);
+    const periodoEnd   = new Date(pYear, pMonth, 1);
+
+    const ordenesDelPeriodo = await this.prisma.ordenTrabajo.findMany({
+      where: {
+        empleadoId,
+        kpiId: { in: kpis.map((k) => k.id) },
+        status: { in: ['completada', 'aprobada'] },
+        fechaLimite: { gte: periodoStart, lt: periodoEnd },
+      },
+      select: { kpiId: true },
+    });
+
+    const kpisCompletadosPorOrden = new Set(
+      ordenesDelPeriodo.map((o) => o.kpiId).filter(Boolean) as string[],
+    );
+
     // Construir detalle por KPI
     const kpisDetalle = kpis.map((kpi) => {
       const evidencia = evidenciasPorKpi.get(kpi.id);
@@ -362,6 +409,7 @@ export class MiEquipoService {
       else if (evidencia?.status === 'rechazada') estadoKpi = 'rechazado';
       else if (evidencia?.status === 'pendiente_revision')
         estadoKpi = 'pendiente_revision';
+      else if (kpisCompletadosPorOrden.has(kpi.id)) estadoKpi = 'aprobado';
 
       return {
         ...kpi,
