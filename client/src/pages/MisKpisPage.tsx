@@ -21,6 +21,11 @@ interface FormulaCalculo {
     numerador?: string;
     denominador?: string;
     multiplicador?: number;
+    tipo?: string;
+    campo?: string;
+    metas?: { Q1: number; Q2: number; Q3: number; Q4: number };
+    metaAnual?: number;
+    porcentajes?: { Q1: number; Q2: number; Q3: number; Q4: number };
 }
 
 interface KPI {
@@ -78,11 +83,13 @@ interface KPIConEvidencias extends KPI {
 const TIPO_ICON: Record<string, any> = {
     porcentaje: TrendingUp, formula: Calculator, tiempo: Timer,
     conteo: Hash, binario: ToggleLeft, precision: Crosshair,
+    acumulado_trimestral: TrendingUp,
 };
 
 const TIPO_LABEL: Record<string, string> = {
     porcentaje: 'Porcentaje', formula: 'Fórmula', tiempo: 'Tiempo',
     conteo: 'Conteo', binario: 'Binario', precision: 'Precisión',
+    acumulado_trimestral: 'Acumulado Trimestral',
 };
 
 const ARCHIVO_ICON: Record<string, any> = {
@@ -114,10 +121,26 @@ function necesitaValorNumerico(kpi: KPI): boolean {
     return true;
 }
 
+function getTrimestreActual(): 'Q1' | 'Q2' | 'Q3' | 'Q4' {
+    const mes = new Date().getMonth() + 1;
+    if (mes <= 3) return 'Q1';
+    if (mes <= 6) return 'Q2';
+    if (mes <= 9) return 'Q3';
+    return 'Q4';
+}
+
+function getMetaTrimestreActual(f: FormulaCalculo): number | null {
+    const q = getTrimestreActual();
+    if (f.metas) return f.metas[q];
+    if (f.metaAnual !== undefined && f.porcentajes) return f.metaAnual * f.porcentajes[q];
+    return null;
+}
+
 function getValorLabel(kpi: KPI): string {
     if (kpi.tipoCalculo === 'tiempo') return `Valor real (${kpi.unidad ?? 'días'})`;
     if (kpi.tipoCalculo === 'conteo') return `Cantidad real (${kpi.unidad ?? 'unidades'})`;
     if (kpi.tipoCalculo === 'formula') return `Resultado calculado (${kpi.unidad ?? ''})`;
+    if (kpi.tipoCalculo === 'acumulado_trimestral') return `Valor acumulado al ${getTrimestreActual()} (${kpi.unidad ?? ''})`;
     return '';
 }
 
@@ -757,6 +780,24 @@ export default function MisKPIsPage() {
                                                     {kpi.tipoCalculo === 'division' && (() => {
                                                         const f: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
                                                         return <p className="text-purple-700">Fórmula: <strong>({f.numerador} / {f.denominador}) × {f.multiplicador}</strong>. Ingresa el resultado.</p>;
+                                                    })()}
+                                                    {kpi.tipoCalculo === 'acumulado_trimestral' && (() => {
+                                                        const f: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+                                                        const q = getTrimestreActual();
+                                                        const metaQ = getMetaTrimestreActual(f);
+                                                        return (
+                                                            <>
+                                                                <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>
+                                                                    KPI de <strong>acumulado trimestral</strong>. Registra el valor acumulado hasta el cierre del <strong>{q}</strong>.
+                                                                    {metaQ !== null && <> Meta del {q}: <strong>{metaQ} {kpi.unidad}</strong>.</>}
+                                                                </p>
+                                                                {f.metaAnual !== undefined && f.porcentajes && (
+                                                                    <p className="text-green-600 text-xs">
+                                                                        Meta anual: {f.metaAnual} {kpi.unidad} · Avance esperado al {q}: {(f.porcentajes[q] * 100).toFixed(0)}%
+                                                                    </p>
+                                                                )}
+                                                            </>
+                                                        );
                                                     })()}
                                                 </div>
                                             </div>}
