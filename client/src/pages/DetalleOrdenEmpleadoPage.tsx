@@ -50,7 +50,7 @@ interface OrdenDetalle {
     kpi: {
         id: string; key: string; indicador: string; descripcion?: string;
         tipoCriticidad: string; periodicidad: string;
-        meta?: number; operadorMeta?: string; unidad?: string;
+        meta?: number; operadorMeta?: string; sentido?: string; unidad?: string;
     };
     creador: { nombre: string; apellido: string };
     tareas: Tarea[];
@@ -357,14 +357,19 @@ export default function DetalleOrdenEmpleadoPage() {
                         </div>
                     </div>
 
-                    {orden.kpi?.meta && (
-                        <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2">
-                            <Info className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                            <p className="text-sm text-gray-600">
-                                Meta del KPI: <span className="font-medium text-gray-900">{orden.kpi.operadorMeta} {orden.kpi.meta} {orden.kpi.unidad}</span>
-                            </p>
-                        </div>
-                    )}
+                    {orden.kpi?.meta && (() => {
+                        const op = orden.kpi.operadorMeta === '=' && orden.kpi.sentido
+                            ? (orden.kpi.sentido === 'Menor es mejor' ? '<=' : '>=')
+                            : (orden.kpi.operadorMeta ?? (orden.kpi.sentido === 'Menor es mejor' ? '<=' : '>='));
+                        return (
+                            <div className="mt-4 pt-4 border-t border-gray-100 flex items-center gap-2">
+                                <Info className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                <p className="text-sm text-gray-600">
+                                    Meta del KPI: <span className="font-medium text-gray-900">{op} {orden.kpi.meta} {orden.kpi.unidad}</span>
+                                </p>
+                            </div>
+                        );
+                    })()}
 
                     {orden.enPausa && (
                         <div className="mt-4 pt-4 border-t border-gray-100">

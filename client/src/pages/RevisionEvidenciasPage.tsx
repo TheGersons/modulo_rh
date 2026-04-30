@@ -38,6 +38,7 @@ interface EvidenciaKPI {
         tipoCriticidad: string;
         meta?: number;
         operadorMeta?: string;
+        sentido?: string;
         unidad?: string;
         area: string;
     };
@@ -113,6 +114,15 @@ function evalOp(valor: number, op: string, meta: number): boolean {
     }
 }
 
+// Cuando operador = '=' y hay sentido, se interpreta como >= (Mayor es mejor)
+// o <= (Menor es mejor): superar la meta sigue siendo cumplir.
+function normalizarOp(operador: string | undefined, sentido: string | undefined): string {
+    const esMenorMejor = sentido === 'Menor es mejor';
+    if (!operador) return esMenorMejor ? '<=' : '>=';
+    if (operador === '=' && sentido) return esMenorMejor ? '<=' : '>=';
+    return operador;
+}
+
 function BadgeCumple({ cumple }: { cumple: boolean }) {
     return cumple
         ? <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">✓ Cumple meta</span>
@@ -120,7 +130,7 @@ function BadgeCumple({ cumple }: { cumple: boolean }) {
 }
 
 function ValorReportado({ evidencia }: { evidencia: EvidenciaKPI }) {
-    const { tipoCalculo, formulaCalculo, meta, operadorMeta, unidad } = evidencia.kpi;
+    const { tipoCalculo, formulaCalculo, meta, operadorMeta, sentido, unidad } = evidencia.kpi;
     const val = evidencia.valorNumerico;
 
     if (val === undefined || val === null) return null;
@@ -128,7 +138,7 @@ function ValorReportado({ evidencia }: { evidencia: EvidenciaKPI }) {
     let formula: Record<string, any> = {};
     try { if (formulaCalculo) formula = JSON.parse(formulaCalculo); } catch { /* noop */ }
 
-    const op = operadorMeta ?? '>=';
+    const op = normalizarOp(operadorMeta, sentido);
     const cumple = meta !== undefined ? evalOp(val, op, meta) : null;
 
     const Wrap = ({ children }: { children: React.ReactNode }) => (
@@ -335,7 +345,7 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
                                 <span>{evidencia.kpi.area}</span>
                                 <span>Período: {evidencia.periodo}</span>
                                 {evidencia.kpi.meta !== undefined && (
-                                    <span className="font-medium text-gray-600">Meta: {evidencia.kpi.operadorMeta} {evidencia.kpi.meta} {evidencia.kpi.unidad}</span>
+                                    <span className="font-medium text-gray-600">Meta: {normalizarOp(evidencia.kpi.operadorMeta, evidencia.kpi.sentido)} {evidencia.kpi.meta} {evidencia.kpi.unidad}</span>
                                 )}
                             </div>
                         </div>
@@ -446,7 +456,7 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
                                 <div className="flex gap-2">
                                     <span className="text-xs text-gray-500 w-24 shrink-0">Meta</span>
                                     <span className="text-xs font-semibold text-green-700">
-                                        {evidencia.kpi.operadorMeta} {evidencia.kpi.meta} {evidencia.kpi.unidad}
+                                        {normalizarOp(evidencia.kpi.operadorMeta, evidencia.kpi.sentido)} {evidencia.kpi.meta} {evidencia.kpi.unidad}
                                     </span>
                                 </div>
                             )}

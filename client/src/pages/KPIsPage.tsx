@@ -497,15 +497,20 @@ export default function KPIsPage() {
                             <p className="text-gray-500">Periodicidad</p>
                             <p className="font-medium text-gray-900">{kpi.periodicidad}</p>
                           </div>
-                          {kpi.meta && (
-                            <div>
-                              <p className="text-gray-500">Meta</p>
-                              <p className="font-medium text-gray-900">
-                                {kpi.operadorMeta} {kpi.meta}
-                                {kpi.unidad}
-                              </p>
-                            </div>
-                          )}
+                          {kpi.meta && (() => {
+                            const op = kpi.operadorMeta === '=' && kpi.sentido
+                              ? (kpi.sentido === 'Menor es mejor' ? '<=' : '>=')
+                              : (kpi.operadorMeta ?? (kpi.sentido === 'Menor es mejor' ? '<=' : '>='));
+                            return (
+                              <div>
+                                <p className="text-gray-500">Meta</p>
+                                <p className="font-medium text-gray-900">
+                                  {op} {kpi.meta}
+                                  {kpi.unidad}
+                                </p>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>

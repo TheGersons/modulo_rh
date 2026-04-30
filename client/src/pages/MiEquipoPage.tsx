@@ -357,9 +357,12 @@ function ModalPerfil({ empleado, periodo, onClose, navigate }: {
                                                             </div>
                                                             {kpi.descripcion && <p className="text-xs text-gray-500 mb-2">{kpi.descripcion}</p>}
                                                             <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
-                                                                {kpi.meta !== undefined && kpi.meta !== null && (
-                                                                    <span>Meta: <span className="font-medium text-gray-700">{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</span></span>
-                                                                )}
+                                                                {kpi.meta !== undefined && kpi.meta !== null && (() => {
+                                                                    const op = kpi.operadorMeta === '=' && kpi.sentido
+                                                                        ? (kpi.sentido === 'Menor es mejor' ? '<=' : '>=')
+                                                                        : (kpi.operadorMeta ?? (kpi.sentido === 'Menor es mejor' ? '<=' : '>='));
+                                                                    return <span>Meta: <span className="font-medium text-gray-700">{op} {kpi.meta} {kpi.unidad}</span></span>;
+                                                                })()}
                                                                 {kpi.valorObtenido !== null && (
                                                                     <span>Obtenido: <span className="font-medium text-gray-700">{kpi.valorObtenido} {kpi.unidad}</span></span>
                                                                 )}

@@ -525,7 +525,12 @@ export class KpisService {
     let estado: 'verde' | 'amarillo' | 'rojo' | null = null;
     if (kpi.meta !== null && kpi.meta !== undefined && resultado !== null) {
       const operador = kpi.operadorMeta ?? '>=';
-      const cumpleMeta = this.evaluarMeta(resultado, kpi.meta, operador);
+      const cumpleMeta = this.evaluarMeta(
+        resultado,
+        kpi.meta,
+        operador,
+        kpi.sentido,
+      );
       if (cumpleMeta) {
         estado = 'verde';
       } else if (
@@ -536,6 +541,7 @@ export class KpisService {
           resultado,
           kpi.umbralAmarillo,
           operador,
+          kpi.sentido,
         );
         estado = cumpleAmarillo ? 'amarillo' : 'rojo';
       } else {
@@ -645,12 +651,19 @@ export class KpisService {
   // ============================================
   // HELPER: Evaluar si resultado cumple la meta
   // ============================================
+  // Si operador = '=' y hay sentido definido, se interpreta como >= (Mayor es mejor)
+  // o <= (Menor es mejor), porque alcanzar/superar la meta sigue siendo cumplir.
   private evaluarMeta(
     resultado: number,
     meta: number,
     operador: string,
+    sentido?: string | null,
   ): boolean {
-    switch (operador) {
+    let op = operador;
+    if (op === '=' && sentido) {
+      op = sentido === 'Menor es mejor' ? '<=' : '>=';
+    }
+    switch (op) {
       case '>':
         return resultado > meta;
       case '>=':
@@ -816,6 +829,7 @@ export class KpisService {
         resultado,
         kpi.meta,
         kpi.operadorMeta ?? '>=',
+        kpi.sentido,
       );
       if (cumpleMeta) {
         estado = 'verde';
@@ -827,6 +841,7 @@ export class KpisService {
           resultado,
           kpi.umbralAmarillo,
           kpi.operadorMeta ?? '>=',
+          kpi.sentido,
         )
           ? 'amarillo'
           : 'rojo';
@@ -1089,6 +1104,7 @@ export class KpisService {
             formulaCalculo: true,
             meta: true,
             operadorMeta: true,
+            sentido: true,
             unidad: true,
             tipoCriticidad: true,
             area: true,

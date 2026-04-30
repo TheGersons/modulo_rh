@@ -155,6 +155,15 @@ function evaluarOperador(valor: number, operador: string, referencia: number): b
     }
 }
 
+// Cuando operador = '=' y hay sentido, se interpreta como >= (Mayor es mejor)
+// o <= (Menor es mejor): superar la meta sigue siendo cumplir.
+function normalizarOperador(operador: string | undefined, sentido: string | undefined): string {
+    const esMenorMejor = sentido === 'Menor es mejor';
+    if (!operador) return esMenorMejor ? '<=' : '>=';
+    if (operador === '=' && sentido) return esMenorMejor ? '<=' : '>=';
+    return operador;
+}
+
 function evaluarCumplimiento(kpi: KPI, valor: number): 'cumple' | 'no_cumple' | null {
     if (['binario', 'porcentaje'].includes(kpi.tipoCalculo)) return null;
     if (kpi.tipoCalculo === 'acumulado_trimestral') {
@@ -167,8 +176,7 @@ function evaluarCumplimiento(kpi: KPI, valor: number): 'cumple' | 'no_cumple' | 
         } catch { return null; }
     }
     if (kpi.meta === undefined) return null;
-    const esMenorMejor = kpi.sentido === 'Menor es mejor';
-    const op = kpi.operadorMeta ?? (esMenorMejor ? '<=' : '>=');
+    const op = normalizarOperador(kpi.operadorMeta, kpi.sentido);
     return evaluarOperador(valor, op, kpi.meta) ? 'cumple' : 'no_cumple';
 }
 
@@ -673,7 +681,7 @@ export default function MisKPIsPage() {
                                             <div className="flex items-center gap-3 flex-wrap">
                                                 {kpi.meta !== undefined && !esBinario && kpi.tipoCalculo !== 'acumulado_trimestral' && (
                                                     <p className="text-xs text-gray-400">
-                                                        Meta: <span className="font-medium text-gray-600">{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</span>
+                                                        Meta: <span className="font-medium text-gray-600">{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {kpi.meta} {kpi.unidad}</span>
                                                         <span className="ml-1 text-gray-400 capitalize">· {kpi.periodicidad}</span>
                                                     </p>
                                                 )}
@@ -747,7 +755,7 @@ export default function MisKPIsPage() {
                                                                 </div>
                                                             </div>
                                                             {kpi.meta !== undefined && (
-                                                                <p className="text-xs text-blue-600">Meta: {kpi.operadorMeta} {kpi.meta}% · Fórmula: (órdenes completadas / órdenes recibidas) × 100</p>
+                                                                <p className="text-xs text-blue-600">Meta: {normalizarOperador(kpi.operadorMeta, kpi.sentido)} {kpi.meta}% · Fórmula: (órdenes completadas / órdenes recibidas) × 100</p>
                                                             )}
                                                             {autoData.evidenciasOrdenes.length > 0 && (
                                                                 <div>
@@ -784,10 +792,10 @@ export default function MisKPIsPage() {
                                                 <Info className={`w-4 h-4 flex-shrink-0 mt-0.5 ${esBinario ? 'text-gray-500' : esPrecision ? 'text-teal-500' : esMenorMejor ? 'text-purple-500' : 'text-green-500'}`} />
                                                 <div className="space-y-1">
                                                     {esBinario && <p className="text-gray-700">Este KPI es de tipo <strong>Sí/No</strong>. Confirma que realizaste la actividad y sube la evidencia.</p>}
-                                                    {kpi.tipoCalculo === 'tiempo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra el tiempo real. Meta: <strong>{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Menor es mejor.' : 'Mayor es mejor.'}</p>}
-                                                    {kpi.tipoCalculo === 'conteo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra la cantidad real. Meta: <strong>{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Mientras menos, mejor.' : 'Mientras más, mejor.'}</p>}
+                                                    {kpi.tipoCalculo === 'tiempo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra el tiempo real. Meta: <strong>{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Menor es mejor.' : 'Mayor es mejor.'}</p>}
+                                                    {kpi.tipoCalculo === 'conteo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra la cantidad real. Meta: <strong>{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Mientras menos, mejor.' : 'Mientras más, mejor.'}</p>}
                                                     {kpi.tipoCalculo === 'formula' && <p className="text-green-700">Calcula usando: <strong>{formulaDesc}</strong>. Ingresa el resultado y sube la evidencia.</p>}
-                                                    {kpi.tipoCalculo === 'porcentaje' && <p className="text-green-700">Sube la evidencia del cumplimiento. Meta: <strong>{kpi.operadorMeta} {kpi.meta}{kpi.unidad}</strong>.</p>}
+                                                    {kpi.tipoCalculo === 'porcentaje' && <p className="text-green-700">Sube la evidencia del cumplimiento. Meta: <strong>{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {kpi.meta}{kpi.unidad}</strong>.</p>}
                                                     {esPrecision && (() => {
                                                         const f: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
                                                         const modo = f.modoEvaluacion ?? 'tolerancia';
@@ -1051,9 +1059,10 @@ export default function MisKPIsPage() {
                                                                         }
                                                                         if (kpi.meta === undefined) return null;
                                                                         const res = evaluarCumplimiento(kpi, val);
+                                                                        const opShow = normalizarOperador(kpi.operadorMeta, kpi.sentido);
                                                                         return res ? (
                                                                             <p className={`text-xs mt-1.5 font-medium ${res === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>
-                                                                                {res === 'cumple' ? `✓ Cumple (${kpi.operadorMeta} ${kpi.meta} ${kpi.unidad})` : `✗ No cumple (${kpi.operadorMeta} ${kpi.meta} ${kpi.unidad})`}
+                                                                                {res === 'cumple' ? `✓ Cumple (${opShow} ${kpi.meta} ${kpi.unidad})` : `✗ No cumple (${opShow} ${kpi.meta} ${kpi.unidad})`}
                                                                             </p>
                                                                         ) : null;
                                                                     })()}
