@@ -759,7 +759,7 @@ export default function MisKPIsPage() {
                                                         const opAT = kpi.sentido === 'Menor es mejor' ? '<=' : '>=';
                                                         return (
                                                             <p className="text-xs text-gray-400">
-                                                                Meta {q}: <span className="font-medium text-gray-600">{opAT} {fmtConUnidad(metaQ, kpi.unidad)}</span>
+                                                                Meta {q}: <span className="font-medium text-gray-600">{opAT} {fmtNum(metaQ)}</span>
                                                                 <span className="ml-1 text-gray-400 capitalize">· {kpi.periodicidad}</span>
                                                             </p>
                                                         );
@@ -999,12 +999,12 @@ export default function MisKPIsPage() {
                                                             <>
                                                                 <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>
                                                                     KPI de <strong>acumulado trimestral</strong>. Registra el valor acumulado hasta el cierre del <strong>{q}</strong>.
-                                                                    {metaQ !== null && <> Meta del {q}: <strong>{fmtConUnidad(metaQ, kpi.unidad)}</strong>.</>}
+                                                                    {metaQ !== null && <> Meta del {q}: <strong>{fmtNum(metaQ)}</strong>.</>}
                                                                 </p>
                                                                 {f.metaAnual !== undefined && (
                                                                     <p className="text-green-600 text-xs">
-                                                                        Meta anual: {fmtConUnidad(f.metaAnual, kpi.unidad)}
-                                                                        {metaQ !== null && <> · Meta {q}: {fmtConUnidad(metaQ, kpi.unidad)}</>}
+                                                                        Meta anual: {fmtNum(f.metaAnual)}
+                                                                        {metaQ !== null && <> · Meta {q}: {fmtNum(metaQ)}</>}
                                                                     </p>
                                                                 )}
                                                             </>
@@ -1231,7 +1231,7 @@ export default function MisKPIsPage() {
                                                                                 const cumple = evaluarOperador(val, opAT, metaQ);
                                                                                 return (
                                                                                     <p className={`text-xs mt-1.5 font-medium ${cumple ? 'text-green-600' : 'text-red-600'}`}>
-                                                                                        {cumple ? `✓ Cumple meta ${q} (${opAT} ${fmtConUnidad(metaQ, kpi.unidad)})` : `✗ No cumple meta ${q} (${opAT} ${fmtConUnidad(metaQ, kpi.unidad)})`}
+                                                                                        {cumple ? `✓ Cumple meta ${q} (${opAT} ${fmtNum(metaQ)})` : `✗ No cumple meta ${q} (${opAT} ${fmtNum(metaQ)})`}
                                                                                     </p>
                                                                                 );
                                                                             } catch { return null; }
