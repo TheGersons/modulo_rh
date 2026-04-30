@@ -156,8 +156,17 @@ function evaluarOperador(valor: number, operador: string, referencia: number): b
 }
 
 function evaluarCumplimiento(kpi: KPI, valor: number): 'cumple' | 'no_cumple' | null {
-    if (kpi.meta === undefined) return null;
     if (['binario', 'porcentaje'].includes(kpi.tipoCalculo)) return null;
+    if (kpi.tipoCalculo === 'acumulado_trimestral') {
+        try {
+            const f: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+            const metaQ = getMetaTrimestreActual(f);
+            if (metaQ === null) return null;
+            const op = kpi.sentido === 'Menor es mejor' ? '<=' : '>=';
+            return evaluarOperador(valor, op, metaQ) ? 'cumple' : 'no_cumple';
+        } catch { return null; }
+    }
+    if (kpi.meta === undefined) return null;
     const esMenorMejor = kpi.sentido === 'Menor es mejor';
     const op = kpi.operadorMeta ?? (esMenorMejor ? '<=' : '>=');
     return evaluarOperador(valor, op, kpi.meta) ? 'cumple' : 'no_cumple';
@@ -662,12 +671,27 @@ export default function MisKPIsPage() {
                                                 })()}
                                             </div>
                                             <div className="flex items-center gap-3 flex-wrap">
-                                                {kpi.meta !== undefined && !esBinario && (
+                                                {kpi.meta !== undefined && !esBinario && kpi.tipoCalculo !== 'acumulado_trimestral' && (
                                                     <p className="text-xs text-gray-400">
                                                         Meta: <span className="font-medium text-gray-600">{kpi.operadorMeta} {kpi.meta} {kpi.unidad}</span>
                                                         <span className="ml-1 text-gray-400 capitalize">· {kpi.periodicidad}</span>
                                                     </p>
                                                 )}
+                                                {kpi.tipoCalculo === 'acumulado_trimestral' && (() => {
+                                                    try {
+                                                        const f: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+                                                        const q = getTrimestreActual();
+                                                        const metaQ = getMetaTrimestreActual(f);
+                                                        if (metaQ === null) return null;
+                                                        const opAT = kpi.sentido === 'Menor es mejor' ? '<=' : '>=';
+                                                        return (
+                                                            <p className="text-xs text-gray-400">
+                                                                Meta {q}: <span className="font-medium text-gray-600">{opAT} {metaQ} {kpi.unidad}</span>
+                                                                <span className="ml-1 text-gray-400 capitalize">· {kpi.periodicidad}</span>
+                                                            </p>
+                                                        );
+                                                    } catch { return null; }
+                                                })()}
                                                 {isAutomatic && autoData && autoData.totalOrdenes > 0 && (
                                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${autoData.estado === 'verde' ? 'bg-green-100 text-green-700' : autoData.estado === 'amarillo' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
                                                         {autoData.estado === 'verde' ? '✓ Cumple meta' : autoData.estado === 'amarillo' ? '⚠ Cerca de meta' : '✗ No cumple meta'} ({autoData.resultado.toFixed(1)}%)
@@ -1007,8 +1031,25 @@ export default function MisKPIsPage() {
                                                                             className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
                                                                         {kpi.unidad && <span className="text-sm text-gray-500 font-medium">{kpi.unidad}</span>}
                                                                     </div>
-                                                                    {valorNumerico && kpi.meta !== undefined && (() => {
+                                                                    {valorNumerico && (() => {
                                                                         const val = parseFloat(valorNumerico);
+                                                                        if (isNaN(val)) return null;
+                                                                        if (kpi.tipoCalculo === 'acumulado_trimestral') {
+                                                                            try {
+                                                                                const f: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+                                                                                const q = getTrimestreActual();
+                                                                                const metaQ = getMetaTrimestreActual(f);
+                                                                                if (metaQ === null) return null;
+                                                                                const opAT = kpi.sentido === 'Menor es mejor' ? '<=' : '>=';
+                                                                                const cumple = evaluarOperador(val, opAT, metaQ);
+                                                                                return (
+                                                                                    <p className={`text-xs mt-1.5 font-medium ${cumple ? 'text-green-600' : 'text-red-600'}`}>
+                                                                                        {cumple ? `✓ Cumple meta ${q} (${opAT} ${metaQ} ${kpi.unidad})` : `✗ No cumple meta ${q} (${opAT} ${metaQ} ${kpi.unidad})`}
+                                                                                    </p>
+                                                                                );
+                                                                            } catch { return null; }
+                                                                        }
+                                                                        if (kpi.meta === undefined) return null;
                                                                         const res = evaluarCumplimiento(kpi, val);
                                                                         return res ? (
                                                                             <p className={`text-xs mt-1.5 font-medium ${res === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>
