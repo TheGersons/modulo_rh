@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { evaluacionesService } from '../services/evaluaciones.service';
 import Layout from '../components/layout/Layout';
+import { fmtNum, fmtConUnidad } from '../utils/format';
 
 interface Evaluacion {
   id: string;
@@ -233,7 +234,7 @@ export default function DetalleEvaluacionPage() {
             <div className="flex items-center justify-center">
               <div className="text-center">
                 <p className="text-blue-100 text-sm mb-2">Promedio General</p>
-                <p className="text-6xl font-bold mb-2">{Math.round(evaluacion.promedioGeneral)}%</p>
+                <p className="text-6xl font-bold mb-2">{fmtNum(evaluacion.promedioGeneral)}%</p>
                 <div className="flex items-center justify-center gap-4 text-sm">
                   <span className="flex items-center gap-1">
                     <CheckCircle className="w-4 h-4" />
@@ -384,7 +385,7 @@ export default function DetalleEvaluacionPage() {
                           : 'text-red-600'
                         }`}
                     >
-                      {Math.round(detalle.resultadoPorcentaje)}%
+                      {fmtNum(detalle.resultadoPorcentaje)}%
                     </p>
                     <p className="text-xs text-gray-600 mt-1">Resultado</p>
                   </div>
@@ -396,8 +397,7 @@ export default function DetalleEvaluacionPage() {
                     <div>
                       <p className="text-xs text-gray-500">Meta</p>
                       <p className="text-sm font-semibold text-gray-900">
-                        {detalle.meta}
-                        {detalle.kpi.unidad}
+                        {fmtConUnidad(detalle.meta, detalle.kpi.unidad)}
                       </p>
                     </div>
                   )}
@@ -409,8 +409,7 @@ export default function DetalleEvaluacionPage() {
                           }`}
                       >
                         {detalle.brechaVsMeta > 0 ? '+' : ''}
-                        {detalle.brechaVsMeta.toFixed(1)}
-                        {detalle.kpi.unidad}
+                        {fmtConUnidad(detalle.brechaVsMeta, detalle.kpi.unidad)}
                       </p>
                     </div>
                   )}

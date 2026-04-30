@@ -823,8 +823,39 @@ export class KpisService {
       ),
     );
 
-    let estado: 'verde' | 'amarillo' | 'rojo' | null = null;
-    if (kpi.meta !== null && kpi.meta !== undefined) {
+    // Respaldos de gracia subidos para este KPI/periodo (div+OT con 0 órdenes
+    // o respaldo adicional de contexto)
+    const respaldosGracia = await this.prisma.evidenciaKPI.findMany({
+      where: { kpiId, empleadoId, periodo, esRespaldoGracia: true },
+      select: {
+        id: true,
+        archivoUrl: true,
+        tipo: true,
+        nombre: true,
+        nota: true,
+        status: true,
+        motivoRechazo: true,
+        fechaSubida: true,
+      },
+      orderBy: { fechaSubida: 'desc' },
+    });
+    const respaldoAprobado = respaldosGracia.some((r) => r.status === 'aprobada');
+    const respaldoEnRevision = respaldosGracia.some(
+      (r) => r.status === 'pendiente_revision',
+    );
+
+    let estado: 'verde' | 'amarillo' | 'rojo' | 'no_aplica' | null = null;
+    // Caso especial: 0 órdenes en el periodo + respaldo aprobado → no_aplica.
+    // Solo aplica para division + aplicaOrdenTrabajo (que es donde el resultado
+    // automático se usa como nota oficial).
+    if (
+      total === 0 &&
+      respaldoAprobado &&
+      kpi.tipoCalculo === 'division' &&
+      kpi.aplicaOrdenTrabajo
+    ) {
+      estado = 'no_aplica';
+    } else if (kpi.meta !== null && kpi.meta !== undefined) {
       const cumpleMeta = this.evaluarMeta(
         resultado,
         kpi.meta,
@@ -855,6 +886,9 @@ export class KpisService {
       ordenesAprobadas: aprobadas,
       totalOrdenes: total,
       evidenciasOrdenes,
+      respaldosGracia,
+      respaldoAprobado,
+      respaldoEnRevision,
       estado,
       meta: kpi.meta,
       periodo,

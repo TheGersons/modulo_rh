@@ -13,6 +13,7 @@ import {
 import { evaluacionesService } from '../services/evaluaciones.service';
 import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/layout/Layout';
+import { fmtNum } from '../utils/format';
 
 interface Evaluacion {
   id: string;
@@ -221,7 +222,7 @@ export default function MisEvaluacionesPage() {
               <div>
                 <p className="text-sm text-gray-600">Promedio Global</p>
                 <p className={`text-2xl font-bold mt-1 ${getPromedioColor(stats.promedioGlobal)}`}>
-                  {stats.promedioGlobal.toFixed(1)}%
+                  {fmtNum(stats.promedioGlobal)}%
                 </p>
               </div>
               <div className="p-3 bg-purple-50 rounded-lg">
@@ -330,7 +331,7 @@ export default function MisEvaluacionesPage() {
 
                   <div className={`text-center p-3 rounded-lg ${getPromedioBg(evaluacion.promedioGeneral)}`}>
                     <p className={`text-3xl font-bold ${getPromedioColor(evaluacion.promedioGeneral)}`}>
-                      {Math.round(evaluacion.promedioGeneral)}%
+                      {fmtNum(evaluacion.promedioGeneral)}%
                     </p>
                     <p className="text-xs text-gray-600 mt-1">Promedio</p>
                   </div>

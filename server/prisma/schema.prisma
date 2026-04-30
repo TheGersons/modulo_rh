@@ -371,7 +371,7 @@ model EvaluacionDetalle {
   resultadoNumerico   Float
   resultadoPorcentaje Float?
   brechaVsMeta        Float?
-  estado              String? // "verde", "amarillo", "rojo"
+  estado              String? // "verde" | "amarillo" | "rojo" | "no_aplica"
 
   // Metadata del cálculo
   formulaUtilizada String? @db.Text // JSON con los parámetros usados en el cálculo
@@ -487,10 +487,11 @@ model EvidenciaKPI {
   respuestaApelacion String?   @map("respuesta_apelacion") @db.Text
   fechaApelacion     DateTime? @map("fecha_apelacion")
 
-  esFueraDeTiempo Boolean   @default(false) @map("es_fuera_de_tiempo")
-  fechaSubida     DateTime  @default(now()) @map("fecha_subida")
-  revisadoPor     String?   @map("revisado_por")
-  fechaRevision   DateTime? @map("fecha_revision")
+  esFueraDeTiempo  Boolean   @default(false) @map("es_fuera_de_tiempo")
+  esRespaldoGracia Boolean   @default(false) @map("es_respaldo_gracia")
+  fechaSubida      DateTime  @default(now()) @map("fecha_subida")
+  revisadoPor      String?   @map("revisado_por")
+  fechaRevision    DateTime? @map("fecha_revision")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -530,4 +531,16 @@ model RevisorAsignado {
   @@index([empleadoId])
   @@index([revisorId])
   @@map("revisores_asignados")
+}
+
+model Configuracion {
+  id          String  @id @default(uuid())
+  clave       String  @unique
+  valor       String
+  descripcion String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("configuraciones")
 }

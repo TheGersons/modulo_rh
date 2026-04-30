@@ -9,6 +9,7 @@ import { kpisService } from '../services/kpis.service';
 import { ordenesTrabajoService } from '../services/ordenes-trabajo.service';
 import Layout from '../components/layout/Layout';
 import apiClient from '../services/api.service';
+import { fmtNum, fmtConUnidad } from '../utils/format';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -345,7 +346,7 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
                                 <span>{evidencia.kpi.area}</span>
                                 <span>Período: {evidencia.periodo}</span>
                                 {evidencia.kpi.meta !== undefined && (
-                                    <span className="font-medium text-gray-600">Meta: {normalizarOp(evidencia.kpi.operadorMeta, evidencia.kpi.sentido)} {evidencia.kpi.meta} {evidencia.kpi.unidad}</span>
+                                    <span className="font-medium text-gray-600">Meta: {normalizarOp(evidencia.kpi.operadorMeta, evidencia.kpi.sentido)} {fmtConUnidad(evidencia.kpi.meta, evidencia.kpi.unidad)}</span>
                                 )}
                             </div>
                         </div>
@@ -456,7 +457,7 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
                                 <div className="flex gap-2">
                                     <span className="text-xs text-gray-500 w-24 shrink-0">Meta</span>
                                     <span className="text-xs font-semibold text-green-700">
-                                        {normalizarOp(evidencia.kpi.operadorMeta, evidencia.kpi.sentido)} {evidencia.kpi.meta} {evidencia.kpi.unidad}
+                                        {normalizarOp(evidencia.kpi.operadorMeta, evidencia.kpi.sentido)} {fmtConUnidad(evidencia.kpi.meta, evidencia.kpi.unidad)}
                                     </span>
                                 </div>
                             )}
@@ -796,10 +797,10 @@ export default function RevisionEvidenciasPage() {
                                             <td className="px-4 py-2.5 text-center font-bold text-green-700">{r.ordenesAprobadas}</td>
                                             <td className="px-4 py-2.5 text-center text-gray-600">{r.totalOrdenes}</td>
                                             <td className="px-4 py-2.5 text-center">
-                                                <span className="font-bold text-gray-800">{r.resultado.toFixed(1)}%</span>
+                                                <span className="font-bold text-gray-800">{fmtNum(r.resultado)}%</span>
                                             </td>
                                             <td className="px-4 py-2.5 text-center text-xs text-gray-500">
-                                                {r.meta !== null && r.meta !== undefined ? `≥ ${r.meta}%` : '—'}
+                                                {r.meta !== null && r.meta !== undefined ? `≥ ${fmtNum(r.meta)}%` : '—'}
                                             </td>
                                             <td className="px-4 py-2.5 text-center">
                                                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.estado === 'verde' ? 'bg-green-100 text-green-700' : r.estado === 'amarillo' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>

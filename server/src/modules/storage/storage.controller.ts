@@ -14,6 +14,8 @@ import { StorageService } from './storage.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from 'src/common/database/prisma.service';
 import { AlertasService } from '../alertas/alertas.service';
+import { ConfiguracionService } from 'src/common/configuracion/configuracion.service';
+import { enVentanaGracia, getVentanaGracia } from 'src/common/utils/grace-period.util';
 
 const TIPOS_PERMITIDOS = [
   'image/jpeg',
@@ -46,6 +48,7 @@ export class StorageController {
     private storageService: StorageService,
     private prisma: PrismaService,
     private alertasService: AlertasService,
+    private configuracion: ConfiguracionService,
   ) {}
 
   @Post('evidencia-kpi')
@@ -62,6 +65,25 @@ export class StorageController {
       include: { area: true },
     });
     if (!empleado) throw new BadRequestException('Empleado no encontrado');
+
+    // KPIs basados en órdenes de trabajo solo aceptan respaldos durante la
+    // ventana de gracia (días 1..N del mes siguiente al periodo).
+    const kpi = await this.prisma.kPI.findUnique({
+      where: { id: body.kpiId },
+      select: { aplicaOrdenTrabajo: true },
+    });
+    let esRespaldoGracia = false;
+    if (kpi?.aplicaOrdenTrabajo) {
+      const diasGracia = await this.configuracion.getDiasGracia();
+      if (!enVentanaGracia(new Date(), body.periodo, diasGracia)) {
+        const { inicio, fin } = getVentanaGracia(body.periodo, diasGracia);
+        throw new BadRequestException(
+          `Solo puedes subir respaldo de este KPI durante la ventana de gracia ` +
+            `(${inicio.toLocaleDateString('es-MX')} – ${fin.toLocaleDateString('es-MX')}).`,
+        );
+      }
+      esRespaldoGracia = true;
+    }
 
     const ruta = this.storageService.buildKpiPath({
       areaNombre: empleado.area?.nombre || 'sin_area',
@@ -98,6 +120,7 @@ export class StorageController {
         intento: intentoPrevio + 1,
         status: 'pendiente_revision',
         esFueraDeTiempo: false,
+        esRespaldoGracia,
       },
     });
     return { success: true, evidencia, archivoUrl };

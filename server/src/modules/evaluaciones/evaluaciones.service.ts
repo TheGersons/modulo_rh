@@ -120,9 +120,21 @@ export class EvaluacionesService {
           },
         });
 
-        if (ordenes.length === 0) {
+        // Respaldos de gracia aprobados para KPIs basados en órdenes de trabajo
+        // (caso "no_aplica" cuando el empleado no recibió órdenes y subió justificación).
+        const respaldosAprobados = await this.prisma.evidenciaKPI.findMany({
+          where: {
+            empleadoId: empleado.id,
+            periodo: cerrarDto.periodo,
+            esRespaldoGracia: true,
+            status: 'aprobada',
+          },
+          include: { kpi: true },
+        });
+
+        if (ordenes.length === 0 && respaldosAprobados.length === 0) {
           console.log(
-            `⚠️  ${empleado.nombre} ${empleado.apellido} no tiene órdenes completadas en este periodo`,
+            `⚠️  ${empleado.nombre} ${empleado.apellido} no tiene órdenes completadas ni respaldos aprobados en este periodo`,
           );
           continue;
         }
@@ -143,7 +155,25 @@ export class EvaluacionesService {
             )
           : todosLosKpis;
 
-        if (Object.keys(detallesPorKpi).length === 0) {
+        // KPIs con respaldo aprobado de gracia, division + aplicaOrdenTrabajo y
+        // SIN órdenes en el periodo → candidatos a "no_aplica". Respetan el
+        // filtro de periodicidad si está activo.
+        const kpisIdsConOrdenes = new Set(Object.keys(detallesPorKpi));
+        const respaldosNoAplica = respaldosAprobados.filter((r) => {
+          if (!r.kpi) return false;
+          if (kpisIdsConOrdenes.has(r.kpiId)) return false;
+          if (!r.kpi.aplicaOrdenTrabajo) return false;
+          if (r.kpi.tipoCalculo !== 'division') return false;
+          if (periodicidadFiltro && r.kpi.periodicidad !== periodicidadFiltro) return false;
+          return true;
+        });
+        // Dedupe por kpiId — múltiples respaldos del mismo KPI cuentan como uno
+        const noAplicaPorKpi = new Map<string, any>();
+        for (const r of respaldosNoAplica) {
+          if (!noAplicaPorKpi.has(r.kpiId)) noAplicaPorKpi.set(r.kpiId, r.kpi);
+        }
+
+        if (Object.keys(detallesPorKpi).length === 0 && noAplicaPorKpi.size === 0) {
           console.log(
             `⏭️  ${empleado.nombre} ${empleado.apellido} no tiene KPIs de periodicidad "${periodicidadFiltro}" en este periodo`,
           );
@@ -241,17 +271,42 @@ export class EvaluacionesService {
           detallesCreados.push(detalle);
         }
 
-        // Calcular promedio y KPIs rojos (excluyendo porcentaje_kpis_equipo diferidos)
+        // Crear detalles "no_aplica" para KPIs division+aplicaOrdenTrabajo sin órdenes
+        // pero con respaldo de gracia aprobado.
+        for (const [kpiId, kpiInfo] of noAplicaPorKpi.entries()) {
+          const detalle = await this.prisma.evaluacionDetalle.create({
+            data: {
+              evaluacionId: evaluacion.id,
+              kpiId,
+              ordenTrabajoId: null,
+              resultadoNumerico: 0,
+              resultadoPorcentaje: null,
+              brechaVsMeta: null,
+              estado: 'no_aplica',
+              formulaUtilizada: JSON.stringify({
+                tipoCalculo: kpiInfo.tipoCalculo,
+                motivo: 'sin_ordenes_respaldo_aprobado',
+              }),
+              meta: kpiInfo.meta,
+              umbralAmarillo: kpiInfo.umbralAmarillo,
+            },
+          });
+          detallesCreados.push(detalle);
+        }
+
+        // Calcular promedio y KPIs rojos (excluyendo porcentaje_kpis_equipo diferidos
+        // y los "no_aplica" que no entran al promedio del empleado).
         // Si todos los KPIs del empleado son porcentaje_kpis_equipo, detallesCreados estará
         // vacío aquí; la segunda pasada actualizará el promedio una vez que tenga los datos.
+        const detallesValidos = detallesCreados.filter((d) => d.estado !== 'no_aplica');
         let promedioGeneral = 0;
         let kpisRojos = 0;
-        if (detallesCreados.length > 0) {
+        if (detallesValidos.length > 0) {
           promedioGeneral =
-            detallesCreados.reduce((sum, d) => sum + d.resultadoPorcentaje, 0) /
-            detallesCreados.length;
-          kpisRojos = detallesCreados.filter((d) => d.estado === 'rojo').length;
-          const porcentajeRojos = (kpisRojos / detallesCreados.length) * 100;
+            detallesValidos.reduce((sum, d) => sum + d.resultadoPorcentaje, 0) /
+            detallesValidos.length;
+          kpisRojos = detallesValidos.filter((d) => d.estado === 'rojo').length;
+          const porcentajeRojos = (kpisRojos / detallesValidos.length) * 100;
 
           await this.prisma.evaluacion.update({
             where: { id: evaluacion.id },
@@ -322,15 +377,20 @@ export class EvaluacionesService {
         });
 
         // Recalcular promedio con TODOS los detalles ya existentes en BD
+        // (excluyendo "no_aplica" que no entran al promedio).
         const allDetalles = await this.prisma.evaluacionDetalle.findMany({
           where: { evaluacionId: pending.evaluacionId },
           select: { resultadoPorcentaje: true, estado: true },
         });
 
+        const validos = allDetalles.filter((d) => d.estado !== 'no_aplica');
         const promedioFinal =
-          allDetalles.reduce((s, d) => s + (d.resultadoPorcentaje ?? 0), 0) / allDetalles.length;
-        const kpisRojosFinal = allDetalles.filter((d) => d.estado === 'rojo').length;
-        const porcentajeRojosFinal = (kpisRojosFinal / allDetalles.length) * 100;
+          validos.length > 0
+            ? validos.reduce((s, d) => s + (d.resultadoPorcentaje ?? 0), 0) / validos.length
+            : 0;
+        const kpisRojosFinal = validos.filter((d) => d.estado === 'rojo').length;
+        const porcentajeRojosFinal =
+          validos.length > 0 ? (kpisRojosFinal / validos.length) * 100 : 0;
 
         await this.prisma.evaluacion.update({
           where: { id: pending.evaluacionId },

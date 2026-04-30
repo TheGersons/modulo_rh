@@ -8,6 +8,7 @@ import {
 import Layout from '../components/layout/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { kpisService } from '../services/kpis.service';
+import { fmtNum, fmtConUnidad } from '../utils/format';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -61,12 +62,26 @@ interface Evidencia {
     nota?: string;
 }
 
+interface RespaldoGracia {
+    id: string;
+    archivoUrl: string;
+    tipo: string;
+    nombre: string;
+    nota?: string;
+    status: 'pendiente_revision' | 'aprobada' | 'rechazada';
+    motivoRechazo?: string;
+    fechaSubida: string;
+}
+
 interface ResultadoAuto {
     resultado: number;
     ordenesAprobadas: number;
     totalOrdenes: number;
     evidenciasOrdenes: { archivoUrl: string; tipo: string; nombre: string; ordenTitulo: string }[];
-    estado: 'verde' | 'amarillo' | 'rojo' | null;
+    respaldosGracia?: RespaldoGracia[];
+    respaldoAprobado?: boolean;
+    respaldoEnRevision?: boolean;
+    estado: 'verde' | 'amarillo' | 'rojo' | 'no_aplica' | null;
     meta?: number;
 }
 
@@ -210,7 +225,7 @@ function calcularPrecision(
         return {
             precision,
             cumple,
-            detalle: `Desviación: ${desviacionPorc.toFixed(1)}% (tolerancia ±${tolerancia}%)`,
+            detalle: `Desviación: ${fmtNum(desviacionPorc)}% (tolerancia ±${tolerancia}%)`,
         };
     } else {
         const op = operadorMeta ?? '>=';
@@ -245,6 +260,28 @@ function formatBytes(bytes?: number): string {
 function getFormulaDescripcion(formulaCalculo: string): string {
     try { return (JSON.parse(formulaCalculo) as FormulaCalculo).descripcion ?? ''; }
     catch { return formulaCalculo; }
+}
+
+// ─── Ventana de gracia (KPIs basados en órdenes de trabajo) ──────────────────
+// Misma convención que el backend: días 1..N del mes siguiente al periodo,
+// donde N = DIAS_GRACIA_KPI (5 por defecto).
+const DIAS_GRACIA = 5;
+
+function getVentanaGracia(periodo: string, dias = DIAS_GRACIA): { inicio: Date; fin: Date } {
+    const [a, m] = periodo.split('-').map(Number);
+    return {
+        inicio: new Date(a, m, 1, 0, 0, 0, 0),
+        fin: new Date(a, m, dias, 23, 59, 59, 999),
+    };
+}
+
+function enVentanaGracia(now: Date, periodo: string, dias = DIAS_GRACIA): boolean {
+    const { inicio, fin } = getVentanaGracia(periodo, dias);
+    return now >= inicio && now <= fin;
+}
+
+function fmtFecha(d: Date): string {
+    return d.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -351,9 +388,13 @@ export default function MisKPIsPage() {
     const handleSeleccionarArchivo = (kpiId: string) => {
         const kpi = kpis.find((k) => k.id === kpiId);
         if (!kpi) return;
-        if (kpi.tipoCalculo === 'binario' && !confirmadoBinario) { alert('Debes confirmar que completaste la actividad.'); return; }
-        if (necesitaValorNumerico(kpi) && !valorNumerico) { alert(`Debes ingresar ${getValorLabel(kpi)}.`); return; }
-        if (kpi.tipoCalculo === 'precision' && !valorObtenido) { alert('Debes ingresar el resultado obtenido.'); return; }
+        // KPIs basados en órdenes de trabajo: respaldo libre durante la ventana de gracia,
+        // sin exigir valor numérico ni confirmación binaria.
+        if (!kpi.aplicaOrdenTrabajo) {
+            if (kpi.tipoCalculo === 'binario' && !confirmadoBinario) { alert('Debes confirmar que completaste la actividad.'); return; }
+            if (necesitaValorNumerico(kpi) && !valorNumerico) { alert(`Debes ingresar ${getValorLabel(kpi)}.`); return; }
+            if (kpi.tipoCalculo === 'precision' && !valorObtenido) { alert('Debes ingresar el resultado obtenido.'); return; }
+        }
         setKpiSeleccionado(kpiId);
         fileInputRef.current?.click();
     };
@@ -372,16 +413,18 @@ export default function MisKPIsPage() {
         formData.append('periodo', getPeriodoActual());
         formData.append('anio', String(new Date().getFullYear()));
 
-        if (necesitaValorNumerico(kpi) && valorNumerico) formData.append('valorNumerico', valorNumerico);
-        if (kpi.tipoCalculo === 'binario') formData.append('valorNumerico', '1');
-        if (notaEvidencia) formData.append('nota', notaEvidencia);
-
-        if (kpi.tipoCalculo === 'precision' && valorObtenido) {
-            const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
-            const { precision } = calcularPrecision(formula, valorObtenido, kpi.meta, kpi.operadorMeta);
-            if (precision !== null) formData.append('valorNumerico', precision.toFixed(2));
-            formData.append('valorObtenido', valorObtenido);
+        // KPIs aplicaOrdenTrabajo: solo nota + archivo (respaldo libre), no valor numérico
+        if (!kpi.aplicaOrdenTrabajo) {
+            if (necesitaValorNumerico(kpi) && valorNumerico) formData.append('valorNumerico', valorNumerico);
+            if (kpi.tipoCalculo === 'binario') formData.append('valorNumerico', '1');
+            if (kpi.tipoCalculo === 'precision' && valorObtenido) {
+                const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+                const { precision } = calcularPrecision(formula, valorObtenido, kpi.meta, kpi.operadorMeta);
+                if (precision !== null) formData.append('valorNumerico', fmtNum(precision));
+                formData.append('valorObtenido', valorObtenido);
+            }
         }
+        if (notaEvidencia) formData.append('nota', notaEvidencia);
 
         setSubiendoEvidencia(kpiSeleccionado);
         setUploadProgress(0);
@@ -567,13 +610,26 @@ export default function MisKPIsPage() {
                             const mostrandoForm = mostrarFormSubida === kpi.id;
                             const cargando = subiendoEvidencia === kpi.id;
                             const isAutomatic = kpi.tipoCalculo === 'division' && kpi.aplicaOrdenTrabajo;
+                            const aplicaOT = kpi.aplicaOrdenTrabajo;
                             const autoData = isAutomatic ? resultadosAuto[kpi.id] : undefined;
+
+                            // Ventana de gracia: solo aplica a KPIs basados en órdenes de trabajo
+                            // (incluye aplicaOrdenTrabajo de cualquier tipoCalculo, no solo division).
+                            const periodoActual = getPeriodoActual();
+                            const ventana = aplicaOT ? getVentanaGracia(periodoActual) : null;
+                            const enGracia = aplicaOT && enVentanaGracia(new Date(), periodoActual);
+                            const respaldoAprobado = !!autoData?.respaldoAprobado;
+                            const respaldoEnRevision = !!autoData?.respaldoEnRevision;
 
                             const aprobadas = kpi.evidenciasAprobadas;
                             const requeridas = kpi.evidenciasRequeridas;
                             const enRevision = kpi.evidencias.filter((e) => e.status === 'pendiente_revision').length;
                             const falta = Math.max(0, requeridas - aprobadas - enRevision);
-                            const puedeSubir = !isAutomatic && kpi.statusKPI !== 'aprobado';
+                            // KPIs basados en orden de trabajo solo permiten subir respaldo durante la ventana de gracia.
+                            // El resto, flujo normal.
+                            const puedeSubir = aplicaOT
+                                ? enGracia
+                                : kpi.statusKPI !== 'aprobado';
 
                             const ultimaEvidenciaConValor = kpi.evidencias
                                 .filter((e) => e.valorNumerico !== undefined)
@@ -584,9 +640,18 @@ export default function MisKPIsPage() {
 
                             // Para KPIs automáticos, el statusKPI se deriva del resultado calculado
                             const autoStatusCfg = isAutomatic && autoData
-                                ? autoData.totalOrdenes === 0
-                                    ? KPI_STATUS_CONFIG['pendiente']
-                                    : KPI_STATUS_CONFIG['en_progreso']
+                                ? autoData.estado === 'no_aplica'
+                                    ? { label: 'No aplica', color: 'text-gray-700', bg: 'bg-gray-100', border: 'border-gray-200' }
+                                    : autoData.totalOrdenes === 0
+                                        ? KPI_STATUS_CONFIG['pendiente']
+                                        : KPI_STATUS_CONFIG['en_progreso']
+                                : null;
+                            const autoBadgeLabel = isAutomatic
+                                ? autoData?.estado === 'no_aplica'
+                                    ? 'No aplica'
+                                    : autoData?.totalOrdenes === 0
+                                        ? 'Sin órdenes'
+                                        : 'Automático'
                                 : null;
 
                             return (
@@ -614,7 +679,7 @@ export default function MisKPIsPage() {
                                                     <p className="text-sm font-semibold text-gray-900 mt-0.5">{kpi.descripcion}</p>
                                                 </div>
                                                 <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${(autoStatusCfg ?? statusCfg).bg} ${(autoStatusCfg ?? statusCfg).color}`}>
-                                                    {isAutomatic ? (autoData?.totalOrdenes === 0 ? 'Sin órdenes' : 'Automático') : statusCfg.label}
+                                                    {isAutomatic ? autoBadgeLabel : statusCfg.label}
                                                 </span>
                                             </div>
                                             <p className="text-xs text-gray-500 mb-2">{formulaDesc}</p>
@@ -627,7 +692,7 @@ export default function MisKPIsPage() {
                                                                     style={{ width: `${Math.min(autoData.resultado, 100)}%` }} />
                                                             </div>
                                                             <span className="text-xs text-gray-500 flex-shrink-0">
-                                                                {autoData.ordenesAprobadas}/{autoData.totalOrdenes} órdenes · {autoData.resultado.toFixed(1)}%
+                                                                {autoData.ordenesAprobadas}/{autoData.totalOrdenes} órdenes · {fmtNum(autoData.resultado)}%
                                                             </span>
                                                         </>
                                                     ) : (
@@ -681,7 +746,7 @@ export default function MisKPIsPage() {
                                             <div className="flex items-center gap-3 flex-wrap">
                                                 {kpi.meta !== undefined && !esBinario && kpi.tipoCalculo !== 'acumulado_trimestral' && (
                                                     <p className="text-xs text-gray-400">
-                                                        Meta: <span className="font-medium text-gray-600">{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {kpi.meta} {kpi.unidad}</span>
+                                                        Meta: <span className="font-medium text-gray-600">{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {fmtConUnidad(kpi.meta, kpi.unidad)}</span>
                                                         <span className="ml-1 text-gray-400 capitalize">· {kpi.periodicidad}</span>
                                                     </p>
                                                 )}
@@ -694,7 +759,7 @@ export default function MisKPIsPage() {
                                                         const opAT = kpi.sentido === 'Menor es mejor' ? '<=' : '>=';
                                                         return (
                                                             <p className="text-xs text-gray-400">
-                                                                Meta {q}: <span className="font-medium text-gray-600">{opAT} {metaQ} {kpi.unidad}</span>
+                                                                Meta {q}: <span className="font-medium text-gray-600">{opAT} {fmtConUnidad(metaQ, kpi.unidad)}</span>
                                                                 <span className="ml-1 text-gray-400 capitalize">· {kpi.periodicidad}</span>
                                                             </p>
                                                         );
@@ -702,12 +767,12 @@ export default function MisKPIsPage() {
                                                 })()}
                                                 {isAutomatic && autoData && autoData.totalOrdenes > 0 && (
                                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${autoData.estado === 'verde' ? 'bg-green-100 text-green-700' : autoData.estado === 'amarillo' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                                                        {autoData.estado === 'verde' ? '✓ Cumple meta' : autoData.estado === 'amarillo' ? '⚠ Cerca de meta' : '✗ No cumple meta'} ({autoData.resultado.toFixed(1)}%)
+                                                        {autoData.estado === 'verde' ? '✓ Cumple meta' : autoData.estado === 'amarillo' ? '⚠ Cerca de meta' : '✗ No cumple meta'} ({fmtNum(autoData.resultado)}%)
                                                     </span>
                                                 )}
                                                 {!isAutomatic && cumplimiento && ultimaEvidenciaConValor && (
                                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cumplimiento === 'cumple' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                        {cumplimiento === 'cumple' ? '✓ Cumple meta' : '✗ No cumple meta'} ({ultimaEvidenciaConValor.valorNumerico}{esPrecision ? '%' : ` ${kpi.unidad}`})
+                                                        {cumplimiento === 'cumple' ? '✓ Cumple meta' : '✗ No cumple meta'} ({esPrecision ? `${fmtNum(ultimaEvidenciaConValor.valorNumerico)}%` : fmtConUnidad(ultimaEvidenciaConValor.valorNumerico, kpi.unidad)})
                                                     </span>
                                                 )}
                                                 {kpi.notaKPI && <span className="flex items-center gap-1 text-xs text-amber-600"><StickyNote className="w-3 h-3" /> Tiene nota</span>}
@@ -726,6 +791,32 @@ export default function MisKPIsPage() {
                                                 <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg">
                                                     <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
                                                     <p className="text-xs text-blue-700">{kpi.descripcion}</p>
+                                                </div>
+                                            )}
+
+                                            {/* Banner de ventana de gracia (KPIs basados en órdenes de trabajo) */}
+                                            {aplicaOT && ventana && (
+                                                <div className={`p-3 rounded-lg border text-xs ${enGracia ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+                                                    <div className="flex items-start gap-2">
+                                                        <Clock className={`w-4 h-4 flex-shrink-0 mt-0.5 ${enGracia ? 'text-amber-600' : 'text-gray-400'}`} />
+                                                        <div className="space-y-0.5">
+                                                            {enGracia ? (
+                                                                <>
+                                                                    <p className="font-semibold">Ventana de respaldo abierta hasta el {fmtFecha(ventana.fin)}</p>
+                                                                    {isAutomatic && autoData?.totalOrdenes === 0 ? (
+                                                                        <p>Si durante el periodo no recibiste órdenes de trabajo, sube un respaldo para que el KPI se marque como <strong>"No aplica"</strong> y no afecte tu evaluación.</p>
+                                                                    ) : (
+                                                                        <p>Puedes subir respaldo o contexto adicional para este KPI durante estos días.</p>
+                                                                    )}
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <p className="font-semibold">Respaldos disponibles del {fmtFecha(ventana.inicio)} al {fmtFecha(ventana.fin)}</p>
+                                                                    <p>Antes de esa fecha no se puede subir respaldo a este KPI.</p>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             )}
 
@@ -750,12 +841,12 @@ export default function MisKPIsPage() {
                                                                 <div className={`rounded-lg p-3 text-center border ${autoData.estado === 'verde' ? 'bg-green-50 border-green-200' : autoData.estado === 'amarillo' ? 'bg-yellow-50 border-yellow-200' : autoData.totalOrdenes > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-blue-100'}`}>
                                                                     <p className="text-xs text-gray-500 mb-1">Resultado</p>
                                                                     <p className={`text-xl font-bold ${autoData.estado === 'verde' ? 'text-green-700' : autoData.estado === 'amarillo' ? 'text-yellow-700' : autoData.totalOrdenes > 0 ? 'text-red-700' : 'text-gray-400'}`}>
-                                                                        {autoData.resultado.toFixed(1)}%
+                                                                        {fmtNum(autoData.resultado)}%
                                                                     </p>
                                                                 </div>
                                                             </div>
                                                             {kpi.meta !== undefined && (
-                                                                <p className="text-xs text-blue-600">Meta: {normalizarOperador(kpi.operadorMeta, kpi.sentido)} {kpi.meta}% · Fórmula: (órdenes completadas / órdenes recibidas) × 100</p>
+                                                                <p className="text-xs text-blue-600">Meta: {normalizarOperador(kpi.operadorMeta, kpi.sentido)} {fmtNum(kpi.meta)}% · Fórmula: (órdenes completadas / órdenes recibidas) × 100</p>
                                                             )}
                                                             {autoData.evidenciasOrdenes.length > 0 && (
                                                                 <div>
@@ -776,6 +867,93 @@ export default function MisKPIsPage() {
                                                             {autoData.evidenciasOrdenes.length === 0 && autoData.totalOrdenes > 0 && (
                                                                 <p className="text-xs text-gray-400 italic">Las evidencias de las órdenes aún no han sido aprobadas.</p>
                                                             )}
+
+                                                            {/* Respaldos de gracia */}
+                                                            {autoData.respaldosGracia && autoData.respaldosGracia.length > 0 && (
+                                                                <div className="pt-2 border-t border-blue-100">
+                                                                    <p className="text-xs font-semibold text-gray-600 mb-2">Respaldos subidos en ventana de gracia ({autoData.respaldosGracia.length})</p>
+                                                                    <div className="space-y-1.5">
+                                                                        {autoData.respaldosGracia.map((r) => {
+                                                                            const cfg = EVIDENCIA_STATUS[r.status];
+                                                                            return (
+                                                                                <div key={r.id} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200">
+                                                                                    {r.tipo.startsWith('image/') ? <Image className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" /> : <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
+                                                                                    <div className="flex-1 min-w-0">
+                                                                                        <p className="text-xs text-gray-700 truncate">{r.nombre}</p>
+                                                                                        {r.nota && <p className="text-xs text-gray-400 italic truncate">"{r.nota}"</p>}
+                                                                                        {r.motivoRechazo && <p className="text-xs text-red-600 truncate">Rechazo: {r.motivoRechazo}</p>}
+                                                                                    </div>
+                                                                                    {cfg && <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>}
+                                                                                    <a href={r.archivoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex-shrink-0 flex items-center gap-1">
+                                                                                        <Eye className="w-3 h-3" />Ver
+                                                                                    </a>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                    {autoData.estado === 'no_aplica' && (
+                                                                        <p className="text-xs text-gray-600 mt-2">✓ Respaldo aprobado · Este KPI quedará como <strong>"No aplica"</strong> al cierre y no afectará tu promedio.</p>
+                                                                    )}
+                                                                    {respaldoEnRevision && !respaldoAprobado && (
+                                                                        <p className="text-xs text-orange-600 mt-2">⏳ Tu respaldo está en revisión por tu jefe.</p>
+                                                                    )}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Formulario de respaldo (solo durante la ventana de gracia) */}
+                                                            {enGracia && (
+                                                                <div className="pt-2 border-t border-blue-100">
+                                                                    {mostrarFormSubida !== kpi.id ? (
+                                                                        <button onClick={() => handleAbrirSubida(kpi.id)}
+                                                                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-50 transition-colors">
+                                                                            <Plus className="w-4 h-4" />
+                                                                            {autoData.totalOrdenes === 0 ? 'Subir respaldo (sin órdenes en el periodo)' : 'Subir respaldo o contexto adicional'}
+                                                                        </button>
+                                                                    ) : (
+                                                                        <div className="space-y-3 p-4 bg-white rounded-xl border border-amber-200">
+                                                                            <p className="text-sm font-semibold text-amber-800">Subir respaldo de gracia</p>
+                                                                            <p className="text-xs text-gray-600">
+                                                                                {autoData.totalOrdenes === 0
+                                                                                    ? 'Adjunta evidencia de que durante el periodo no recibiste órdenes de trabajo (ej: capturas de bandeja, correos, etc).'
+                                                                                    : 'Adjunta contexto adicional (ej: trabajos atendidos por fuera del sistema).'}
+                                                                            </p>
+                                                                            <div>
+                                                                                <label className="text-xs font-medium text-gray-600 mb-1 block">Nota / justificación (opcional)</label>
+                                                                                <textarea value={notaEvidencia} onChange={(e) => setNotaEvidencia(e.target.value)}
+                                                                                    placeholder="Describe brevemente el contexto..." rows={2}
+                                                                                    spellCheck={false}
+                                                                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-amber-500" />
+                                                                            </div>
+                                                                            {subiendoEvidencia === kpi.id && (
+                                                                                <div className="space-y-1.5">
+                                                                                    <div className="flex justify-between text-xs text-gray-500">
+                                                                                        <span>Subiendo archivo...</span>
+                                                                                        <span className="font-medium">{uploadProgress}%</span>
+                                                                                    </div>
+                                                                                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                                                                                        <div className="h-2 rounded-full bg-amber-500 transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            <p className="text-xs text-gray-400">Formatos: imágenes, video, PDF, Word, Excel · Máximo 30 MB.</p>
+                                                                            <div className="flex gap-2">
+                                                                                <button onClick={() => handleSeleccionarArchivo(kpi.id)}
+                                                                                    disabled={subiendoEvidencia === kpi.id}
+                                                                                    className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50">
+                                                                                    {subiendoEvidencia === kpi.id ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
+                                                                                    {subiendoEvidencia === kpi.id ? 'Subiendo...' : 'Seleccionar archivo'}
+                                                                                </button>
+                                                                                {subiendoEvidencia !== kpi.id && (
+                                                                                    <button onClick={() => setMostrarFormSubida(null)}
+                                                                                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">
+                                                                                        Cancelar
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                         </>
                                                     ) : (
                                                         <p className="text-xs text-blue-600">Cargando resultado...</p>
@@ -792,10 +970,10 @@ export default function MisKPIsPage() {
                                                 <Info className={`w-4 h-4 flex-shrink-0 mt-0.5 ${esBinario ? 'text-gray-500' : esPrecision ? 'text-teal-500' : esMenorMejor ? 'text-purple-500' : 'text-green-500'}`} />
                                                 <div className="space-y-1">
                                                     {esBinario && <p className="text-gray-700">Este KPI es de tipo <strong>Sí/No</strong>. Confirma que realizaste la actividad y sube la evidencia.</p>}
-                                                    {kpi.tipoCalculo === 'tiempo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra el tiempo real. Meta: <strong>{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Menor es mejor.' : 'Mayor es mejor.'}</p>}
-                                                    {kpi.tipoCalculo === 'conteo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra la cantidad real. Meta: <strong>{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {kpi.meta} {kpi.unidad}</strong>. {esMenorMejor ? 'Mientras menos, mejor.' : 'Mientras más, mejor.'}</p>}
+                                                    {kpi.tipoCalculo === 'tiempo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra el tiempo real. Meta: <strong>{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {fmtConUnidad(kpi.meta, kpi.unidad)}</strong>. {esMenorMejor ? 'Menor es mejor.' : 'Mayor es mejor.'}</p>}
+                                                    {kpi.tipoCalculo === 'conteo' && <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>Registra la cantidad real. Meta: <strong>{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {fmtConUnidad(kpi.meta, kpi.unidad)}</strong>. {esMenorMejor ? 'Mientras menos, mejor.' : 'Mientras más, mejor.'}</p>}
                                                     {kpi.tipoCalculo === 'formula' && <p className="text-green-700">Calcula usando: <strong>{formulaDesc}</strong>. Ingresa el resultado y sube la evidencia.</p>}
-                                                    {kpi.tipoCalculo === 'porcentaje' && <p className="text-green-700">Sube la evidencia del cumplimiento. Meta: <strong>{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {kpi.meta}{kpi.unidad}</strong>.</p>}
+                                                    {kpi.tipoCalculo === 'porcentaje' && <p className="text-green-700">Sube la evidencia del cumplimiento. Meta: <strong>{normalizarOperador(kpi.operadorMeta, kpi.sentido)} {fmtConUnidad(kpi.meta, kpi.unidad)}</strong>.</p>}
                                                     {esPrecision && (() => {
                                                         const f: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
                                                         const modo = f.modoEvaluacion ?? 'tolerancia';
@@ -803,8 +981,8 @@ export default function MisKPIsPage() {
                                                             <>
                                                                 <p className="text-teal-700">Ingresa tu <strong>{f.labelObtenido ?? 'resultado obtenido'}</strong>. El valor de referencia es <strong>{f.valorEsperado} {kpi.unidad}</strong>.</p>
                                                                 {modo === 'tolerancia'
-                                                                    ? <p className="text-teal-600">Modo <strong>tolerancia ±{f.toleranciaPorc ?? 5}%</strong>: cumples si tu desviación es ≤ ese margen y la precisión ≥ <strong>{kpi.meta}%</strong>.</p>
-                                                                    : <p className="text-teal-600">Modo <strong>umbral directo</strong>: cumples si tu resultado {kpi.operadorMeta} {f.valorEsperado} y la precisión ≥ <strong>{kpi.meta}%</strong>.</p>
+                                                                    ? <p className="text-teal-600">Modo <strong>tolerancia ±{f.toleranciaPorc ?? 5}%</strong>: cumples si tu desviación es ≤ ese margen y la precisión ≥ <strong>{fmtNum(kpi.meta)}%</strong>.</p>
+                                                                    : <p className="text-teal-600">Modo <strong>umbral directo</strong>: cumples si tu resultado {kpi.operadorMeta} {fmtNum(f.valorEsperado)} y la precisión ≥ <strong>{fmtNum(kpi.meta)}%</strong>.</p>
                                                                 }
                                                             </>
                                                         );
@@ -821,11 +999,12 @@ export default function MisKPIsPage() {
                                                             <>
                                                                 <p className={esMenorMejor ? 'text-purple-700' : 'text-green-700'}>
                                                                     KPI de <strong>acumulado trimestral</strong>. Registra el valor acumulado hasta el cierre del <strong>{q}</strong>.
-                                                                    {metaQ !== null && <> Meta del {q}: <strong>{metaQ} {kpi.unidad}</strong>.</>}
+                                                                    {metaQ !== null && <> Meta del {q}: <strong>{fmtConUnidad(metaQ, kpi.unidad)}</strong>.</>}
                                                                 </p>
-                                                                {f.metaAnual !== undefined && f.porcentajes && (
+                                                                {f.metaAnual !== undefined && (
                                                                     <p className="text-green-600 text-xs">
-                                                                        Meta anual: {f.metaAnual} {kpi.unidad} · Avance esperado al {q}: {(f.porcentajes[q] * 100).toFixed(0)}%
+                                                                        Meta anual: {fmtConUnidad(f.metaAnual, kpi.unidad)}
+                                                                        {metaQ !== null && <> · Meta {q}: {fmtConUnidad(metaQ, kpi.unidad)}</>}
                                                                     </p>
                                                                 )}
                                                             </>
@@ -889,7 +1068,7 @@ export default function MisKPIsPage() {
                                                                             <div className="flex items-center gap-2 mt-1">
                                                                                 <p className="text-xs text-gray-500">
                                                                                     {esPrecision ? 'Precisión: ' : 'Valor: '}
-                                                                                    <span className="font-medium">{slot.valorNumerico}{esPrecision ? '%' : ` ${kpi.unidad}`}</span>
+                                                                                    <span className="font-medium">{esPrecision ? `${fmtNum(slot.valorNumerico)}%` : fmtConUnidad(slot.valorNumerico, kpi.unidad)}</span>
                                                                                 </p>
                                                                                 {sCumpl && <span className={`text-xs font-medium ${sCumpl === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>{sCumpl === 'cumple' ? '✓ Cumple' : '✗ No cumple'}</span>}
                                                                             </div>
@@ -1020,9 +1199,9 @@ export default function MisKPIsPage() {
                                                                         {/* Feedback en tiempo real */}
                                                                         {precision !== null && (
                                                                             <div className={`p-2.5 rounded-lg text-xs font-medium space-y-0.5 ${cumple ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                                                                                <p>Precisión calculada: <strong>{precision.toFixed(1)}%</strong></p>
+                                                                                <p>Precisión calculada: <strong>{fmtNum(precision)}%</strong></p>
                                                                                 <p>{detalle}</p>
-                                                                                {kpi.meta !== undefined && <p>{cumple ? `✓ Cumple la meta de precisión (≥ ${kpi.meta}%)` : `✗ No cumple la meta de precisión (≥ ${kpi.meta}%)`}</p>}
+                                                                                {kpi.meta !== undefined && <p>{cumple ? `✓ Cumple la meta de precisión (≥ ${fmtNum(kpi.meta)}%)` : `✗ No cumple la meta de precisión (≥ ${fmtNum(kpi.meta)}%)`}</p>}
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -1052,7 +1231,7 @@ export default function MisKPIsPage() {
                                                                                 const cumple = evaluarOperador(val, opAT, metaQ);
                                                                                 return (
                                                                                     <p className={`text-xs mt-1.5 font-medium ${cumple ? 'text-green-600' : 'text-red-600'}`}>
-                                                                                        {cumple ? `✓ Cumple meta ${q} (${opAT} ${metaQ} ${kpi.unidad})` : `✗ No cumple meta ${q} (${opAT} ${metaQ} ${kpi.unidad})`}
+                                                                                        {cumple ? `✓ Cumple meta ${q} (${opAT} ${fmtConUnidad(metaQ, kpi.unidad)})` : `✗ No cumple meta ${q} (${opAT} ${fmtConUnidad(metaQ, kpi.unidad)})`}
                                                                                     </p>
                                                                                 );
                                                                             } catch { return null; }
@@ -1062,7 +1241,7 @@ export default function MisKPIsPage() {
                                                                         const opShow = normalizarOperador(kpi.operadorMeta, kpi.sentido);
                                                                         return res ? (
                                                                             <p className={`text-xs mt-1.5 font-medium ${res === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>
-                                                                                {res === 'cumple' ? `✓ Cumple (${opShow} ${kpi.meta} ${kpi.unidad})` : `✗ No cumple (${opShow} ${kpi.meta} ${kpi.unidad})`}
+                                                                                {res === 'cumple' ? `✓ Cumple (${opShow} ${fmtConUnidad(kpi.meta, kpi.unidad)})` : `✗ No cumple (${opShow} ${fmtConUnidad(kpi.meta, kpi.unidad)})`}
                                                                             </p>
                                                                         ) : null;
                                                                     })()}
