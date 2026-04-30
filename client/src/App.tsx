@@ -25,6 +25,7 @@ import MisKPIsPage from './pages/MisKpisPage';
 import RevisionEvidenciasPage from './pages/RevisionEvidenciasPage';
 import RevisoresAsignadosPage from './pages/RevisoresAsignadosPage';
 import MiEquipoPage from './pages/MiEquipoPage';
+import CumplimientoGeneralPage from './pages/CumplimientoGeneralPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import CambiarContrasenaPage from './pages/CambiarContrasenaPage';
 
@@ -254,6 +255,15 @@ function AppRoutes() {
           <PrivateRoute allowedRoles={['admin']}>
             <RevisoresAsignadosPage />
           </PrivateRoute>}
+      />
+
+      <Route
+        path="/cumplimiento-general"
+        element={
+          <PrivateRoute allowedRoles={['admin']}>
+            <CumplimientoGeneralPage />
+          </PrivateRoute>
+        }
       />
 
       {/* Redirect */}

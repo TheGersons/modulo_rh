@@ -12,6 +12,7 @@ import {
     Edit,
     Building,
     Lock,
+    Globe,
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -146,6 +147,13 @@ export default function Sidebar() {
             ],
         },
         //vista confidencial solo para admin
+        {
+            icon: Globe,
+            label: 'Ver cumplimiento general',
+            path: '/cumplimiento-general',
+            exact: true,
+            allowedRoles: ['admin'],
+        },
         {
             icon: Lock,
             label: 'Asignacion de Revisores',

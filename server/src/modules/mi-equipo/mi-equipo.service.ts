@@ -12,16 +12,16 @@ export class MiEquipoService {
       select: { id: true, role: true, areaId: true },
     });
 
-    if (!jefe || !['jefe', 'rrhh', 'administrador'].includes(jefe.role)) {
+    if (!jefe || !['jefe', 'rrhh', 'admin', 'administrador'].includes(jefe.role)) {
       throw new ForbiddenException('No tienes acceso a esta sección');
     }
 
     // 2. Construir set de áreas bajo su responsabilidad
-    //    - rrhh y administrador → todas las áreas
+    //    - rrhh y admin → todas las áreas
     //    - jefe → su área + sub-áreas de su área
     const areaIds = new Set<string>();
 
-    if (jefe.role === 'rrhh' || jefe.role === 'administrador') {
+    if (jefe.role === 'rrhh' || jefe.role === 'admin' || jefe.role === 'administrador') {
       const todasAreas = await this.prisma.area.findMany({
         select: { id: true },
       });
