@@ -345,28 +345,23 @@ export default function MisKPIsPage() {
             const estaEnGracia = enVentanaGracia(new Date(), periodoAnterior);
             const headers = { Authorization: `Bearer ${token}` };
 
-            const [kpisData, resEv, resNotas, resEvAnterior] = await Promise.all([
+            // Durante gracia: la página opera sobre el mes cerrado para TODOS los KPIs
+            // (no solo OT). Esto permite completar uploads pendientes de cualquier tipo.
+            const periodoActivo = estaEnGracia ? periodoAnterior : periodo;
+
+            const [kpisData, resEv, resNotas] = await Promise.all([
                 kpisService.getMisKpis(),
-                fetch(`/api/kpis/mis-evidencias?periodo=${periodo}`, { headers, signal }),
-                fetch(`/api/kpis/mis-notas?periodo=${periodo}`, { headers, signal }).catch(() => null),
-                estaEnGracia
-                    ? fetch(`/api/kpis/mis-evidencias?periodo=${periodoAnterior}`, { headers, signal })
-                    : Promise.resolve(null),
+                fetch(`/api/kpis/mis-evidencias?periodo=${periodoActivo}`, { headers, signal }),
+                fetch(`/api/kpis/mis-notas?periodo=${periodoActivo}`, { headers, signal }).catch(() => null),
             ]);
 
-            // Si el componente se desmontó durante la carga, no actualizar estado
             if (signal?.aborted) return;
 
             const evidenciasData: Record<string, Evidencia[]> = resEv.ok ? await resEv.json() : {};
-            const evidenciasAnterior: Record<string, Evidencia[]> =
-                resEvAnterior?.ok ? await resEvAnterior.json() : {};
             const notasData: Record<string, string> = resNotas?.ok ? await resNotas.json() : {};
 
             const combinados: KPIConEvidencias[] = (Array.isArray(kpisData) ? kpisData : []).map((kpi) => {
-                // Durante gracia, los KPIs OT muestran las evidencias del mes anterior
-                const evidencias = kpi.aplicaOrdenTrabajo && estaEnGracia
-                    ? (evidenciasAnterior[kpi.id] ?? [])
-                    : (evidenciasData[kpi.id] ?? []);
+                const evidencias = evidenciasData[kpi.id] ?? [];
                 const requeridas = getEvidenciasRequeridas(kpi);
                 const aprobadas = evidencias.filter((e: Evidencia) => e.status === 'aprobada').length;
                 return { ...kpi, evidencias, statusKPI: derivarStatusKPI(evidencias, requeridas), evidenciasRequeridas: requeridas, evidenciasAprobadas: aprobadas, notaKPI: notasData[kpi.id] };
@@ -374,8 +369,8 @@ export default function MisKPIsPage() {
 
             setKpis(combinados);
 
-            // Resultados automáticos: durante gracia consultar el mes anterior (sus órdenes)
-            const periodoAuto = estaEnGracia ? periodoAnterior : periodo;
+            // Resultados automáticos: usar el mismo periodo activo
+            const periodoAuto = periodoActivo;
             const autoKpis = combinados.filter((k) => k.tipoCalculo === 'division' && k.aplicaOrdenTrabajo);
             if (autoKpis.length > 0) {
                 const autoResults: Record<string, ResultadoAuto> = {};
@@ -425,8 +420,9 @@ export default function MisKPIsPage() {
         if (!kpi) return;
 
         const token = localStorage.getItem('accessToken');
-        // KPIs OT en ventana de gracia → el respaldo pertenece al mes anterior (periodo cerrado)
-        const periodoSubida = kpi.aplicaOrdenTrabajo && enVentanaGracia(new Date(), getPeriodoMesAnterior())
+        // Durante gracia, todos los uploads van al periodo cerrado (mes anterior).
+        // Fuera de gracia, al periodo actual.
+        const periodoSubida = enVentanaGracia(new Date(), getPeriodoMesAnterior())
             ? getPeriodoMesAnterior()
             : getPeriodoActual();
         const anioSubida = parseInt(periodoSubida.split('-')[0]);
@@ -571,9 +567,25 @@ export default function MisKPIsPage() {
 
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Mis KPIs</h1>
-                    <p className="text-gray-500 mt-1 text-sm">
-                        Período actual: <span className="font-medium text-gray-700">{getPeriodoActual()}</span>
-                    </p>
+                    {(() => {
+                        const periodoCierre = getPeriodoMesAnterior();
+                        const enGracia = enVentanaGracia(new Date(), periodoCierre);
+                        const periodoMostrar = enGracia ? periodoCierre : getPeriodoActual();
+                        const v = getVentanaGracia(periodoCierre);
+                        return (
+                            <>
+                                <p className="text-gray-500 mt-1 text-sm">
+                                    Período {enGracia ? 'en cierre' : 'actual'}: <span className="font-medium text-gray-700">{periodoMostrar}</span>
+                                </p>
+                                {enGracia && (
+                                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 mt-2 inline-block">
+                                        <Clock className="w-3 h-3 inline mr-1" />
+                                        Ventana de gracia activa: puedes subir evidencias de cualquier KPI del periodo <strong>{periodoCierre}</strong> hasta el {fmtFecha(v.fin)}.
+                                    </p>
+                                )}
+                            </>
+                        );
+                    })()}
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
@@ -638,9 +650,11 @@ export default function MisKPIsPage() {
                             const autoData = isAutomatic ? resultadosAuto[kpi.id] : undefined;
 
                             // Gracia = días 1..N de este mes → ventana del mes anterior.
+                            // Aplica a TODOS los KPIs (no solo OT): durante gracia, la página opera
+                            // sobre el mes cerrado y se permite completar uploads pendientes.
                             const periodoGracia = getPeriodoMesAnterior();
-                            const ventana = aplicaOT ? getVentanaGracia(periodoGracia) : null;
-                            const enGracia = aplicaOT && enVentanaGracia(new Date(), periodoGracia);
+                            const ventana = getVentanaGracia(periodoGracia);
+                            const enGracia = enVentanaGracia(new Date(), periodoGracia);
                             const respaldoAprobado = !!autoData?.respaldoAprobado;
                             const respaldoEnRevision = !!autoData?.respaldoEnRevision;
 
@@ -648,8 +662,8 @@ export default function MisKPIsPage() {
                             const requeridas = kpi.evidenciasRequeridas;
                             const enRevision = kpi.evidencias.filter((e) => e.status === 'pendiente_revision').length;
                             const falta = Math.max(0, requeridas - aprobadas - enRevision);
-                            // KPIs basados en orden de trabajo solo permiten subir respaldo durante la ventana de gracia.
-                            // El resto, flujo normal.
+                            // OT: solo se sube respaldo durante la ventana de gracia (mes cerrado).
+                            // Resto: durante el periodo activo (cerrado en gracia, actual fuera).
                             const puedeSubir = aplicaOT
                                 ? enGracia
                                 : kpi.statusKPI !== 'aprobado';
