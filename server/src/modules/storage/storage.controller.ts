@@ -18,15 +18,54 @@ import { ConfiguracionService } from 'src/common/configuracion/configuracion.ser
 import { enVentanaGracia, getVentanaGracia } from 'src/common/utils/grace-period.util';
 
 const TIPOS_PERMITIDOS = [
+  // Imágenes
   'image/jpeg',
   'image/png',
   'image/webp',
   'image/gif',
+  'image/bmp',
+  'image/tiff',
+  'image/svg+xml',
+  // PDF
   'application/pdf',
+  // Videos
   'video/mp4',
   'video/quicktime',
+  'video/avi',
+  'video/x-msvideo',
+  'video/webm',
+  'video/x-ms-wmv',
+  // Word
+  'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  // Excel
+  'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  // PowerPoint
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // Texto y datos
+  'text/plain',
+  'text/csv',
+  'application/csv',
+  // Comprimidos
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/x-rar-compressed',
+  'application/vnd.rar',
+  'application/x-7z-compressed',
+  // AutoCAD
+  'image/vnd.dwg',
+  'image/x-dwg',
+  'application/acad',
+  'image/vnd.dxf',
+  'image/x-dxf',
+  // Correos electrónicos
+  'message/rfc822',
+  'application/vnd.ms-outlook',
+  // Microsoft Project
+  'application/vnd.ms-project',
+  'application/x-project',
 ];
 
 const uploadOptions = {

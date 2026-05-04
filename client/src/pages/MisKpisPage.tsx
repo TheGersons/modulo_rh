@@ -540,7 +540,7 @@ export default function MisKPIsPage() {
     return (
         <Layout>
             <input ref={fileInputRef} type="file" className="hidden"
-                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
+                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.dwg,.dxf,.svg,.eml,.msg,.mpp"
                 onChange={handleArchivoSeleccionado} />
 
             <div className="p-8 space-y-6 max-w-4xl mx-auto">
