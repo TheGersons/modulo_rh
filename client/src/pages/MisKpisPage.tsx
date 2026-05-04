@@ -327,28 +327,46 @@ export default function MisKPIsPage() {
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     };
 
+    const getPeriodoMesAnterior = () => {
+        const d = new Date();
+        d.setDate(1);
+        d.setMonth(d.getMonth() - 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+
     const cargarKPIs = async (signal?: AbortSignal) => {
         try {
             setLoading(true);
             const token = localStorage.getItem('accessToken');
             const periodo = getPeriodoActual();
+            const periodoAnterior = getPeriodoMesAnterior();
+            // Gracia se verifica contra el mes anterior: los días 1..N de este mes
+            // corresponden a la ventana de gracia del mes que acaba de cerrar.
+            const estaEnGracia = enVentanaGracia(new Date(), periodoAnterior);
             const headers = { Authorization: `Bearer ${token}` };
 
-            // Las 3 peticiones iniciales en paralelo
-            const [kpisData, resEv, resNotas] = await Promise.all([
+            const [kpisData, resEv, resNotas, resEvAnterior] = await Promise.all([
                 kpisService.getMisKpis(),
                 fetch(`/api/kpis/mis-evidencias?periodo=${periodo}`, { headers, signal }),
                 fetch(`/api/kpis/mis-notas?periodo=${periodo}`, { headers, signal }).catch(() => null),
+                estaEnGracia
+                    ? fetch(`/api/kpis/mis-evidencias?periodo=${periodoAnterior}`, { headers, signal })
+                    : Promise.resolve(null),
             ]);
 
             // Si el componente se desmontó durante la carga, no actualizar estado
             if (signal?.aborted) return;
 
             const evidenciasData: Record<string, Evidencia[]> = resEv.ok ? await resEv.json() : {};
+            const evidenciasAnterior: Record<string, Evidencia[]> =
+                resEvAnterior?.ok ? await resEvAnterior.json() : {};
             const notasData: Record<string, string> = resNotas?.ok ? await resNotas.json() : {};
 
             const combinados: KPIConEvidencias[] = (Array.isArray(kpisData) ? kpisData : []).map((kpi) => {
-                const evidencias = evidenciasData[kpi.id] ?? [];
+                // Durante gracia, los KPIs OT muestran las evidencias del mes anterior
+                const evidencias = kpi.aplicaOrdenTrabajo && estaEnGracia
+                    ? (evidenciasAnterior[kpi.id] ?? [])
+                    : (evidenciasData[kpi.id] ?? []);
                 const requeridas = getEvidenciasRequeridas(kpi);
                 const aprobadas = evidencias.filter((e: Evidencia) => e.status === 'aprobada').length;
                 return { ...kpi, evidencias, statusKPI: derivarStatusKPI(evidencias, requeridas), evidenciasRequeridas: requeridas, evidenciasAprobadas: aprobadas, notaKPI: notasData[kpi.id] };
@@ -356,13 +374,14 @@ export default function MisKPIsPage() {
 
             setKpis(combinados);
 
-            // Resultados automáticos en paralelo también
+            // Resultados automáticos: durante gracia consultar el mes anterior (sus órdenes)
+            const periodoAuto = estaEnGracia ? periodoAnterior : periodo;
             const autoKpis = combinados.filter((k) => k.tipoCalculo === 'division' && k.aplicaOrdenTrabajo);
             if (autoKpis.length > 0) {
                 const autoResults: Record<string, ResultadoAuto> = {};
                 await Promise.all(autoKpis.map(async (kpi) => {
                     try {
-                        const res = await fetch(`/api/kpis/${kpi.id}/resultado-automatico?periodo=${periodo}`, { headers, signal });
+                        const res = await fetch(`/api/kpis/${kpi.id}/resultado-automatico?periodo=${periodoAuto}`, { headers, signal });
                         if (res.ok && !signal?.aborted) autoResults[kpi.id] = await res.json();
                     } catch { /* silencioso */ }
                 }));
@@ -406,12 +425,17 @@ export default function MisKPIsPage() {
         if (!kpi) return;
 
         const token = localStorage.getItem('accessToken');
+        // KPIs OT en ventana de gracia → el respaldo pertenece al mes anterior (periodo cerrado)
+        const periodoSubida = kpi.aplicaOrdenTrabajo && enVentanaGracia(new Date(), getPeriodoMesAnterior())
+            ? getPeriodoMesAnterior()
+            : getPeriodoActual();
+        const anioSubida = parseInt(periodoSubida.split('-')[0]);
         const formData = new FormData();
         formData.append('archivo', file);
         formData.append('kpiId', kpiSeleccionado);
         formData.append('kpiKey', kpi.key);
-        formData.append('periodo', getPeriodoActual());
-        formData.append('anio', String(new Date().getFullYear()));
+        formData.append('periodo', periodoSubida);
+        formData.append('anio', String(anioSubida));
 
         // KPIs aplicaOrdenTrabajo: solo nota + archivo (respaldo libre), no valor numérico
         if (!kpi.aplicaOrdenTrabajo) {
@@ -613,11 +637,10 @@ export default function MisKPIsPage() {
                             const aplicaOT = kpi.aplicaOrdenTrabajo;
                             const autoData = isAutomatic ? resultadosAuto[kpi.id] : undefined;
 
-                            // Ventana de gracia: solo aplica a KPIs basados en órdenes de trabajo
-                            // (incluye aplicaOrdenTrabajo de cualquier tipoCalculo, no solo division).
-                            const periodoActual = getPeriodoActual();
-                            const ventana = aplicaOT ? getVentanaGracia(periodoActual) : null;
-                            const enGracia = aplicaOT && enVentanaGracia(new Date(), periodoActual);
+                            // Gracia = días 1..N de este mes → ventana del mes anterior.
+                            const periodoGracia = getPeriodoMesAnterior();
+                            const ventana = aplicaOT ? getVentanaGracia(periodoGracia) : null;
+                            const enGracia = aplicaOT && enVentanaGracia(new Date(), periodoGracia);
                             const respaldoAprobado = !!autoData?.respaldoAprobado;
                             const respaldoEnRevision = !!autoData?.respaldoEnRevision;
 
