@@ -27,6 +27,7 @@ import RevisoresAsignadosPage from './pages/RevisoresAsignadosPage';
 import MiEquipoPage from './pages/MiEquipoPage';
 import CumplimientoGeneralPage from './pages/CumplimientoGeneralPage';
 import AuditoriaPage from './pages/AuditoriaPage';
+import NuevaVersionBanner from './components/NuevaVersionBanner';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import CambiarContrasenaPage from './pages/CambiarContrasenaPage';
 
@@ -287,6 +288,7 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <NuevaVersionBanner />
         <AppRoutes />
       </AuthProvider>
     </BrowserRouter>

@@ -9,6 +9,7 @@ import Layout from '../components/layout/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { kpisService } from '../services/kpis.service';
 import { fmtNum, fmtConUnidad } from '../utils/format';
+import { preflightVersion } from '../utils/version';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -413,11 +414,18 @@ export default function MisKPIsPage() {
         fileInputRef.current?.click();
     };
 
-    const handleArchivoSeleccionado = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleArchivoSeleccionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !kpiSeleccionado) return;
         const kpi = kpis.find((k) => k.id === kpiSeleccionado);
         if (!kpi) return;
+
+        // Pre-flight: si el servidor publicó una versión más reciente, recargar
+        // antes de subir. Evita que código viejo cacheado mande el periodo mal.
+        const ok = await preflightVersion(
+            'Hay una nueva versión de la aplicación. Para evitar que tu evidencia se asigne al período equivocado, vamos a recargar antes de subirla.',
+        );
+        if (!ok) return;
 
         const token = localStorage.getItem('accessToken');
         // Durante gracia, todos los uploads van al periodo cerrado (mes anterior).
