@@ -1,5 +1,8 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { EstadisticasService } from './estadisticas.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guards';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('estadisticas')
 export class EstadisticasController {
@@ -38,5 +41,28 @@ export class EstadisticasController {
   @Get('ranking-areas')
   getRankingAreas() {
     return this.estadisticasService.getRankingAreas();
+  }
+
+  @Get('ranking-areas/:areaId/sub-areas')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'rrhh')
+  getRankingSubAreas(@Param('areaId') areaId: string) {
+    return this.estadisticasService.getRankingSubAreas(areaId);
+  }
+
+  @Get('ranking-areas/:areaId/empleados')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'rrhh')
+  getEmpleadosDeArea(
+    @Param('areaId') areaId: string,
+    @Query('periodo') periodo?: string,
+  ) {
+    const periodoActual =
+      periodo ??
+      (() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      })();
+    return this.estadisticasService.getEmpleadosDeArea(areaId, periodoActual);
   }
 }

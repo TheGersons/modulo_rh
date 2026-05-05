@@ -40,4 +40,25 @@ export const estadisticasService = {
     const response = await apiClient.get("estadisticas/ranking-areas");
     return response.data;
   },
+
+  getSubAreasRanking: async (areaId: string) => {
+    const response = await apiClient.get(
+      `estadisticas/ranking-areas/${areaId}/sub-areas`,
+    );
+    return response.data;
+  },
+
+  getEmpleadosDeArea: async (areaId: string, periodo: string) => {
+    const response = await apiClient.get(
+      `estadisticas/ranking-areas/${areaId}/empleados?periodo=${periodo}`,
+    );
+    return response.data;
+  },
+
+  getEmpleadoFull: async (empleadoId: string, periodo: string) => {
+    const response = await apiClient.get(
+      `mi-equipo/empleado/${empleadoId}?periodo=${periodo}`,
+    );
+    return response.data;
+  },
 };

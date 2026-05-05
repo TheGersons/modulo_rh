@@ -4,10 +4,16 @@ import {
   Users, Briefcase, Target, TrendingUp, AlertTriangle, CheckCircle,
   Clock, Award, BarChart3, ArrowRight, Activity, Zap, FileText,
   Building, FolderOpen, TrendingDown, Trophy, X, Info, Shield,
+  ChevronDown, ChevronRight, BarChart2, Loader2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import Layout from '../components/layout/Layout';
 import { estadisticasService } from '../services/estadisticas.service';
+import ModalPerfilEmpleado, {
+  getPeriodoActual,
+} from '../components/ModalPerfilEmpleado';
+import type { EmpleadoEquipo } from '../components/ModalPerfilEmpleado';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -54,11 +60,25 @@ interface Alerta {
 }
 
 interface AreaRanking {
+  id: string;
   nombre: string;
   promedio: number;
   empleados: number;
   kpisRojos: number;
   subAreasCount: number;
+}
+
+interface EmpleadoListItem {
+  id: string;
+  nombre: string;
+  apellido: string;
+  role: string;
+  puesto: { id: string; nombre: string } | null;
+  porcentajeCumplimiento: number;
+  kpisAprobados: number;
+  kpisTotal: number;
+  alertasActivas: number;
+  ordenesVencidas: number;
 }
 
 interface TendenciaData {
@@ -268,10 +288,12 @@ function AlertasModal({ alertas, onClose, onResolver }: {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isAdmin, isRRHH } = usePermissions();
 
   const esAdmin = user?.role === 'admin' || user?.role === 'rrhh';
   const esJefe = user?.role === 'jefe';
   const esEmpleado = !esAdmin && !esJefe;
+  const puedeNavegarRanking = isAdmin || isRRHH;
 
   // Stats según rol
   const [statsGlobal, setStatsGlobal] = useState<StatsGlobal | null>(null);
@@ -288,6 +310,17 @@ export default function DashboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // ─── Drilldown del Ranking de Áreas (admin/rrhh) ────────────────────────────
+  const periodoActual = getPeriodoActual();
+  const [expandedAreas, setExpandedAreas] = useState<Set<string>>(new Set());
+  const [expandedSubAreas, setExpandedSubAreas] = useState<Set<string>>(new Set());
+  const [subAreasByArea, setSubAreasByArea] = useState<Record<string, AreaRanking[]>>({});
+  const [empleadosBySubArea, setEmpleadosBySubArea] = useState<Record<string, EmpleadoListItem[]>>({});
+  const [loadingSubAreas, setLoadingSubAreas] = useState<Set<string>>(new Set());
+  const [loadingEmpleados, setLoadingEmpleados] = useState<Set<string>>(new Set());
+  const [empleadoModal, setEmpleadoModal] = useState<EmpleadoEquipo | null>(null);
+  const [loadingEmpleadoModal, setLoadingEmpleadoModal] = useState(false);
 
   useEffect(() => { cargarDashboard(); }, []);
 
@@ -358,6 +391,73 @@ export default function DashboardPage() {
       setAlertas(prev => prev.filter(a => a.id !== alertaId));
     } catch (e) {
       console.error('Error al resolver alerta:', e);
+    }
+  };
+
+  // ─── Drilldown handlers ─────────────────────────────────────────────────────
+  const toggleArea = async (areaId: string) => {
+    const next = new Set(expandedAreas);
+    if (next.has(areaId)) {
+      next.delete(areaId);
+      setExpandedAreas(next);
+      return;
+    }
+    next.add(areaId);
+    setExpandedAreas(next);
+
+    if (!subAreasByArea[areaId]) {
+      setLoadingSubAreas(prev => new Set(prev).add(areaId));
+      try {
+        const subs = await estadisticasService.getSubAreasRanking(areaId);
+        setSubAreasByArea(prev => ({ ...prev, [areaId]: subs }));
+      } catch (e) {
+        console.error('Error al cargar sub-áreas:', e);
+      } finally {
+        setLoadingSubAreas(prev => {
+          const n = new Set(prev);
+          n.delete(areaId);
+          return n;
+        });
+      }
+    }
+  };
+
+  const toggleSubArea = async (subAreaId: string) => {
+    const next = new Set(expandedSubAreas);
+    if (next.has(subAreaId)) {
+      next.delete(subAreaId);
+      setExpandedSubAreas(next);
+      return;
+    }
+    next.add(subAreaId);
+    setExpandedSubAreas(next);
+
+    if (!empleadosBySubArea[subAreaId]) {
+      setLoadingEmpleados(prev => new Set(prev).add(subAreaId));
+      try {
+        const emps = await estadisticasService.getEmpleadosDeArea(subAreaId, periodoActual);
+        setEmpleadosBySubArea(prev => ({ ...prev, [subAreaId]: emps }));
+      } catch (e) {
+        console.error('Error al cargar empleados:', e);
+      } finally {
+        setLoadingEmpleados(prev => {
+          const n = new Set(prev);
+          n.delete(subAreaId);
+          return n;
+        });
+      }
+    }
+  };
+
+  const verPerfilEmpleado = async (empleadoId: string) => {
+    setLoadingEmpleadoModal(true);
+    try {
+      const data = await estadisticasService.getEmpleadoFull(empleadoId, periodoActual);
+      setEmpleadoModal(data);
+    } catch (e) {
+      console.error('Error al cargar perfil de empleado:', e);
+    } finally {
+      setLoadingEmpleadoModal(false);
     }
   };
 
@@ -676,47 +776,153 @@ export default function DashboardPage() {
                 <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">Año {new Date().getFullYear()}</span>
               </div>
               <div className="space-y-3">
-                {areasRanking.slice(0, 5).map((area, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex items-center gap-4 p-4 rounded-xl border transition-all hover:shadow-sm ${esJefe && statsArea?.area?.nombre === area.nombre
-                      ? 'bg-blue-50 border-blue-200'
-                      : 'bg-gray-50 border-gray-100'
-                      }`}
-                  >
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-base ${idx === 0 ? 'bg-yellow-100 text-yellow-700' :
-                      idx === 1 ? 'bg-gray-200 text-gray-600' :
-                        idx === 2 ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500'
-                      }`}>
-                      {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <p className="font-semibold text-gray-900 text-sm truncate">{area.nombre}</p>
-                        {esJefe && statsArea?.area?.nombre === area.nombre && (
-                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex-shrink-0">Tu área</span>
+                {areasRanking.slice(0, 5).map((area, idx) => {
+                  const expanded = expandedAreas.has(area.id);
+                  const subs = subAreasByArea[area.id];
+                  const cargandoSubs = loadingSubAreas.has(area.id);
+                  return (
+                    <div key={area.id ?? idx}>
+                      <div
+                        onClick={puedeNavegarRanking ? () => toggleArea(area.id) : undefined}
+                        className={`flex items-center gap-4 p-4 rounded-xl border transition-all hover:shadow-sm ${puedeNavegarRanking ? 'cursor-pointer' : ''} ${esJefe && statsArea?.area?.nombre === area.nombre
+                          ? 'bg-blue-50 border-blue-200'
+                          : 'bg-gray-50 border-gray-100'
+                          }`}
+                      >
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-base ${idx === 0 ? 'bg-yellow-100 text-yellow-700' :
+                          idx === 1 ? 'bg-gray-200 text-gray-600' :
+                            idx === 2 ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500'
+                          }`}>
+                          {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <p className="font-semibold text-gray-900 text-sm truncate">{area.nombre}</p>
+                            {esJefe && statsArea?.area?.nombre === area.nombre && (
+                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full flex-shrink-0">Tu área</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-gray-500">
+                            <span className="flex items-center gap-1"><Users className="w-3 h-3" />{area.empleados}</span>
+                            {area.kpisRojos > 0 && (
+                              <span className="flex items-center gap-1 text-red-500"><AlertTriangle className="w-3 h-3" />{area.kpisRojos} rojos</span>
+                            )}
+                            {area.subAreasCount > 0 && (
+                              <span className="flex items-center gap-1"><Building className="w-3 h-3" />{area.subAreasCount} sub-área{area.subAreasCount > 1 ? 's' : ''}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-2xl font-bold ${area.promedio >= 80 ? 'text-green-600' : area.promedio >= 50 ? 'text-blue-600' : 'text-red-600'}`}>
+                            {area.promedio}%
+                          </p>
+                          <div className="w-20 h-1.5 bg-gray-200 rounded-full mt-1">
+                            <div
+                              className={`h-1.5 rounded-full bg-gradient-to-r ${getTasaColor(area.promedio)}`}
+                              style={{ width: `${Math.min(100, area.promedio)}%` }}
+                            />
+                          </div>
+                        </div>
+                        {puedeNavegarRanking && (
+                          <div className="flex-shrink-0 text-gray-400">
+                            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                          </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-gray-500">
-                        <span className="flex items-center gap-1"><Users className="w-3 h-3" />{area.empleados}</span>
-                        {area.kpisRojos > 0 && (
-                          <span className="flex items-center gap-1 text-red-500"><AlertTriangle className="w-3 h-3" />{area.kpisRojos} rojos</span>
-                        )}
-                      </div>
+
+                      {puedeNavegarRanking && expanded && (
+                        <div className="mt-2 ml-6 space-y-2">
+                          {cargandoSubs && (
+                            <div className="flex items-center gap-2 text-xs text-gray-400 p-2">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Cargando sub-áreas...
+                            </div>
+                          )}
+                          {!cargandoSubs && subs && subs.length === 0 && (
+                            <p className="text-xs text-gray-400 px-3 py-2">Sin sub-áreas</p>
+                          )}
+                          {!cargandoSubs && subs && subs.map((sub) => {
+                            const subExpanded = expandedSubAreas.has(sub.id);
+                            const emps = empleadosBySubArea[sub.id];
+                            const cargandoEmps = loadingEmpleados.has(sub.id);
+                            return (
+                              <div key={sub.id}>
+                                <div
+                                  onClick={() => toggleSubArea(sub.id)}
+                                  className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100 hover:shadow-sm cursor-pointer transition-all"
+                                >
+                                  <Building className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-800 truncate">{sub.nombre}</p>
+                                    <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+                                      <span className="flex items-center gap-1"><Users className="w-3 h-3" />{sub.empleados} persona{sub.empleados !== 1 ? 's' : ''}</span>
+                                      {sub.kpisRojos > 0 && (
+                                        <span className="flex items-center gap-1 text-red-500"><AlertTriangle className="w-3 h-3" />{sub.kpisRojos} rojos</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className={`text-base font-bold ${sub.promedio >= 80 ? 'text-green-600' : sub.promedio >= 50 ? 'text-blue-600' : 'text-red-600'}`}>
+                                      {sub.promedio}%
+                                    </p>
+                                  </div>
+                                  <div className="text-gray-400 flex-shrink-0">
+                                    {subExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                  </div>
+                                </div>
+
+                                {subExpanded && (
+                                  <div className="mt-2 ml-6 space-y-1.5">
+                                    {cargandoEmps && (
+                                      <div className="flex items-center gap-2 text-xs text-gray-400 p-2">
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Cargando empleados...
+                                      </div>
+                                    )}
+                                    {!cargandoEmps && emps && emps.length === 0 && (
+                                      <p className="text-xs text-gray-400 px-3 py-2">Sin empleados</p>
+                                    )}
+                                    {!cargandoEmps && emps && emps.map((emp) => {
+                                      const pct = emp.porcentajeCumplimiento;
+                                      return (
+                                        <div key={emp.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-white border border-gray-100">
+                                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0 ${emp.ordenesVencidas > 0 ? 'bg-red-500' : emp.alertasActivas > 0 ? 'bg-yellow-500' : 'bg-blue-500'}`}>
+                                            {emp.nombre[0]}{emp.apellido[0]}
+                                          </div>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-xs font-medium text-gray-800 truncate">{emp.nombre} {emp.apellido}</p>
+                                            {emp.puesto && (
+                                              <p className="text-xs text-gray-400 truncate">{emp.puesto.nombre}</p>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-2 flex-shrink-0">
+                                            <div className="text-right">
+                                              <p className={`text-sm font-semibold ${pct >= 80 ? 'text-green-600' : pct >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                                {pct}%
+                                              </p>
+                                              <p className="text-xs text-gray-400">{emp.kpisAprobados}/{emp.kpisTotal} KPIs</p>
+                                            </div>
+                                            <button
+                                              onClick={() => verPerfilEmpleado(emp.id)}
+                                              disabled={loadingEmpleadoModal}
+                                              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50"
+                                              title="Ver perfil detallado"
+                                            >
+                                              <BarChart2 className="w-3.5 h-3.5" />
+                                              Ver perfil
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-right">
-                      <p className={`text-2xl font-bold ${area.promedio >= 80 ? 'text-green-600' : area.promedio >= 50 ? 'text-blue-600' : 'text-red-600'}`}>
-                        {area.promedio}%
-                      </p>
-                      <div className="w-20 h-1.5 bg-gray-200 rounded-full mt-1">
-                        <div
-                          className={`h-1.5 rounded-full bg-gradient-to-r ${getTasaColor(area.promedio)}`}
-                          style={{ width: `${Math.min(100, area.promedio)}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               {areasRanking.length > 5 && (
                 <p className="text-xs text-center text-gray-400 mt-3">Top 5 de {areasRanking.length} áreas</p>
@@ -797,6 +1003,16 @@ export default function DashboardPage() {
           alertas={alertas}
           onClose={() => setShowAlertas(false)}
           onResolver={resolverAlerta}
+        />
+      )}
+
+      {/* ── Modal de Perfil del Empleado ── */}
+      {empleadoModal && (
+        <ModalPerfilEmpleado
+          empleado={empleadoModal}
+          periodo={periodoActual}
+          onClose={() => setEmpleadoModal(null)}
+          navigate={navigate}
         />
       )}
     </Layout>

@@ -26,6 +26,20 @@ export class MiEquipoController {
     return this.miEquipoService.getMiEquipo(userId, periodoActual);
   }
 
+  @Get('empleado/:id')
+  async getEmpleadoFull(
+    @Param('id') empleadoId: string,
+    @Query('periodo') periodo?: string,
+  ) {
+    const periodoActual =
+      periodo ??
+      (() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      })();
+    return this.miEquipoService.getEmpleadoFull(empleadoId, periodoActual);
+  }
+
   @Get('empleado/:id/kpis')
   async getEmpleadoKpis(
     @Param('id') empleadoId: string,

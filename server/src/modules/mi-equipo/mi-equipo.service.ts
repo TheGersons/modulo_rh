@@ -305,6 +305,155 @@ export class MiEquipoService {
     };
   }
 
+  // ============================================
+  // DATOS COMPLETOS DE UN EMPLEADO (forma EmpleadoEquipo)
+  // ============================================
+  async getEmpleadoFull(empleadoId: string, periodo: string) {
+    const emp = await this.prisma.user.findUnique({
+      where: { id: empleadoId },
+      select: {
+        id: true,
+        nombre: true,
+        apellido: true,
+        role: true,
+        area: { select: { id: true, nombre: true } },
+        puesto: { select: { id: true, nombre: true } },
+        alertas: {
+          where: { status: 'activa' },
+          select: {
+            id: true,
+            tipo: true,
+            nivel: true,
+            titulo: true,
+            fechaDeteccion: true,
+          },
+          orderBy: { fechaDeteccion: 'desc' },
+          take: 5,
+        },
+        ordenesTrabajoRecibidas: {
+          where: { status: { in: ['pendiente', 'en_proceso'] } },
+          select: {
+            id: true,
+            titulo: true,
+            status: true,
+            fechaLimite: true,
+            progreso: true,
+            kpi: { select: { indicador: true, key: true } },
+          },
+          orderBy: { fechaLimite: 'asc' },
+        },
+      },
+    });
+
+    if (!emp) return null;
+
+    // Estado efectivo por KPI desde evidencias del período
+    const evidencias = await this.prisma.evidenciaKPI.findMany({
+      where: {
+        empleadoId,
+        periodo,
+        tipo: { not: 'nota_kpi' },
+      },
+      select: { kpiId: true, status: true },
+    });
+
+    const kpiMap = new Map<string, string>();
+    for (const ev of evidencias) {
+      const actual = kpiMap.get(ev.kpiId);
+      if (
+        !actual ||
+        ev.status === 'aprobada' ||
+        (ev.status === 'pendiente_revision' && actual !== 'aprobada')
+      ) {
+        kpiMap.set(ev.kpiId, ev.status);
+      }
+    }
+
+    // Órdenes completadas/aprobadas del período rellenan KPIs faltantes
+    const [pYear, pMonth] = periodo.split('-').map(Number);
+    const periodoStart = new Date(pYear, pMonth - 1, 1);
+    const periodoEnd = new Date(pYear, pMonth, 1);
+
+    const ordenesAprobadas = await this.prisma.ordenTrabajo.findMany({
+      where: {
+        empleadoId,
+        kpiId: { not: null },
+        status: { in: ['completada', 'aprobada'] },
+        fechaLimite: { gte: periodoStart, lt: periodoEnd },
+      },
+      select: { kpiId: true },
+    });
+
+    for (const o of ordenesAprobadas) {
+      if (!o.kpiId) continue;
+      if (!kpiMap.has(o.kpiId)) kpiMap.set(o.kpiId, 'aprobada');
+    }
+
+    // KPIs totales del puesto
+    const totalKpis = emp.puesto?.id
+      ? await this.prisma.kPI.count({
+          where: { puestoId: emp.puesto.id, activo: true },
+        })
+      : 0;
+
+    const statuses = [...kpiMap.values()];
+    const aprobadas = statuses.filter((s) => s === 'aprobada').length;
+    const enRevision = statuses.filter((s) => s === 'pendiente_revision').length;
+    const rechazadas = statuses.filter((s) => s === 'rechazada').length;
+
+    // Evidencias pendientes con detalle
+    const evidenciasPendientes = await this.prisma.evidenciaKPI.findMany({
+      where: { empleadoId, status: 'pendiente_revision', periodo },
+      select: {
+        id: true,
+        empleadoId: true,
+        archivoUrl: true,
+        nombre: true,
+        fechaSubida: true,
+        esFueraDeTiempo: true,
+        kpi: { select: { id: true, indicador: true, key: true } },
+      },
+      orderBy: { fechaSubida: 'asc' },
+    });
+
+    const ordenesVencidas = emp.ordenesTrabajoRecibidas.filter(
+      (o) => new Date(o.fechaLimite) < new Date(),
+    );
+
+    return {
+      id: emp.id,
+      nombre: emp.nombre,
+      apellido: emp.apellido,
+      role: emp.role,
+      area: emp.area,
+      puesto: emp.puesto,
+      kpis: {
+        total: totalKpis,
+        aprobados: aprobadas,
+        enRevision,
+        rechazados: rechazadas,
+        pendientes: Math.max(
+          0,
+          totalKpis - aprobadas - enRevision - rechazadas,
+        ),
+        porcentajeCumplimiento:
+          totalKpis > 0 ? Math.round((aprobadas / totalKpis) * 100) : 0,
+      },
+      ordenes: {
+        activas: emp.ordenesTrabajoRecibidas.length,
+        vencidas: ordenesVencidas.length,
+        detalle: emp.ordenesTrabajoRecibidas,
+      },
+      alertas: emp.alertas,
+      evidenciasPendientes,
+      tieneProblemas:
+        rechazadas > 0 ||
+        ordenesVencidas.length > 0 ||
+        emp.alertas.length > 0,
+      tieneEvidenciasParaRevisar: evidenciasPendientes.length > 0,
+    };
+  }
+
   // ─── AGREGAR en mi-equipo.service.ts ─────────────────────────────────────────
   // Estos dos métodos van dentro de la clase MiEquipoService
 
