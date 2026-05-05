@@ -19,6 +19,7 @@ import { areasService } from '../services/areas.service';
 import { puestosService } from '../services/puestos.service';
 import { usePermissions } from '../hooks/usePermissions';
 import Layout from '../components/layout/Layout';
+import { ROLES, ROLE_LABELS } from '../constants/roles';
 import * as XLSX from 'xlsx';
 
 interface Empleado {
@@ -850,10 +851,9 @@ export default function EmpleadosPage() {
                     onChange={(e) => setFormRole(e.target.value)}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="empleado">Empleado</option>
-                    <option value="jefe">Jefe</option>
-                    <option value="rrhh">RRHH</option>
-                    <option value="admin">Administrador</option>
+                    {ROLES.map((r) => (
+                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                    ))}
                   </select>
                 </div>
 

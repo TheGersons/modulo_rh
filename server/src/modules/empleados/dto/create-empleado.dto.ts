@@ -7,6 +7,7 @@ import {
   IsIn,
   IsUUID,
 } from 'class-validator';
+import { ROLES } from '../../../common/constants/roles';
 
 export class CreateEmpleadoDto {
   @IsString()
@@ -30,7 +31,7 @@ export class CreateEmpleadoDto {
 
   @IsString()
   @IsNotEmpty()
-  @IsIn(['admin', 'jefe', 'empleado', 'rrhh'])
+  @IsIn(ROLES as readonly string[])
   role: string;
 
   @IsString()

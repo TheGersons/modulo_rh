@@ -14,6 +14,7 @@ import { PuestosModule } from './modules/puestos/puestos.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { RevisoresAsignadosModule } from './modules/revisores-asignados/revisores-asignados.module';
 import { MiEquipoModule } from './modules/mi-equipo/mi-equipo.module';
+import { AuditoriaModule } from './modules/auditoria/auditoria.module';
 import { PrismaService } from './common/database/prisma.service';
 import { ConfiguracionModule } from './common/configuracion/configuracion.module';
 
@@ -36,6 +37,7 @@ import { ConfiguracionModule } from './common/configuracion/configuracion.module
     OrdenesTrabajoModule,
     RevisoresAsignadosModule,
     MiEquipoModule,
+    AuditoriaModule,
     // PlanesAccionModule, // ← COMENTADO
   ],
   providers: [PrismaService],

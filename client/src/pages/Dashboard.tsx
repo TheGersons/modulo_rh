@@ -302,6 +302,7 @@ export default function DashboardPage() {
 
   // Datos globales (todos los roles)
   const [areasRanking, setAreasRanking] = useState<AreaRanking[]>([]);
+  const [periodoRanking, setPeriodoRanking] = useState<string>('');
   const [tendencias, setTendencias] = useState<TendenciaData[]>([]);
 
   // Alertas
@@ -334,7 +335,14 @@ export default function DashboardPage() {
         estadisticasService.getRankingAreas(),
         estadisticasService.getTendencias(),
       ]);
-      setAreasRanking(rankingData);
+      // El backend devuelve { periodo, ranking } — extraer ambos.
+      if (rankingData && Array.isArray(rankingData.ranking)) {
+        setAreasRanking(rankingData.ranking);
+        setPeriodoRanking(rankingData.periodo ?? '');
+      } else if (Array.isArray(rankingData)) {
+        // Fallback por si el backend aún devuelve el array plano
+        setAreasRanking(rankingData);
+      }
       setTendencias(tendenciasData);
 
       // Stats y alertas según rol
@@ -773,7 +781,7 @@ export default function DashboardPage() {
                   <Trophy className="w-5 h-5 text-yellow-500" />
                   Ranking de Áreas
                 </h2>
-                <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">Año {new Date().getFullYear()}</span>
+                <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">Período {periodoRanking || new Date().toISOString().slice(0, 7)}</span>
               </div>
               <div className="space-y-3">
                 {areasRanking.slice(0, 5).map((area, idx) => {

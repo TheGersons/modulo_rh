@@ -13,6 +13,7 @@ import {
     Building,
     Lock,
     Globe,
+    ShieldCheck,
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -160,6 +161,13 @@ export default function Sidebar() {
             path: '/asignacion-revisores',
             exact: true,
             allowedRoles: ['admin'],
+        },
+        {
+            icon: ShieldCheck,
+            label: 'Auditoría',
+            path: '/auditoria',
+            exact: true,
+            allowedRoles: ['admin', 'auditor'],
         },
     ];
 

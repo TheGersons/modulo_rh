@@ -1,9 +1,91 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
+import { ConfiguracionService } from '../../common/configuracion/configuracion.service';
+import {
+  enVentanaGracia,
+  formatPeriodo,
+} from '../../common/utils/grace-period.util';
 
 @Injectable()
 export class EstadisticasService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private configuracion: ConfiguracionService,
+  ) {}
+
+  // Resuelve el período activo respetando la ventana de gracia:
+  // si hoy estamos en los días 1..N del mes siguiente al cierre,
+  // el período activo sigue siendo el mes anterior.
+  private async getPeriodoActivo(now: Date = new Date()): Promise<string> {
+    const diasGracia = await this.configuracion.getDiasGracia();
+    const periodoActual = formatPeriodo(now);
+    // mes anterior
+    const mesAnterior = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const periodoAnterior = formatPeriodo(mesAnterior);
+    return enVentanaGracia(now, periodoAnterior, diasGracia)
+      ? periodoAnterior
+      : periodoActual;
+  }
+
+  // Helper compartido: dado un set de áreas y un período, devuelve para cada
+  // (empleadoId, kpiId) el estado efectivo en ese período.
+  // Estado efectivo: aprobada > pendiente_revision > rechazada.
+  // Las órdenes completadas/aprobadas del período rellenan KPIs faltantes
+  // como 'aprobada' (para KPIs con aplicaOrdenTrabajo).
+  private async getEstadoEvidenciasPorEmpleado(
+    empleadoIds: string[],
+    periodo: string,
+  ): Promise<Map<string, Map<string, string>>> {
+    const evidencias = await this.prisma.evidenciaKPI.findMany({
+      where: {
+        empleadoId: { in: empleadoIds },
+        periodo,
+        tipo: { not: 'nota_kpi' },
+      },
+      select: { empleadoId: true, kpiId: true, status: true },
+    });
+
+    const kpiStatusPorEmpleado = new Map<string, Map<string, string>>();
+    for (const ev of evidencias) {
+      if (!kpiStatusPorEmpleado.has(ev.empleadoId)) {
+        kpiStatusPorEmpleado.set(ev.empleadoId, new Map());
+      }
+      const kpiMap = kpiStatusPorEmpleado.get(ev.empleadoId)!;
+      const actual = kpiMap.get(ev.kpiId);
+      if (
+        !actual ||
+        ev.status === 'aprobada' ||
+        (ev.status === 'pendiente_revision' && actual !== 'aprobada')
+      ) {
+        kpiMap.set(ev.kpiId, ev.status);
+      }
+    }
+
+    const [pYear, pMonth] = periodo.split('-').map(Number);
+    const periodoStart = new Date(pYear, pMonth - 1, 1);
+    const periodoEnd = new Date(pYear, pMonth, 1);
+
+    const ordenesAprobadas = await this.prisma.ordenTrabajo.findMany({
+      where: {
+        empleadoId: { in: empleadoIds },
+        kpiId: { not: null },
+        status: { in: ['completada', 'aprobada'] },
+        fechaLimite: { gte: periodoStart, lt: periodoEnd },
+      },
+      select: { empleadoId: true, kpiId: true },
+    });
+
+    for (const o of ordenesAprobadas) {
+      if (!o.kpiId) continue;
+      if (!kpiStatusPorEmpleado.has(o.empleadoId)) {
+        kpiStatusPorEmpleado.set(o.empleadoId, new Map());
+      }
+      const kpiMap = kpiStatusPorEmpleado.get(o.empleadoId)!;
+      if (!kpiMap.has(o.kpiId)) kpiMap.set(o.kpiId, 'aprobada');
+    }
+
+    return kpiStatusPorEmpleado;
+  }
 
   // ============================================
   // DASHBOARD GLOBAL
@@ -509,38 +591,34 @@ export class EstadisticasService {
   }
 
   // ============================================
-  // RANKING DE ÁREAS POR DESEMPEÑO
+  // RANKING DE ÁREAS POR % DE CUMPLIMIENTO DEL PERÍODO
   // ============================================
   async getRankingAreas() {
-    // Obtener solo áreas principales (sin padre) activas
+    const periodoActivo = await this.getPeriodoActivo();
+
     const areasPrincipales = await this.prisma.area.findMany({
       where: {
         activa: true,
-        areaPadreId: null, // Solo áreas principales
+        areaPadreId: null,
       },
       include: {
         subAreas: {
           where: { activa: true },
           select: { id: true },
         },
-        _count: {
-          select: {
-            empleados: true,
-          },
-        },
+        _count: { select: { empleados: true } },
       },
     });
 
     const ranking = await Promise.all(
       areasPrincipales.map(async (area) => {
-        // IDs del área principal + sub-áreas
         const areasIds = [area.id];
         if (area.subAreas && area.subAreas.length > 0) {
           areasIds.push(...area.subAreas.map((sub) => sub.id));
         }
 
         const { promedio, empleados, kpisRojos } =
-          await this.calcularMetricasArea(areasIds);
+          await this.calcularMetricasArea(areasIds, periodoActivo);
 
         return {
           id: area.id,
@@ -553,26 +631,27 @@ export class EstadisticasService {
       }),
     );
 
-    // Ordenar por promedio descendente
-    return ranking.sort((a, b) => b.promedio - a.promedio);
+    return {
+      periodo: periodoActivo,
+      ranking: ranking.sort((a, b) => b.promedio - a.promedio),
+    };
   }
 
   // ============================================
   // RANKING DE SUB-ÁREAS DE UN ÁREA PADRE
   // ============================================
   async getRankingSubAreas(areaId: string) {
+    const periodoActivo = await this.getPeriodoActivo();
+
     const subAreas = await this.prisma.area.findMany({
-      where: {
-        activa: true,
-        areaPadreId: areaId,
-      },
+      where: { activa: true, areaPadreId: areaId },
       select: { id: true, nombre: true },
     });
 
     const ranking = await Promise.all(
       subAreas.map(async (sub) => {
         const { promedio, empleados, kpisRojos } =
-          await this.calcularMetricasArea([sub.id]);
+          await this.calcularMetricasArea([sub.id], periodoActivo);
         return {
           id: sub.id,
           nombre: sub.nombre,
@@ -587,40 +666,72 @@ export class EstadisticasService {
     return ranking.sort((a, b) => b.promedio - a.promedio);
   }
 
-  // Helper: métricas anuales (promedio + empleados + kpisRojos) para un set de áreas
-  private async calcularMetricasArea(areasIds: string[]) {
-    const totalEmpleados = await this.prisma.user.count({
-      where: {
-        areaId: { in: areasIds },
-        activo: true,
-      },
+  // Helper: métricas del período (% cumplimiento + empleados + kpisRojos anuales)
+  // % cumplimiento = (KPIs con evidencia aprobada o pendiente_revision en el período)
+  //                  / (suma de KPIs activos por puesto de los empleados activos)
+  private async calcularMetricasArea(areasIds: string[], periodo: string) {
+    const empleadosArea = await this.prisma.user.findMany({
+      where: { areaId: { in: areasIds }, activo: true },
+      select: { id: true, puestoId: true },
     });
+    const totalEmpleados = empleadosArea.length;
 
+    let pct = 0;
+    if (totalEmpleados > 0) {
+      const empleadoIds = empleadosArea.map((e) => e.id);
+      const puestoIds = empleadosArea
+        .map((e) => e.puestoId)
+        .filter(Boolean) as string[];
+
+      // KPIs activos por puesto
+      const kpisPorPuesto = await this.prisma.kPI.groupBy({
+        by: ['puestoId'],
+        where: { puestoId: { in: puestoIds }, activo: true },
+        _count: { id: true },
+      });
+      const kpisCountMap = new Map(
+        kpisPorPuesto.map((k) => [k.puestoId, k._count.id]),
+      );
+
+      // Total esperado = suma de KPIs activos del puesto de cada empleado
+      let totalEsperado = 0;
+      for (const emp of empleadosArea) {
+        totalEsperado += kpisCountMap.get(emp.puestoId ?? '') ?? 0;
+      }
+
+      // Cumplidos = (empleado, kpi) con estado aprobada o pendiente_revision
+      const estadoMap = await this.getEstadoEvidenciasPorEmpleado(
+        empleadoIds,
+        periodo,
+      );
+      let cumplidos = 0;
+      for (const kpiMap of estadoMap.values()) {
+        for (const status of kpiMap.values()) {
+          if (status === 'aprobada' || status === 'pendiente_revision') {
+            cumplidos++;
+          }
+        }
+      }
+
+      pct = totalEsperado > 0 ? (cumplidos / totalEsperado) * 100 : 0;
+    }
+
+    // kpisRojos: se conserva como agregado anual de evaluaciones cerradas
     const evaluaciones = await this.prisma.evaluacion.findMany({
       where: {
         empleado: { areaId: { in: areasIds } },
         anio: new Date().getFullYear(),
         status: 'cerrada',
       },
-      select: { promedioGeneral: true, kpisRojos: true },
+      select: { kpisRojos: true },
     });
-
-    let promedio = 0;
-    if (evaluaciones.length > 0) {
-      const suma = evaluaciones.reduce<number>(
-        (acc, ev) => acc + (ev.promedioGeneral ?? 0),
-        0,
-      );
-      promedio = suma / evaluaciones.length;
-    }
-
     const totalKpisRojos = evaluaciones.reduce<number>(
       (acc, ev) => acc + ev.kpisRojos,
       0,
     );
 
     return {
-      promedio: Math.round(promedio * 100) / 100,
+      promedio: Math.round(pct * 100) / 100,
       empleados: totalEmpleados,
       kpisRojos: totalKpisRojos,
     };
@@ -659,58 +770,11 @@ export class EstadisticasService {
       kpisPorPuesto.map((k) => [k.puestoId, k._count.id]),
     );
 
-    // Evidencias del período
-    const evidencias = await this.prisma.evidenciaKPI.findMany({
-      where: {
-        empleadoId: { in: empleadoIds },
-        periodo,
-        tipo: { not: 'nota_kpi' },
-      },
-      select: { empleadoId: true, kpiId: true, status: true },
-    });
-
-    // Estado efectivo por (empleado, kpi): aprobada > pendiente_revision > rechazada
-    const kpiStatusPorEmpleado = new Map<string, Map<string, string>>();
-    for (const ev of evidencias) {
-      if (!kpiStatusPorEmpleado.has(ev.empleadoId)) {
-        kpiStatusPorEmpleado.set(ev.empleadoId, new Map());
-      }
-      const kpiMap = kpiStatusPorEmpleado.get(ev.empleadoId)!;
-      const actual = kpiMap.get(ev.kpiId);
-      if (
-        !actual ||
-        ev.status === 'aprobada' ||
-        (ev.status === 'pendiente_revision' && actual !== 'aprobada')
-      ) {
-        kpiMap.set(ev.kpiId, ev.status);
-      }
-    }
-
-    // Órdenes completadas/aprobadas del período → cuentan como aprobada
-    const [pYear, pMonth] = periodo.split('-').map(Number);
-    const periodoStart = new Date(pYear, pMonth - 1, 1);
-    const periodoEnd = new Date(pYear, pMonth, 1);
-
-    const ordenesAprobadas = await this.prisma.ordenTrabajo.findMany({
-      where: {
-        empleadoId: { in: empleadoIds },
-        kpiId: { not: null },
-        status: { in: ['completada', 'aprobada'] },
-        fechaLimite: { gte: periodoStart, lt: periodoEnd },
-      },
-      select: { empleadoId: true, kpiId: true },
-    });
-
-    for (const o of ordenesAprobadas) {
-      if (!o.kpiId) continue;
-      if (!kpiStatusPorEmpleado.has(o.empleadoId)) {
-        kpiStatusPorEmpleado.set(o.empleadoId, new Map());
-      }
-      const kpiMap = kpiStatusPorEmpleado.get(o.empleadoId)!;
-      if (!kpiMap.has(o.kpiId)) {
-        kpiMap.set(o.kpiId, 'aprobada');
-      }
-    }
+    // Estado efectivo por (empleado, kpi) en el período
+    const kpiStatusPorEmpleado = await this.getEstadoEvidenciasPorEmpleado(
+      empleadoIds,
+      periodo,
+    );
 
     // Alertas activas + órdenes vencidas (para flags visuales)
     const alertas = await this.prisma.alerta.groupBy({
@@ -743,12 +807,13 @@ export class EstadisticasService {
     return empleados.map((emp) => {
       const kpiMap =
         kpiStatusPorEmpleado.get(emp.id) ?? new Map<string, string>();
-      const aprobadas = [...kpiMap.values()].filter(
-        (s) => s === 'aprobada',
+      const statuses = [...kpiMap.values()];
+      const cumplidos = statuses.filter(
+        (s) => s === 'aprobada' || s === 'pendiente_revision',
       ).length;
       const totalKpis = kpisCountMap.get(emp.puesto?.id ?? '') ?? 0;
       const porcentajeCumplimiento =
-        totalKpis > 0 ? Math.round((aprobadas / totalKpis) * 100) : 0;
+        totalKpis > 0 ? Math.round((cumplidos / totalKpis) * 100) : 0;
 
       return {
         id: emp.id,
@@ -757,7 +822,7 @@ export class EstadisticasService {
         role: emp.role,
         puesto: emp.puesto,
         porcentajeCumplimiento,
-        kpisAprobados: aprobadas,
+        kpisAprobados: cumplidos,
         kpisTotal: totalKpis,
         alertasActivas: alertasMap.get(emp.id) ?? 0,
         ordenesVencidas: vencidasMap.get(emp.id) ?? 0,

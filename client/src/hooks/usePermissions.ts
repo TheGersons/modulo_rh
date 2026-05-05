@@ -6,12 +6,13 @@ export const usePermissions = () => {
 
   const can = (action: string): boolean => {
     const permissions: Record<string, string[]> = {
-      crear_orden: ["admin", "jefe", "empleado", "rrhh"], // TODOS
+      crear_orden: ["admin", "jefe", "empleado", "rrhh"], // TODOS menos auditor
       aprobar_solicitud: ["admin", "jefe"],
       cerrar_periodo: ["admin", "rrhh"], // Solo admin y RRHH
       gestionar_kpis: ["admin", "jefe"],
       gestionar_empleados: ["admin", "rrhh"],
       asignar_revisores: ["admin"],
+      ver_auditoria: ["admin", "auditor"],
     };
 
     return permissions[action]?.includes(userRole || "") || false;
@@ -21,6 +22,7 @@ export const usePermissions = () => {
   const isJefe = userRole === "jefe";
   const isEmpleado = userRole === "empleado";
   const isRRHH = userRole === "rrhh";
+  const isAuditor = userRole === "auditor";
 
   return {
     can,
@@ -28,6 +30,7 @@ export const usePermissions = () => {
     isJefe,
     isEmpleado,
     isRRHH,
+    isAuditor,
     userRole,
   };
 };

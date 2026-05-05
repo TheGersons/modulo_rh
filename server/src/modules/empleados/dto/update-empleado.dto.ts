@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsIn,
 } from 'class-validator';
+import { ROLES } from '../../../common/constants/roles';
 
 export class UpdateEmpleadoDto {
   @IsString()
@@ -29,7 +30,7 @@ export class UpdateEmpleadoDto {
 
   @IsString()
   @IsOptional()
-  @IsIn(['admin', 'jefe', 'empleado', 'rrhh'])
+  @IsIn(ROLES as readonly string[])
   role?: string;
 
   @IsString()
