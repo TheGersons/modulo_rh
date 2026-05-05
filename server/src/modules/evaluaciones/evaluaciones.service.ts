@@ -68,6 +68,52 @@ export class EvaluacionesService {
       `📅 Periodo: ${fechaInicio.toISOString()} - ${fechaFin.toISOString()}`,
     );
 
+    // 2b. Auto-aprobar evidencias pendientes del período al cierre.
+    //     Política: terminada la ventana de gracia, lo que el empleado subió y
+    //     no fue revisado se acepta automáticamente para no penalizar al
+    //     trabajador por la lentitud del revisor. Las rechazadas NO se tocan.
+    const idsEmpleados = empleados.map((e) => e.id);
+    const ahora = new Date();
+
+    const autoKpi = await this.prisma.evidenciaKPI.updateMany({
+      where: {
+        empleadoId: { in: idsEmpleados },
+        periodo: cerrarDto.periodo,
+        status: 'pendiente_revision',
+        tipo: { not: 'nota_kpi' },
+      },
+      data: {
+        status: 'aprobada',
+        fechaRevision: ahora,
+      },
+    });
+    if (autoKpi.count > 0) {
+      console.log(
+        `✅ Auto-aprobadas ${autoKpi.count} evidencias KPI pendientes (cierre ${cerrarDto.periodo})`,
+      );
+    }
+
+    // Evidencias de tareas (órdenes de trabajo): la "fecha del período" de una
+    // orden es su fechaLimite. Auto-aprobamos las pendientes cuyas órdenes
+    // caen en este período.
+    const autoOrden = await this.prisma.evidencia.updateMany({
+      where: {
+        status: 'pendiente_revision',
+        tarea: {
+          ordenTrabajo: {
+            empleadoId: { in: idsEmpleados },
+            fechaLimite: { gte: fechaInicio, lte: fechaFin },
+          },
+        },
+      },
+      data: { status: 'aprobada' },
+    });
+    if (autoOrden.count > 0) {
+      console.log(
+        `✅ Auto-aprobadas ${autoOrden.count} evidencias de órdenes pendientes (cierre ${cerrarDto.periodo})`,
+      );
+    }
+
     const evaluacionesCreadas: any[] = [];
 
     // porcentaje_kpis_equipo se difiere: el equipo puede no tener evaluaciones aún en la primera pasada
