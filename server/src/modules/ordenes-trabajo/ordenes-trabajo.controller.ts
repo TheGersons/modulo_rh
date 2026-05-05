@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
   Request,
+  Delete,
 } from '@nestjs/common';
 import { OrdenesTrabajoService } from './ordenes-trabajo.service';
 import { CreateOrdenTrabajoDto } from './dto/create-orden-trabajo.dto';
@@ -113,6 +114,12 @@ export class OrdenesTrabajoController {
     @Body() apelarDto: ApelarEvidenciaDto,
   ) {
     return this.ordenesService.apelarEvidencia(id, apelarDto);
+  }
+
+  @Delete('evidencias/:id')
+  eliminarEvidencia(@Param('id') id: string, @Request() req) {
+    const empleadoId = req.user.userId;
+    return this.ordenesService.eliminarEvidenciaOrden(id, empleadoId);
   }
 
   @Post('evidencias/:id/responder-apelacion')

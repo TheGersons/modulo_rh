@@ -16,12 +16,15 @@ import { SolicitarEdicionDto } from './dto/solicitar-edicion.dto';
 import { ResponderSolicitudEdicionDto } from './dto/responder-solicitud-edicion.dto';
 import { AlertasService } from '../alertas/alertas.service';
 import { calcularFechaLimiteLaboral } from '../../common/utils/calcular-fecha-limite.util';
+import { ConfiguracionService } from '../../common/configuracion/configuracion.service';
+import { enVentanaGracia, formatPeriodo } from '../../common/utils/grace-period.util';
 
 @Injectable()
 export class OrdenesTrabajoService {
   constructor(
     private prisma: PrismaService,
     private alertasService: AlertasService,
+    private configuracion: ConfiguracionService,
   ) {}
 
   // ============================================
@@ -726,6 +729,52 @@ export class OrdenesTrabajoService {
     );
 
     return evidenciaApelada;
+  }
+
+  // ============================================
+  // EVIDENCIAS - ELIMINAR (EMPLEADO)
+  // Solo evidencias en pendiente_revision, dentro del periodo de la orden
+  // (mes en curso) o su ventana de gracia.
+  // ============================================
+  async eliminarEvidenciaOrden(evidenciaId: string, empleadoId: string) {
+    const evidencia = await this.prisma.evidencia.findUnique({
+      where: { id: evidenciaId },
+      include: { tarea: { include: { ordenTrabajo: true } } },
+    });
+    if (!evidencia) throw new NotFoundException('Evidencia no encontrada');
+
+    const orden = evidencia.tarea.ordenTrabajo;
+    if (orden.empleadoId !== empleadoId) {
+      throw new BadRequestException('No tienes permiso para eliminar esta evidencia');
+    }
+    if (evidencia.status !== 'pendiente_revision') {
+      throw new BadRequestException(
+        'Solo puedes eliminar evidencias en estado pendiente de revisión. Las aprobadas y rechazadas no se pueden eliminar.',
+      );
+    }
+
+    // Validar que el periodo de la orden esté abierto: mismo mes que hoy, o
+    // mes anterior dentro de su ventana de gracia.
+    const ahora = new Date();
+    const periodoOrden = formatPeriodo(orden.fechaInicio);
+    const periodoActual = formatPeriodo(ahora);
+    if (periodoOrden !== periodoActual) {
+      const diasGracia = await this.configuracion.getDiasGracia();
+      if (!enVentanaGracia(ahora, periodoOrden, diasGracia)) {
+        throw new BadRequestException(
+          'El periodo de esta orden ya está cerrado. No se puede modificar la evidencia.',
+        );
+      }
+    }
+
+    // Borrar registro y decrementar contador de intentos
+    await this.prisma.evidencia.delete({ where: { id: evidenciaId } });
+    await this.prisma.tarea.update({
+      where: { id: evidencia.tareaId },
+      data: { intentosEvidencia: { decrement: 1 } },
+    });
+
+    return { message: 'Evidencia eliminada exitosamente' };
   }
 
   // ============================================

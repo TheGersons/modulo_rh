@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Target, Clock, CheckCircle, XCircle, AlertCircle,
     Upload, FileText, Image, Film, File, ChevronDown, ChevronUp,
-    TrendingUp, PauseCircle, User, Info, Plus, Eye, Download,
+    TrendingUp, PauseCircle, User, Info, Plus, Eye, Download, Trash2,
 } from 'lucide-react';
 import Layout from '../components/layout/Layout';
 
@@ -92,6 +92,7 @@ export default function DetalleOrdenEmpleadoPage() {
 
     const [apelandoEvidencia, setApelandoEvidencia] = useState<string | null>(null);
     const [textoApelacion, setTextoApelacion] = useState('');
+    const [eliminandoEvidencia, setEliminandoEvidencia] = useState<string | null>(null);
 
     const [showSolicitarTarea, setShowSolicitarTarea] = useState(false);
     const [nuevaTareaDesc, setNuevaTareaDesc] = useState('');
@@ -182,6 +183,28 @@ export default function DetalleOrdenEmpleadoPage() {
         xhr.open('POST', '/api/storage/evidencia-orden');
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.send(formData);
+    };
+
+    const handleEliminarEvidencia = async (evidenciaId: string) => {
+        if (!confirm('¿Eliminar esta evidencia? Solo puedes eliminar evidencias en revisión.')) return;
+        try {
+            setEliminandoEvidencia(evidenciaId);
+            const token = localStorage.getItem('accessToken');
+            const res = await fetch(`/api/ordenes-trabajo/evidencias/${evidenciaId}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.message || 'Error al eliminar');
+            }
+            await cargarOrden();
+            showToast('Evidencia eliminada');
+        } catch (err: any) {
+            alert(err.message || 'Error al eliminar la evidencia.');
+        } finally {
+            setEliminandoEvidencia(null);
+        }
     };
 
     const handleApelar = async (evidenciaId: string) => {
@@ -512,6 +535,17 @@ export default function DetalleOrdenEmpleadoPage() {
                                                                         className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg transition-colors" title="Descargar">
                                                                         <Download className="w-3.5 h-3.5" />
                                                                     </a>
+                                                                    {ev.status === 'pendiente_revision' && !ordenCerrada && (
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); handleEliminarEvidencia(ev.id); }}
+                                                                            disabled={eliminandoEvidencia === ev.id}
+                                                                            className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg transition-colors disabled:opacity-50"
+                                                                            title="Eliminar evidencia (solo en revisión)">
+                                                                            {eliminandoEvidencia === ev.id
+                                                                                ? <div className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                                                                                : <Trash2 className="w-3.5 h-3.5" />}
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                             </div>
 
