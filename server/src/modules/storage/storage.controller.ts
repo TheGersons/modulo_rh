@@ -15,7 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from 'src/common/database/prisma.service';
 import { AlertasService } from '../alertas/alertas.service';
 import { ConfiguracionService } from 'src/common/configuracion/configuracion.service';
-import { enVentanaGracia, getVentanaGracia } from 'src/common/utils/grace-period.util';
+import { enVentanaGracia, getVentanaGracia, formatPeriodo } from 'src/common/utils/grace-period.util';
 
 const TIPOS_PERMITIDOS = [
   // Imágenes
@@ -105,6 +105,24 @@ export class StorageController {
     });
     if (!empleado) throw new BadRequestException('Empleado no encontrado');
 
+    const diasGracia = await this.configuracion.getDiasGracia();
+
+    // Defensa-en-profundidad: si el cliente envía el período del mes actual
+    // pero estamos dentro de la ventana de gracia del mes anterior, la subida
+    // pertenece al mes anterior. Esto protege contra clientes con JS cacheado
+    // que aún no aplican la lógica de gracia para KPIs no-OT.
+    const ahora = new Date();
+    const periodoActualSrv = formatPeriodo(ahora);
+    const mesAnteriorDate = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+    const periodoAnteriorSrv = formatPeriodo(mesAnteriorDate);
+    if (
+      body.periodo === periodoActualSrv &&
+      enVentanaGracia(ahora, periodoAnteriorSrv, diasGracia)
+    ) {
+      body.periodo = periodoAnteriorSrv;
+      body.anio = String(mesAnteriorDate.getFullYear());
+    }
+
     // KPIs basados en órdenes de trabajo solo aceptan respaldos durante la
     // ventana de gracia (días 1..N del mes siguiente al periodo).
     const kpi = await this.prisma.kPI.findUnique({
@@ -113,7 +131,6 @@ export class StorageController {
     });
     let esRespaldoGracia = false;
     if (kpi?.aplicaOrdenTrabajo) {
-      const diasGracia = await this.configuracion.getDiasGracia();
       if (!enVentanaGracia(new Date(), body.periodo, diasGracia)) {
         const { inicio, fin } = getVentanaGracia(body.periodo, diasGracia);
         throw new BadRequestException(
