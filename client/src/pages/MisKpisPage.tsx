@@ -1242,7 +1242,7 @@ export default function MisKPIsPage() {
                                                                         <div className="p-3 bg-teal-50 border border-teal-100 rounded-lg space-y-0.5">
                                                                             <p className="text-xs text-teal-700">
                                                                                 <span className="font-medium">{formula.labelEsperado ?? 'Resultado esperado'}:</span>{' '}
-                                                                                <span className="font-bold">{formula.valorEsperado} {kpi.unidad}</span>
+                                                                                <span className="font-bold">{formula.valorEsperado}</span>
                                                                                 <span className="ml-1 text-teal-500">(definido por el sistema)</span>
                                                                             </p>
                                                                             {modo === 'tolerancia' && <p className="text-xs text-teal-600">Tolerancia permitida: ±{formula.toleranciaPorc ?? 5}%</p>}
@@ -1258,7 +1258,6 @@ export default function MisKPIsPage() {
                                                                                 <input type="number" value={valorObtenido} onChange={(e) => setValorObtenido(e.target.value)}
                                                                                     placeholder="0" step="any"
                                                                                     className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500" />
-                                                                                {kpi.unidad && <span className="text-sm text-gray-500 font-medium">{kpi.unidad}</span>}
                                                                             </div>
                                                                         </div>
 
@@ -1282,7 +1281,6 @@ export default function MisKPIsPage() {
                                                                         <input type="number" value={valorNumerico} onChange={(e) => setValorNumerico(e.target.value)}
                                                                             placeholder="0" min="0" step="any"
                                                                             className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
-                                                                        {kpi.unidad && <span className="text-sm text-gray-500 font-medium">{kpi.unidad}</span>}
                                                                     </div>
                                                                     {valorNumerico && (() => {
                                                                         const val = parseFloat(valorNumerico);
@@ -1307,7 +1305,7 @@ export default function MisKPIsPage() {
                                                                         const opShow = normalizarOperador(kpi.operadorMeta, kpi.sentido);
                                                                         return res ? (
                                                                             <p className={`text-xs mt-1.5 font-medium ${res === 'cumple' ? 'text-green-600' : 'text-red-600'}`}>
-                                                                                {res === 'cumple' ? `✓ Cumple (${opShow} ${fmtConUnidad(kpi.meta, kpi.unidad)})` : `✗ No cumple (${opShow} ${fmtConUnidad(kpi.meta, kpi.unidad)})`}
+                                                                                {res === 'cumple' ? `✓ Cumple (${opShow} ${fmtNum(kpi.meta)})` : `✗ No cumple (${opShow} ${fmtNum(kpi.meta)})`}
                                                                             </p>
                                                                         ) : null;
                                                                     })()}
