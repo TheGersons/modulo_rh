@@ -108,34 +108,63 @@ export class StorageController {
     const diasGracia = await this.configuracion.getDiasGracia();
 
     // Defensa-en-profundidad: si el cliente envía el período del mes actual
-    // pero estamos dentro de la ventana de gracia del mes anterior, la subida
-    // pertenece al mes anterior. Esto protege contra clientes con JS cacheado
-    // que aún no aplican la lógica de gracia para KPIs no-OT.
+    // pero el mes anterior sigue "abierto" (no tiene Evaluacion mensual creada
+    // todavía, es decir el cron de cierre no ha corrido), la subida pertenece
+    // al mes anterior. Esto cubre dos casos:
+    //   1) ventana de gracia normal (días 1..N del mes siguiente)
+    //   2) gracia extendida: el cron falló o aún no se ejecuta el día 6 a las 23:50
     const ahora = new Date();
     const periodoActualSrv = formatPeriodo(ahora);
     const mesAnteriorDate = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
     const periodoAnteriorSrv = formatPeriodo(mesAnteriorDate);
-    if (
-      body.periodo === periodoActualSrv &&
-      enVentanaGracia(ahora, periodoAnteriorSrv, diasGracia)
-    ) {
-      body.periodo = periodoAnteriorSrv;
-      body.anio = String(mesAnteriorDate.getFullYear());
+
+    if (body.periodo === periodoActualSrv) {
+      const mesesEs = [
+        'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+      ];
+      const evalAnterior = await this.prisma.evaluacion.findFirst({
+        where: {
+          periodo: mesesEs[mesAnteriorDate.getMonth()],
+          anio: mesAnteriorDate.getFullYear(),
+        },
+        select: { id: true },
+      });
+      const mesAnteriorAbierto = !evalAnterior;
+      if (mesAnteriorAbierto) {
+        body.periodo = periodoAnteriorSrv;
+        body.anio = String(mesAnteriorDate.getFullYear());
+      }
     }
 
-    // KPIs basados en órdenes de trabajo solo aceptan respaldos durante la
-    // ventana de gracia (días 1..N del mes siguiente al periodo).
+    // KPIs basados en órdenes de trabajo solo aceptan respaldos cuando el
+    // período al que se sube ES el mes anterior y ese mes sigue abierto (sin
+    // evaluación cerrada). Esto cubre la ventana de gracia normal y también
+    // la "gracia extendida" cuando el cron tardó en ejecutarse.
     const kpi = await this.prisma.kPI.findUnique({
       where: { id: body.kpiId },
       select: { aplicaOrdenTrabajo: true },
     });
     let esRespaldoGracia = false;
     if (kpi?.aplicaOrdenTrabajo) {
-      if (!enVentanaGracia(new Date(), body.periodo, diasGracia)) {
+      const subiendoAlMesAnterior = body.periodo === periodoAnteriorSrv;
+      // Re-consultar si el mes que se está subiendo está cerrado
+      const mesesEs2 = [
+        'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+      ];
+      const [yPer, mPer] = body.periodo.split('-').map(Number);
+      const evalDelPeriodo = await this.prisma.evaluacion.findFirst({
+        where: { periodo: mesesEs2[(mPer ?? 1) - 1], anio: yPer },
+        select: { id: true },
+      });
+      const periodoAbierto = !evalDelPeriodo;
+
+      if (!subiendoAlMesAnterior || !periodoAbierto) {
         const { inicio, fin } = getVentanaGracia(body.periodo, diasGracia);
         throw new BadRequestException(
-          `Solo puedes subir respaldo de este KPI durante la ventana de gracia ` +
-            `(${inicio.toLocaleDateString('es-MX')} – ${fin.toLocaleDateString('es-MX')}).`,
+          `Solo puedes subir respaldo de este KPI mientras el período del mes anterior siga abierto ` +
+            `(ventana original ${inicio.toLocaleDateString('es-MX')} – ${fin.toLocaleDateString('es-MX')}).`,
         );
       }
       esRespaldoGracia = true;
