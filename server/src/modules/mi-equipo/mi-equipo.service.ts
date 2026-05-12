@@ -26,23 +26,8 @@ export class MiEquipoService {
         select: { id: true },
       });
       todasAreas.forEach((a) => areaIds.add(a.id));
-    } else {
-      // jefe: usar su areaId del perfil
-      if (!jefe.areaId) {
-        return {
-          areas: [],
-          empleados: [],
-          resumen: {
-            total: 0,
-            conKpisRojos: 0,
-            conOrdenesVencidas: 0,
-            conAlertas: 0,
-            conEvidenciasPendientes: 0,
-          },
-          periodo,
-        };
-      }
-
+    } else if (jefe.areaId) {
+      // jefe con área asignada: agregar su área/sub-áreas al set
       const areaJefe = await this.prisma.area.findUnique({
         where: { id: jefe.areaId },
         select: { areaPadreId: true },
@@ -60,12 +45,47 @@ export class MiEquipoService {
         areaIds.add(jefe.areaId);
       }
     }
-    // 3. Obtener empleados activos de esas áreas (excluir al propio jefe)
+    // Nota: un jefe sin areaId aún puede ver empleados si tiene asignaciones
+    // manuales activas (se procesan en el paso 3a).
+    // 3a. Empleados asignados manualmente a este revisor (independiente del área)
+    //     Coherente con revisores-asignados.service.ts → puedeRevisar():
+    //     la asignación manual da acceso de revisión aunque el empleado no sea de mi área.
+    const asignacionesManuales = await this.prisma.revisorAsignado.findMany({
+      where: { revisorId: userId, activo: true },
+      select: { empleadoId: true },
+    });
+    const empleadosAsignadosIds = asignacionesManuales.map((a) => a.empleadoId);
+
+    // 3b. Obtener empleados activos: los de mis áreas O los asignados manualmente
+    //     (excluir al propio jefe). Si no hay nada que consultar, retornar vacío.
+    const orClauses: any[] = [];
+    if (areaIds.size > 0) {
+      orClauses.push({ areaId: { in: Array.from(areaIds) } });
+    }
+    if (empleadosAsignadosIds.length > 0) {
+      orClauses.push({ id: { in: empleadosAsignadosIds } });
+    }
+
+    if (orClauses.length === 0) {
+      return {
+        areas: [],
+        empleados: [],
+        resumen: {
+          total: 0,
+          conKpisRojos: 0,
+          conOrdenesVencidas: 0,
+          conAlertas: 0,
+          conEvidenciasPendientes: 0,
+        },
+        periodo,
+      };
+    }
+
     const empleados = await this.prisma.user.findMany({
       where: {
-        areaId: { in: Array.from(areaIds) },
         activo: true,
         id: { not: userId },
+        OR: orClauses,
       },
       select: {
         id: true,
@@ -286,7 +306,11 @@ export class MiEquipoService {
       ).length,
     };
 
-    // 9. Info de áreas
+    // 9. Info de áreas — incluir también las áreas de empleados asignados
+    //    manualmente que pueden estar fuera del set inicial.
+    for (const e of empleados) {
+      if (e.areaId) areaIds.add(e.areaId);
+    }
     const areasInfo = await this.prisma.area.findMany({
       where: { id: { in: Array.from(areaIds) } },
       select: {
