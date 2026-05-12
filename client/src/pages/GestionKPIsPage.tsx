@@ -40,8 +40,13 @@ interface FormulaCalculo {
   labelEsperado?: string;
   valorEsperado?: string;
   labelObtenido?: string;
-  modoEvaluacion?: 'tolerancia' | 'umbral'; // ← NUEVO
-  toleranciaPorc?: number;                   // ← NUEVO: solo para modo tolerancia
+  modoEvaluacion?: 'tolerancia' | 'umbral';
+  toleranciaPorc?: number;
+  // Campos de acumulado_trimestral
+  campo?: string;
+  metas?: { Q1?: number; Q2?: number; Q3?: number; Q4?: number };
+  metaAnual?: number;
+  porcentajes?: { Q1?: number; Q2?: number; Q3?: number; Q4?: number };
 }
 
 export default function GestionKPIsPage() {
