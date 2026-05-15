@@ -218,6 +218,7 @@ export class AlertasService {
     return this.create({
       areaId: empleado.areaId,
       empleadoId: orden.empleadoId,
+      ordenTrabajoId: orden.id,
       tipo: 'orden_completada',
       nivel: 'BAJO',
       titulo: 'Orden de trabajo completada',
@@ -244,6 +245,7 @@ export class AlertasService {
     return this.create({
       areaId: empleado.areaId,
       empleadoId: orden.empleadoId,
+      ordenTrabajoId: orden.id,
       tipo: 'orden_vencida',
       nivel: 'ALTO',
       titulo: 'Orden de trabajo vencida',
@@ -271,6 +273,7 @@ export class AlertasService {
     return this.create({
       areaId: empleado.areaId,
       empleadoId: orden.empleadoId,
+      ordenTrabajoId: orden.id,
       tipo: 'orden_por_vencer',
       nivel: 'MEDIO',
       titulo: 'Orden de trabajo próxima a vencer',
@@ -292,6 +295,7 @@ export class AlertasService {
     return this.create({
       areaId: empleado.areaId,
       empleadoId: orden.empleadoId,
+      ordenTrabajoId: orden.id,
       tipo: 'evidencia_rechazada',
       nivel: 'MEDIO',
       titulo: 'Evidencia rechazada',
@@ -313,6 +317,7 @@ export class AlertasService {
     return this.create({
       areaId: empleado.areaId,
       empleadoId: orden.empleadoId,
+      ordenTrabajoId: orden.id,
       tipo: 'evidencia_aprobada',
       nivel: 'BAJO',
       titulo: 'Evidencia aprobada',
@@ -333,6 +338,7 @@ export class AlertasService {
 
     return this.create({
       areaId: empleado.areaId,
+      ordenTrabajoId: orden.id,
       tipo: 'evidencia_apelada',
       nivel: 'MEDIO',
       titulo: 'Evidencia apelada por empleado',
@@ -616,6 +622,7 @@ export class AlertasService {
     return this.create({
       areaId: empleado.areaId,
       empleadoId: orden.empleadoId,
+      ordenTrabajoId: orden.id,
       tipo: 'orden_asignada',
       nivel: 'BAJO',
       titulo: 'Nueva orden de trabajo asignada',

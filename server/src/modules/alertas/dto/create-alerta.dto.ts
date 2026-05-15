@@ -14,15 +14,21 @@ export class CreateAlertaDto {
   evaluacionId?: string;
 
   @IsString()
+  @IsOptional()
+  ordenTrabajoId?: string;
+
+  @IsString()
   @IsNotEmpty()
   @IsIn([
     'orden_vencida',
     'orden_completada',
     'orden_por_vencer',
+    'orden_asignada',
     'kpi_critico',
     'evidencia_rechazada',
     'evidencia_aprobada',
     'evidencia_apelada',
+    'evidencia_pendiente',
     'carga_alta',
     'solicitud_tarea_pendiente',
     'solicitud_edicion_pendiente',

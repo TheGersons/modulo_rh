@@ -16,11 +16,13 @@ import {
     Eye,
     MessageSquare,
     XCircle,
+    CalendarClock,
 } from 'lucide-react';
 import { ordenesTrabajoService, type OrdenTrabajo } from '../services/ordenes-trabajo.service';
 import { usePermissions } from '../hooks/usePermissions';
 import { useAuth } from '../contexts/AuthContext';
 import Layout from '../components/layout/Layout';
+import ModalEditarFechaLimite from '../components/ModalEditarFechaLimite';
 
 const TIPO_ICON: Record<string, any> = {
     imagen: Image,
@@ -50,6 +52,7 @@ export default function DetalleOrdenPage() {
     const [confirmaRechazoApelacion, setConfirmaRechazoApelacion] = useState(false);
     const [guardandoApelacion, setGuardandoApelacion] = useState(false);
     const [aprobandoOrden, setAprobandoOrden] = useState(false);
+    const [showEditarFechaModal, setShowEditarFechaModal] = useState(false);
 
     useEffect(() => { cargarOrden(); }, [id]);
 
@@ -209,7 +212,21 @@ export default function DetalleOrdenPage() {
                             <p className="text-gray-600 mt-1 text-sm">{orden.kpi?.indicador ?? 'Orden personalizada'}</p>
                         </div>
                     </div>
-                    {getStatusBadge(orden.status)}
+                    <div className="flex items-center gap-2">
+                        {esCreador
+                            && orden.tipoOrden !== 'orden_empleado'
+                            && ['pendiente', 'en_proceso', 'en_pausa', 'vencida'].includes(orden.status) && (
+                                <button
+                                    onClick={() => setShowEditarFechaModal(true)}
+                                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
+                                    title="Editar fecha límite"
+                                >
+                                    <CalendarClock className="w-4 h-4" />
+                                    Editar fecha
+                                </button>
+                            )}
+                        {getStatusBadge(orden.status)}
+                    </div>
                 </div>
 
                 {/* Alertas de tiempo */}
@@ -679,6 +696,17 @@ export default function DetalleOrdenPage() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {showEditarFechaModal && orden && (
+                <ModalEditarFechaLimite
+                    orden={orden}
+                    onClose={() => setShowEditarFechaModal(false)}
+                    onSuccess={() => {
+                        setShowEditarFechaModal(false);
+                        cargarOrden();
+                    }}
+                />
             )}
         </Layout>
     );

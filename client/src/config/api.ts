@@ -89,6 +89,8 @@ export const API_ENDPOINTS = {
   ordenTrabajoCancelar: (id: string) => `/ordenes-trabajo/${id}/cancelar`,
   ordenTrabajoExtenderFecha: (id: string) =>
     `/ordenes-trabajo/${id}/extender-fecha`,
+  ordenTrabajoEditarFechaLimite: (id: string) =>
+    `/ordenes-trabajo/${id}/editar-fecha-limite`,
   ordenTrabajoCalcularProgreso: (id: string) =>
     `/ordenes-trabajo/${id}/calcular-progreso`,
 

@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CreateOrdenTrabajoDto } from './dto/create-orden-trabajo.dto';
@@ -14,6 +15,7 @@ import { SolicitarTareaDto } from './dto/solicitar-tarea.dto';
 import { ResponderSolicitudTareaDto } from './dto/responder-solicitud-tarea.dto';
 import { SolicitarEdicionDto } from './dto/solicitar-edicion.dto';
 import { ResponderSolicitudEdicionDto } from './dto/responder-solicitud-edicion.dto';
+import { EditarFechaLimiteDto } from './dto/editar-fecha-limite.dto';
 import { AlertasService } from '../alertas/alertas.service';
 import { calcularFechaLimiteLaboral } from '../../common/utils/calcular-fecha-limite.util';
 import { ConfiguracionService } from '../../common/configuracion/configuracion.service';
@@ -452,6 +454,83 @@ export class OrdenesTrabajoService {
         fechaLimite: fechaExtendida,
       },
     });
+  }
+
+  // ============================================
+  // EDITAR FECHA LÍMITE (creador, integridad completa)
+  // ============================================
+  async editarFechaLimite(
+    id: string,
+    dto: EditarFechaLimiteDto,
+    usuarioId: string,
+  ) {
+    const orden = await this.findOne(id);
+
+    if (orden.creadorId !== usuarioId) {
+      throw new ForbiddenException(
+        'Solo el creador puede editar la fecha límite de la orden',
+      );
+    }
+
+    const tiposPermitidos = ['personalizado', 'kpi_sistema'];
+    if (!tiposPermitidos.includes(orden.tipoOrden)) {
+      throw new BadRequestException(
+        'Este tipo de orden no admite edición directa de fecha límite',
+      );
+    }
+
+    const estadosPermitidos = ['pendiente', 'en_proceso', 'en_pausa', 'vencida'];
+    if (!estadosPermitidos.includes(orden.status)) {
+      throw new BadRequestException(
+        `No se puede editar la fecha de una orden en estado "${orden.status}"`,
+      );
+    }
+
+    const nuevaFecha = new Date(dto.nuevaFecha);
+    if (isNaN(nuevaFecha.getTime())) {
+      throw new BadRequestException('La nueva fecha no es válida');
+    }
+    if (nuevaFecha <= new Date()) {
+      throw new BadRequestException(
+        'La nueva fecha debe ser posterior al momento actual',
+      );
+    }
+
+    // Si estaba vencida y la nueva fecha es futura, volver a un estado activo.
+    let nuevoStatus = orden.status;
+    if (orden.status === 'vencida') {
+      nuevoStatus = orden.tareasCompletadas > 0 ? 'en_proceso' : 'pendiente';
+    }
+
+    const [ordenActualizada] = await this.prisma.$transaction([
+      this.prisma.ordenTrabajo.update({
+        where: { id },
+        data: {
+          fechaLimite: nuevaFecha,
+          fechaExtendida: nuevaFecha,
+          motivoExtension: dto.motivo ?? null,
+          status: nuevoStatus,
+        },
+        include: {
+          kpi: { select: { key: true, indicador: true } },
+          empleado: { select: { nombre: true, apellido: true } },
+        },
+      }),
+      this.prisma.tarea.updateMany({
+        where: { ordenTrabajoId: id },
+        data: { fechaLimite: nuevaFecha },
+      }),
+      this.prisma.alerta.updateMany({
+        where: {
+          ordenTrabajoId: id,
+          status: { in: ['activa', 'en_proceso'] },
+          tipo: { in: ['orden_vencida', 'orden_por_vencer'] },
+        },
+        data: { status: 'resuelta', fechaResolucion: new Date() },
+      }),
+    ]);
+
+    return ordenActualizada;
   }
 
   // ============================================
@@ -1206,21 +1285,29 @@ export class OrdenesTrabajoService {
 
     // Si fue aprobada, aplicar el cambio
     if (responderDto.status === 'aprobada') {
-      const updateData: any = {};
-
-      switch (solicitud.campoAEditar) {
-        case 'fechaLimite':
-          updateData.fechaLimite = new Date(solicitud.valorNuevo);
-          break;
-        case 'descripcion':
-          updateData.descripcion = solicitud.valorNuevo;
-          break;
-        case 'cantidadTareas':
-          updateData.cantidadTareas = parseInt(solicitud.valorNuevo);
-          break;
+      if (solicitud.campoAEditar === 'fechaLimite') {
+        // Pasa por el flujo de integridad: actualiza tareas y resuelve alertas.
+        const orden = await this.findOne(solicitud.ordenTrabajoId);
+        await this.editarFechaLimite(
+          solicitud.ordenTrabajoId,
+          {
+            nuevaFecha: solicitud.valorNuevo,
+            motivo: `Aprobación de solicitud de edición: ${solicitud.justificacion}`,
+          },
+          orden.creadorId,
+        );
+      } else {
+        const updateData: any = {};
+        switch (solicitud.campoAEditar) {
+          case 'descripcion':
+            updateData.descripcion = solicitud.valorNuevo;
+            break;
+          case 'cantidadTareas':
+            updateData.cantidadTareas = parseInt(solicitud.valorNuevo);
+            break;
+        }
+        await this.update(solicitud.ordenTrabajoId, updateData);
       }
-
-      await this.update(solicitud.ordenTrabajoId, updateData);
     }
 
     // Desmarcar requiereAprobacion si no hay más solicitudes pendientes

@@ -1,13 +1,9 @@
-import { IsString, IsOptional, IsBoolean, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsBoolean } from 'class-validator';
 
 export class UpdateOrdenTrabajoDto {
   @IsString()
   @IsOptional()
   descripcion?: string;
-
-  @IsDateString()
-  @IsOptional()
-  fechaLimite?: string;
 
   @IsBoolean()
   @IsOptional()

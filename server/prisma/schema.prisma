@@ -175,6 +175,7 @@ model OrdenTrabajo {
   revision           RevisionJefe?
   solicitudesTarea   SolicitudTarea[]
   solicitudesEdicion SolicitudEdicion[]
+  alertas            Alerta[]
   area               Area?              @relation(fields: [areaId], references: [id])
   areaId             String?
 
@@ -393,10 +394,11 @@ model EvaluacionDetalle {
 }
 
 model Alerta {
-  id           String  @id @default(cuid())
-  areaId       String
-  empleadoId   String?
-  evaluacionId String?
+  id             String  @id @default(cuid())
+  areaId         String
+  empleadoId     String?
+  evaluacionId   String?
+  ordenTrabajoId String?
 
   tipo           String // "orden_vencida", "orden_completada", "kpi_critico", "evidencia_rechazada", "evidencia_aprobada", "carga_alta", "solicitud_tarea_pendiente", "solicitud_edicion_pendiente"
   nivel          String // "BAJO", "MEDIO", "ALTO"
@@ -413,13 +415,15 @@ model Alerta {
   updatedAt DateTime @updatedAt
 
   // Relaciones
-  area       Area        @relation(fields: [areaId], references: [id], onDelete: Cascade)
-  empleado   User?       @relation("AlertasEmpleado", fields: [empleadoId], references: [id], onDelete: SetNull)
-  evaluacion Evaluacion? @relation(fields: [evaluacionId], references: [id], onDelete: SetNull)
+  area         Area          @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  empleado     User?         @relation("AlertasEmpleado", fields: [empleadoId], references: [id], onDelete: SetNull)
+  evaluacion   Evaluacion?   @relation(fields: [evaluacionId], references: [id], onDelete: SetNull)
+  ordenTrabajo OrdenTrabajo? @relation(fields: [ordenTrabajoId], references: [id], onDelete: SetNull)
 
   @@index([areaId])
   @@index([empleadoId])
   @@index([evaluacionId])
+  @@index([ordenTrabajoId])
   @@index([status])
   @@index([nivel])
   @@index([tipo])

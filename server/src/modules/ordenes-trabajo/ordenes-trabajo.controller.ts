@@ -21,6 +21,7 @@ import { SolicitarTareaDto } from './dto/solicitar-tarea.dto';
 import { ResponderSolicitudTareaDto } from './dto/responder-solicitud-tarea.dto';
 import { SolicitarEdicionDto } from './dto/solicitar-edicion.dto';
 import { ResponderSolicitudEdicionDto } from './dto/responder-solicitud-edicion.dto';
+import { EditarFechaLimiteDto } from './dto/editar-fecha-limite.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('ordenes-trabajo')
@@ -245,6 +246,15 @@ export class OrdenesTrabajoController {
       body.nuevaFecha,
       body.motivo,
     );
+  }
+
+  @Post(':id/editar-fecha-limite')
+  editarFechaLimite(
+    @Param('id') id: string,
+    @Body() dto: EditarFechaLimiteDto,
+    @Request() req,
+  ) {
+    return this.ordenesService.editarFechaLimite(id, dto, req.user.userId);
   }
 
   @Post(':id/calcular-progreso')

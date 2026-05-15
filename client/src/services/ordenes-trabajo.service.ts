@@ -16,6 +16,9 @@ export interface OrdenTrabajo {
   status: string;
   fechaInicio: string;
   fechaLimite: string;
+  fechaLimiteOriginal?: string;
+  fechaExtendida?: string;
+  motivoExtension?: string;
   fechaCompletada?: string;
   tareasCompletadas: number;
   progreso: number;
@@ -178,6 +181,21 @@ export const ordenesTrabajoService = {
   ): Promise<OrdenTrabajo> => {
     const response = await apiClient.post(
       API_ENDPOINTS.ordenTrabajoExtenderFecha(id),
+      {
+        nuevaFecha,
+        motivo,
+      },
+    );
+    return response.data;
+  },
+
+  editarFechaLimite: async (
+    id: string,
+    nuevaFecha: string,
+    motivo?: string,
+  ): Promise<OrdenTrabajo> => {
+    const response = await apiClient.post(
+      API_ENDPOINTS.ordenTrabajoEditarFechaLimite(id),
       {
         nuevaFecha,
         motivo,

@@ -11,9 +11,11 @@ import {
     Calendar,
     User,
     TrendingUp,
+    CalendarClock,
 } from 'lucide-react';
 import { ordenesTrabajoService, type OrdenTrabajo } from '../services/ordenes-trabajo.service';
 import { useAuth } from '../contexts/AuthContext';
+import ModalEditarFechaLimite from '../components/ModalEditarFechaLimite';
 
 // Estado visual derivado de las evidencias de la orden
 function getEstadoReal(orden: OrdenTrabajo): {
@@ -67,6 +69,7 @@ export default function OrdenesTrabajoPage() {
     const [ordenes, setOrdenes] = useState<OrdenTrabajo[]>([]);
     const [loading, setLoading] = useState(true);
     const [filtroStatus, setFiltroStatus] = useState<string>('todos');
+    const [ordenEditandoFecha, setOrdenEditandoFecha] = useState<OrdenTrabajo | null>(null);
 
     useEffect(() => {
         cargarOrdenes();
@@ -320,19 +323,44 @@ export default function OrdenesTrabajoPage() {
                                         )}
                                     </div>
 
-                                    {/* Botón ver */}
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); navigate(`/ordenes/${orden.id}`); }}
-                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0"
-                                        title="Ver detalle"
-                                    >
-                                        <Eye className="w-5 h-5" />
-                                    </button>
+                                    <div className="flex flex-col gap-1 flex-shrink-0">
+                                        {/* Editar fecha (solo creador, tipos permitidos, no terminal) */}
+                                        {user?.id === orden.creadorId
+                                            && orden.tipoOrden !== 'orden_empleado'
+                                            && ['pendiente', 'en_proceso', 'en_pausa', 'vencida'].includes(orden.status) && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setOrdenEditandoFecha(orden); }}
+                                                    className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                                                    title="Editar fecha límite"
+                                                >
+                                                    <CalendarClock className="w-5 h-5" />
+                                                </button>
+                                            )}
+                                        {/* Botón ver */}
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); navigate(`/ordenes/${orden.id}`); }}
+                                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                            title="Ver detalle"
+                                        >
+                                            <Eye className="w-5 h-5" />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         );
                     })}
                 </div>
+            )}
+
+            {ordenEditandoFecha && (
+                <ModalEditarFechaLimite
+                    orden={ordenEditandoFecha}
+                    onClose={() => setOrdenEditandoFecha(null)}
+                    onSuccess={() => {
+                        setOrdenEditandoFecha(null);
+                        cargarOrdenes();
+                    }}
+                />
             )}
         </div>
 
