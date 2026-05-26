@@ -524,12 +524,12 @@ export default function DetalleOrdenEmpleadoPage() {
                                             noAplicaTareaId === tarea.id ? (
                                                 <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
                                                     <label className="text-xs font-medium text-amber-800 block">
-                                                        ¿Por qué no aplica esta tarea? <span className="text-red-500">*</span>
+                                                        ¿Por qué no tienes evidencia para adjuntar? <span className="text-red-500">*</span>
                                                     </label>
                                                     <textarea value={justifNoAplicaOrden} onChange={(e) => setJustifNoAplicaOrden(e.target.value)}
-                                                        placeholder="Explica por qué no aplica..." rows={3} spellCheck={false}
+                                                        placeholder="Explica por qué no tienes un archivo físico que adjuntar..." rows={3} spellCheck={false}
                                                         className="w-full px-3 py-2 text-sm border border-amber-300 rounded-lg resize-none focus:ring-2 focus:ring-amber-500" />
-                                                    <p className="text-xs text-amber-600">Se guardará como un archivo de texto con tu justificación.</p>
+                                                    <p className="text-xs text-amber-600">Tu justificación se guardará como evidencia en formato de texto.</p>
                                                     <div className="flex gap-2">
                                                         <button onClick={() => handleEnviarNoAplicaOrden(tarea.id)}
                                                             disabled={cargando || !justifNoAplicaOrden.trim()}

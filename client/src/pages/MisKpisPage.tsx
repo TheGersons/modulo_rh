@@ -406,16 +406,22 @@ export default function MisKPIsPage() {
         setModoNoAplica(false); setJustificacionNoAplica('');
     };
 
+    // Valida los campos del KPI obligatorios para subir evidencia (mismas reglas
+    // sin importar si el archivo viene del filesystem o se genera como .txt en
+    // modo "No aplica"). KPIs basados en órdenes de trabajo no exigen estos
+    // campos: el respaldo es libre durante la ventana de gracia.
+    const validarCamposKpi = (kpi: KPIConEvidencias): boolean => {
+        if (kpi.aplicaOrdenTrabajo) return true;
+        if (kpi.tipoCalculo === 'binario' && !confirmadoBinario) { alert('Debes confirmar que completaste la actividad.'); return false; }
+        if (necesitaValorNumerico(kpi) && !valorNumerico) { alert(`Debes ingresar ${getValorLabel(kpi)}.`); return false; }
+        if (kpi.tipoCalculo === 'precision' && !valorObtenido) { alert('Debes ingresar el resultado obtenido.'); return false; }
+        return true;
+    };
+
     const handleSeleccionarArchivo = (kpiId: string) => {
         const kpi = kpis.find((k) => k.id === kpiId);
         if (!kpi) return;
-        // KPIs basados en órdenes de trabajo: respaldo libre durante la ventana de gracia,
-        // sin exigir valor numérico ni confirmación binaria.
-        if (!kpi.aplicaOrdenTrabajo) {
-            if (kpi.tipoCalculo === 'binario' && !confirmadoBinario) { alert('Debes confirmar que completaste la actividad.'); return; }
-            if (necesitaValorNumerico(kpi) && !valorNumerico) { alert(`Debes ingresar ${getValorLabel(kpi)}.`); return; }
-            if (kpi.tipoCalculo === 'precision' && !valorObtenido) { alert('Debes ingresar el resultado obtenido.'); return; }
-        }
+        if (!validarCamposKpi(kpi)) return;
         setKpiSeleccionado(kpiId);
         fileInputRef.current?.click();
     };
@@ -451,23 +457,25 @@ export default function MisKPIsPage() {
         formData.append('periodo', periodoSubida);
         formData.append('anio', String(anioSubida));
 
-        if (opts.noAplica) {
-            // "No aplica": no envía valor; el .txt es la justificación.
-            formData.append('noAplica', 'true');
-            if (opts.justificacion) formData.append('nota', opts.justificacion);
-        } else {
-            // KPIs aplicaOrdenTrabajo: solo nota + archivo (respaldo libre), no valor numérico
-            if (!kpi.aplicaOrdenTrabajo) {
-                if (necesitaValorNumerico(kpi) && valorNumerico) formData.append('valorNumerico', valorNumerico);
-                if (kpi.tipoCalculo === 'binario') formData.append('valorNumerico', '1');
-                if (kpi.tipoCalculo === 'precision' && valorObtenido) {
-                    const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
-                    const { precision } = calcularPrecision(formula, valorObtenido, kpi.meta, kpi.operadorMeta);
-                    if (precision !== null) formData.append('valorNumerico', fmtNum(precision));
-                    formData.append('valorObtenido', valorObtenido);
-                }
+        // Campos del KPI (valor numérico, binario, precision) van igual sin importar
+        // si el archivo es un archivo real o el .txt generado en modo "No aplica".
+        // Los KPIs basados en órdenes de trabajo no llevan valor numérico.
+        if (!kpi.aplicaOrdenTrabajo) {
+            if (necesitaValorNumerico(kpi) && valorNumerico) formData.append('valorNumerico', valorNumerico);
+            if (kpi.tipoCalculo === 'binario') formData.append('valorNumerico', '1');
+            if (kpi.tipoCalculo === 'precision' && valorObtenido) {
+                const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+                const { precision } = calcularPrecision(formula, valorObtenido, kpi.meta, kpi.operadorMeta);
+                if (precision !== null) formData.append('valorNumerico', fmtNum(precision));
+                formData.append('valorObtenido', valorObtenido);
             }
-            if (notaEvidencia) formData.append('nota', notaEvidencia);
+        }
+        if (opts.noAplica) {
+            formData.append('noAplica', 'true');
+            // En "No aplica" la justificación reemplaza la nota opcional normal.
+            formData.append('nota', opts.justificacion ?? '');
+        } else if (notaEvidencia) {
+            formData.append('nota', notaEvidencia);
         }
 
         setSubiendoEvidencia(kpi.id);
@@ -519,11 +527,12 @@ export default function MisKPIsPage() {
         await subirArchivoEvidencia(file, kpi);
     };
 
-    // "No aplica": el empleado justifica por escrito por qué el KPI no aplica este
-    // período. Se sube como un .txt con la justificación en texto plano.
+    // "No aplica": el empleado completa el KPI normalmente, pero su evidencia es
+    // un .txt con la justificación de por qué no tiene un archivo físico.
     const handleEnviarNoAplica = async (kpi: KPIConEvidencias) => {
+        if (!validarCamposKpi(kpi)) return;
         const texto = justificacionNoAplica.trim();
-        if (!texto) { alert('Debes escribir por qué el KPI no aplica.'); return; }
+        if (!texto) { alert('Debes escribir por qué no tienes evidencia para adjuntar.'); return; }
         const file = new File([texto], 'no_aplica.txt', { type: 'text/plain' });
         await subirArchivoEvidencia(file, kpi, { noAplica: true, justificacion: texto });
     };
@@ -1373,16 +1382,16 @@ export default function MisKPIsPage() {
                                                                 Formatos: imágenes, video, PDF, Word, Excel · Máximo <span className="font-medium">30 MB</span> por archivo
                                                             </p>
 
-                                                            {/* No aplica: justificación en texto plano (.txt) */}
+                                                            {/* No aplica: justificación en texto plano (.txt) en lugar de archivo */}
                                                             {modoNoAplica && (
                                                                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
                                                                     <label className="text-xs font-medium text-amber-800 block">
-                                                                        ¿Por qué no aplica este KPI este período? <span className="text-red-500">*</span>
+                                                                        ¿Por qué no tienes evidencia para adjuntar? <span className="text-red-500">*</span>
                                                                     </label>
                                                                     <textarea value={justificacionNoAplica} onChange={(e) => setJustificacionNoAplica(e.target.value)}
-                                                                        placeholder="Explica por qué este KPI no aplica en este período..." rows={3} spellCheck={false}
+                                                                        placeholder="Explica por qué no tienes un archivo físico que adjuntar..." rows={3} spellCheck={false}
                                                                         className="w-full px-3 py-2 text-sm border border-amber-300 rounded-lg resize-none focus:ring-2 focus:ring-amber-500" />
-                                                                    <p className="text-xs text-amber-600">Se guardará como un archivo de texto con tu justificación. No modifica el resultado del KPI.</p>
+                                                                    <p className="text-xs text-amber-600">Tu justificación se guardará como evidencia en formato de texto. Completa los demás campos del KPI normalmente.</p>
                                                                 </div>
                                                             )}
 
@@ -1404,7 +1413,7 @@ export default function MisKPIsPage() {
                                                                     </>
                                                                 ) : (
                                                                     <button onClick={() => handleEnviarNoAplica(kpi)}
-                                                                        disabled={cargando || !justificacionNoAplica.trim()}
+                                                                        disabled={cargando || !justificacionNoAplica.trim() || (esBinario && !confirmadoBinario) || (necesitaValor && !valorNumerico) || (esPrecision && !valorObtenido)}
                                                                         className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50">
                                                                         {cargando ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
                                                                         {cargando ? 'Enviando...' : 'Enviar No aplica'}

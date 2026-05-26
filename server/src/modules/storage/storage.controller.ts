@@ -99,9 +99,10 @@ export class StorageController {
   ) {
     if (!archivo) throw new BadRequestException('No se recibio archivo');
     const userId = req.user.userId;
-    // "No aplica": el empleado justifica por escrito por qué el KPI no aplica.
-    // El .txt generado en el cliente es la evidencia; se auto-aprueba y NO altera
-    // el cálculo del KPI (no es respaldo de gracia ni valor).
+    // "No aplica": el empleado completa el KPI normalmente (valor numérico,
+    // confirmación binaria, etc.) pero no tiene un archivo físico que adjuntar;
+    // sube un .txt con su justificación como evidencia. El KPI conserva todos
+    // sus datos; solo el archivo es texto plano y la evidencia se auto-aprueba.
     const esNoAplica = body.noAplica === 'true' || body.noAplica === true;
     const empleado = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -150,7 +151,7 @@ export class StorageController {
       select: { aplicaOrdenTrabajo: true },
     });
     let esRespaldoGracia = false;
-    if (kpi?.aplicaOrdenTrabajo && !esNoAplica) {
+    if (kpi?.aplicaOrdenTrabajo) {
       const subiendoAlMesAnterior = body.periodo === periodoAnteriorSrv;
       // Re-consultar si el mes que se está subiendo está cerrado
       const mesesEs2 = [
@@ -202,10 +203,9 @@ export class StorageController {
         tipo: archivo.mimetype,
         nombre: archivo.originalname,
         tamanio: archivo.size,
-        valorNumerico:
-          !esNoAplica && body.valorNumerico
-            ? parseFloat(body.valorNumerico)
-            : null,
+        valorNumerico: body.valorNumerico
+          ? parseFloat(body.valorNumerico)
+          : null,
         nota: body.nota || null,
         intento: intentoPrevio + 1,
         status: esNoAplica ? 'aprobada' : 'pendiente_revision',
@@ -258,10 +258,9 @@ export class StorageController {
     const intentoPrevio = await this.prisma.evidencia.count({
       where: { tareaId: body.tareaId },
     });
-    const esFueraDeTiempo =
-      !esNoAplica && orden.fechaLimite
-        ? new Date() > new Date(orden.fechaLimite)
-        : false;
+    const esFueraDeTiempo = orden.fechaLimite
+      ? new Date() > new Date(orden.fechaLimite)
+      : false;
 
     const evidencia = await this.prisma.evidencia.create({
       data: {
