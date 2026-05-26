@@ -2,17 +2,38 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 import { CerrarPeriodoDto } from './dto/cerrar-periodo.dto';
 import { KpisService } from '../kpis/kpis.service';
 
+// User sintético usado como evaluadorId en cierres automáticos. La FK de
+// Evaluacion.evaluadorId apunta a User, por lo que esta fila debe existir.
+const SISTEMA_USER_ID = 'SISTEMA';
+
 @Injectable()
-export class EvaluacionesService {
+export class EvaluacionesService implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private kpisService: KpisService,
   ) {}
+
+  async onModuleInit() {
+    await this.prisma.user.upsert({
+      where: { id: SISTEMA_USER_ID },
+      update: {},
+      create: {
+        id: SISTEMA_USER_ID,
+        email: 'sistema@interno.local',
+        password: '!', // nunca se usa para login
+        nombre: 'Sistema',
+        apellido: 'Automático',
+        role: 'sistema',
+        activo: false,
+      },
+    });
+  }
 
   // ============================================
   // CERRAR PERIODO Y GENERAR EVALUACIONES
@@ -25,6 +46,12 @@ export class EvaluacionesService {
   ) {
     const dto: CerrarPeriodoDto = { periodo, anio };
     return this.cerrarPeriodo(dto, 'SISTEMA', periodicidad);
+  }
+
+  // Permite al cron saltarse periodos ya cerrados sin tocar evidencias ni datos.
+  async existeAlgunaEvaluacion(periodo: string, anio: number): Promise<boolean> {
+    const c = await this.prisma.evaluacion.count({ where: { periodo, anio } });
+    return c > 0;
   }
 
   async cerrarPeriodo(

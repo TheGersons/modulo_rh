@@ -18,14 +18,16 @@ export class EvaluacionesCron {
   ) {}
 
   // Corre todos los días a las 23:50.
-  // El cierre se ejecuta el día (DIAS_GRACIA + 1) del mes — tras vencer la ventana
-  // de gracia para subir respaldos a KPIs basados en órdenes de trabajo.
+  // Dispara los cierres a partir del día (DIAS_GRACIA + 1) del mes — vencida la
+  // gracia para subir respaldos. La re-ejecución es idempotente: si el periodo
+  // ya tiene evaluaciones, se omite. Esto permite recuperarse si el servidor
+  // no estuvo vivo justo el día DIAS_GRACIA + 1.
   @Cron('0 50 23 * * *')
   async handleCierresPeriodo() {
     const diasGracia = await this.configuracion.getDiasGracia();
     const hoy = new Date();
 
-    if (hoy.getDate() !== diasGracia + 1) return;
+    if (hoy.getDate() < diasGracia + 1) return;
 
     // Cerramos el mes anterior al actual (la gracia ya venció).
     const mesAnterior = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
@@ -54,6 +56,10 @@ export class EvaluacionesCron {
   }
 
   private async cerrar(periodicidad: string, periodo: string, anio: number) {
+    if (await this.evaluacionesService.existeAlgunaEvaluacion(periodo, anio)) {
+      return;
+    }
+
     this.logger.log(`📅 Cierre automático ${periodicidad}: ${periodo} ${anio}`);
     try {
       const resultado = await this.evaluacionesService.cerrarPeriodoAuto(
