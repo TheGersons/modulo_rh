@@ -91,6 +91,13 @@ export class EvaluacionesService implements OnModuleInit {
       cerrarDto.anio,
     );
 
+    // Meses "YYYY-MM" que cubre este cierre — formato de EvidenciaKPI.periodo.
+    // (cerrarDto.periodo es nombre de mes / trimestre / etc.)
+    const periodosEvid = this.periodosEvidencia(
+      cerrarDto.periodo,
+      cerrarDto.anio,
+    );
+
     console.log(
       `📅 Periodo: ${fechaInicio.toISOString()} - ${fechaFin.toISOString()}`,
     );
@@ -105,7 +112,7 @@ export class EvaluacionesService implements OnModuleInit {
     const autoKpi = await this.prisma.evidenciaKPI.updateMany({
       where: {
         empleadoId: { in: idsEmpleados },
-        periodo: cerrarDto.periodo,
+        periodo: { in: periodosEvid },
         status: 'pendiente_revision',
         tipo: { not: 'nota_kpi' },
       },
@@ -173,87 +180,69 @@ export class EvaluacionesService implements OnModuleInit {
           continue;
         }
 
-        // Obtener órdenes completadas en el periodo
+        // KPIs ASIGNADOS al empleado (área + puesto) — fuente de verdad de qué se
+        // le mide, no las órdenes. Filtrados por periodicidad si aplica.
+        const kpisAsignadosRaw = await this.kpisService.getKpisPorEmpleado(
+          empleado.id,
+        );
+        const kpisAsignados = periodicidadFiltro
+          ? kpisAsignadosRaw.filter((k) => k.periodicidad === periodicidadFiltro)
+          : kpisAsignadosRaw;
+
+        if (kpisAsignados.length === 0) {
+          console.log(
+            `⏭️  ${empleado.nombre} ${empleado.apellido} no tiene KPIs de periodicidad "${periodicidadFiltro}"`,
+          );
+          continue;
+        }
+
+        // Órdenes completadas/aprobadas del empleado en el periodo (KPIs basados en OT)
         const ordenes = await this.prisma.ordenTrabajo.findMany({
           where: {
             empleadoId: empleado.id,
             status: { in: ['completada', 'aprobada'] },
-            fechaCompletada: {
-              gte: fechaInicio,
-              lte: fechaFin,
-            },
+            fechaCompletada: { gte: fechaInicio, lte: fechaFin },
           },
-          include: {
-            kpi: true,
-            tareas: {
-              include: {
-                evidencias: true,
-              },
-            },
-          },
+          include: { kpi: true, tareas: { include: { evidencias: true } } },
         });
+        const ordenesPorKpi = this.agruparOrdenesPorKpi(ordenes);
 
-        // Respaldos de gracia aprobados para KPIs basados en órdenes de trabajo
-        // (caso "no_aplica" cuando el empleado no recibió órdenes y subió justificación).
+        // Respaldos de gracia aprobados → justifican "no_aplica" en KPIs OT sin órdenes
         const respaldosAprobados = await this.prisma.evidenciaKPI.findMany({
           where: {
             empleadoId: empleado.id,
-            periodo: cerrarDto.periodo,
+            periodo: { in: periodosEvid },
             esRespaldoGracia: true,
             status: 'aprobada',
           },
-          include: { kpi: true },
+          select: { kpiId: true },
         });
+        const kpisConGracia = new Set(respaldosAprobados.map((r) => r.kpiId));
 
-        if (ordenes.length === 0 && respaldosAprobados.length === 0) {
-          console.log(
-            `⚠️  ${empleado.nombre} ${empleado.apellido} no tiene órdenes completadas ni respaldos aprobados en este periodo`,
-          );
-          continue;
-        }
-
-        console.log(
-          `📋 ${empleado.nombre} ${empleado.apellido}: ${ordenes.length} órdenes completadas`,
-        );
-
-        // Calcular detalles por KPI
-        const todosLosKpis = this.agruparOrdenesPorKpi(ordenes);
-
-        // Si hay filtro de periodicidad, solo procesar KPIs que correspondan
-        const detallesPorKpi = periodicidadFiltro
-          ? Object.fromEntries(
-              Object.entries(todosLosKpis).filter(
-                ([, ords]) => ords[0].kpi?.periodicidad === periodicidadFiltro,
-              ),
-            )
-          : todosLosKpis;
-
-        // KPIs con respaldo aprobado de gracia, division + aplicaOrdenTrabajo y
-        // SIN órdenes en el periodo → candidatos a "no_aplica". Respetan el
-        // filtro de periodicidad si está activo.
-        const kpisIdsConOrdenes = new Set(Object.keys(detallesPorKpi));
-        const respaldosNoAplica = respaldosAprobados.filter((r) => {
-          if (!r.kpi) return false;
-          if (kpisIdsConOrdenes.has(r.kpiId)) return false;
-          if (!r.kpi.aplicaOrdenTrabajo) return false;
-          if (r.kpi.tipoCalculo !== 'division') return false;
-          if (periodicidadFiltro && r.kpi.periodicidad !== periodicidadFiltro) return false;
-          return true;
+        // Evidencias aprobadas con valor numérico subidas en el periodo (KPIs por
+        // evidencia). Las pendientes ya fueron auto-aprobadas arriba; las rechazadas
+        // no cuentan. EvidenciaKPI.periodo usa formato "YYYY-MM".
+        const evidencias = await this.prisma.evidenciaKPI.findMany({
+          where: {
+            empleadoId: empleado.id,
+            periodo: { in: periodosEvid },
+            tipo: { not: 'nota_kpi' },
+            esRespaldoGracia: false,
+            status: 'aprobada',
+            valorNumerico: { not: null },
+          },
+          orderBy: { fechaSubida: 'desc' },
+          select: { kpiId: true, valorNumerico: true },
         });
-        // Dedupe por kpiId — múltiples respaldos del mismo KPI cuentan como uno
-        const noAplicaPorKpi = new Map<string, any>();
-        for (const r of respaldosNoAplica) {
-          if (!noAplicaPorKpi.has(r.kpiId)) noAplicaPorKpi.set(r.kpiId, r.kpi);
+        // Última (más reciente) evidencia con valor por KPI
+        const valorPorKpi = new Map<string, number>();
+        for (const e of evidencias) {
+          if (!valorPorKpi.has(e.kpiId) && e.valorNumerico != null) {
+            valorPorKpi.set(e.kpiId, e.valorNumerico);
+          }
         }
 
-        if (Object.keys(detallesPorKpi).length === 0 && noAplicaPorKpi.size === 0) {
-          console.log(
-            `⏭️  ${empleado.nombre} ${empleado.apellido} no tiene KPIs de periodicidad "${periodicidadFiltro}" en este periodo`,
-          );
-          continue;
-        }
-
-        // Crear evaluación (solo si hay KPIs que procesar)
+        // Todos los empleados con ≥1 KPI asignado reciben evaluación.
         const evaluacion = await this.prisma.evaluacion.create({
           data: {
             empleadoId: empleado.id,
@@ -267,15 +256,15 @@ export class EvaluacionesService implements OnModuleInit {
 
         const detallesCreados: any[] = [];
 
-        for (const [kpiId, ordenesKpi] of Object.entries(detallesPorKpi)) {
-          const kpi = ordenesKpi[0].kpi;
+        for (const kpi of kpisAsignados) {
+          const kpiId = kpi.id;
 
-          // Diferir a segunda pasada: el equipo del jefe puede no tener evaluaciones creadas aún
+          // Diferir a segunda pasada: el equipo puede no tener evaluaciones aún
           if (kpi.tipoCalculo === 'porcentaje_kpis_equipo') {
             pendingEquipoCalcs.push({
               evaluacionId: evaluacion.id,
               kpiId,
-              ordenesKpi,
+              ordenesKpi: ordenesPorKpi[kpiId] ?? [],
               kpi,
               context: {
                 empleadoId: empleado.id,
@@ -287,97 +276,113 @@ export class EvaluacionesService implements OnModuleInit {
             continue;
           }
 
-          // Para division+OT el denominador debe ser todas las órdenes no-canceladas del período
-          let totalNoCanceladas: number | undefined;
-          if (kpi.tipoCalculo === 'division' && kpi.aplicaOrdenTrabajo) {
-            totalNoCanceladas = await this.prisma.ordenTrabajo.count({
-              where: {
+          let resultadoNumerico = 0;
+          let estado = 'rojo';
+          let ordenTrabajoId: string | null = null;
+          let formulaUtilizada: any = { tipoCalculo: kpi.tipoCalculo };
+
+          if (kpi.aplicaOrdenTrabajo) {
+            const ordenesKpi = ordenesPorKpi[kpiId] ?? [];
+            if (ordenesKpi.length > 0) {
+              let totalNoCanceladas: number | undefined;
+              if (kpi.tipoCalculo === 'division') {
+                totalNoCanceladas = await this.prisma.ordenTrabajo.count({
+                  where: {
+                    kpiId,
+                    empleadoId: empleado.id,
+                    status: { not: 'cancelada' },
+                    fechaInicio: { gte: fechaInicio, lte: fechaFin },
+                  },
+                });
+              }
+              const valores = await this.extraerValoresParaCalculo(
+                ordenesKpi,
+                kpi,
+                totalNoCanceladas,
+                {
+                  empleadoId: empleado.id,
+                  areaId: empleado.areaId,
+                  periodo: cerrarDto.periodo,
+                  anio: cerrarDto.anio,
+                },
+              );
+              const rc = await this.kpisService.calcularResultado({
                 kpiId,
-                empleadoId: empleado.id,
-                status: { not: 'cancelada' },
-                fechaInicio: { gte: fechaInicio, lte: fechaFin },
-              },
-            });
+                valores,
+              });
+              resultadoNumerico = rc.resultado ?? 0;
+              estado = rc.estado ?? 'rojo';
+              ordenTrabajoId = ordenesKpi[0].id;
+              formulaUtilizada = { tipoCalculo: kpi.tipoCalculo, valores };
+            } else if (kpisConGracia.has(kpiId)) {
+              // Sin órdenes pero con respaldo de gracia aprobado → no aplica
+              estado = 'no_aplica';
+              formulaUtilizada = {
+                tipoCalculo: kpi.tipoCalculo,
+                motivo: 'sin_ordenes_respaldo_aprobado',
+              };
+            } else {
+              // Sin órdenes ni respaldo → 0 / rojo
+              estado = 'rojo';
+              formulaUtilizada = {
+                tipoCalculo: kpi.tipoCalculo,
+                motivo: 'sin_ordenes',
+              };
+            }
+          } else {
+            // KPI evaluado por evidencia subida
+            const valor = valorPorKpi.get(kpiId) ?? null;
+            const ev = this.kpisService.evaluarKpiPorValor(kpi, valor);
+            resultadoNumerico = ev.resultado;
+            estado = ev.estado;
+            formulaUtilizada = {
+              tipoCalculo: kpi.tipoCalculo,
+              valor,
+              motivo: valor === null ? 'sin_evidencia' : undefined,
+            };
           }
 
-          // Preparar valores para cálculo
-          const valores = await this.extraerValoresParaCalculo(
-            ordenesKpi,
-            kpi,
-            totalNoCanceladas,
-            {
-              empleadoId: empleado.id,
-              areaId: empleado.areaId,
-              periodo: cerrarDto.periodo,
-              anio: cerrarDto.anio,
-            },
-          );
-
-          // Calcular resultado usando el motor de KPIs
-          const resultadoCalculo = await this.kpisService.calcularResultado({
-            kpiId,
-            valores,
-          });
-
-          // Crear detalle de evaluación
-          // resultado puede ser null si no hay datos; fallback a 0
-          const resultadoFinal = resultadoCalculo.resultado ?? 0;
+          // El promedio se calcula por cumplimiento: verde=100, amarillo=50, rojo=0.
+          // no_aplica queda fuera del promedio (resultadoPorcentaje = null).
+          const resultadoPorcentaje =
+            estado === 'no_aplica'
+              ? null
+              : estado === 'verde'
+                ? 100
+                : estado === 'amarillo'
+                  ? 50
+                  : 0;
 
           const detalle = await this.prisma.evaluacionDetalle.create({
             data: {
               evaluacionId: evaluacion.id,
               kpiId,
-              ordenTrabajoId: ordenesKpi[0].id, // Referencia a la primera orden
-              resultadoNumerico: resultadoFinal,
-              resultadoPorcentaje: resultadoFinal,
-              brechaVsMeta: kpi.meta != null ? resultadoFinal - kpi.meta : null,
-              estado: resultadoCalculo.estado,
-              formulaUtilizada: JSON.stringify({
-                tipoCalculo: kpi.tipoCalculo,
-                valores,
-              }),
+              ordenTrabajoId,
+              resultadoNumerico,
+              resultadoPorcentaje,
+              brechaVsMeta:
+                kpi.meta != null ? resultadoNumerico - kpi.meta : null,
+              estado,
+              formulaUtilizada: JSON.stringify(formulaUtilizada),
               meta: kpi.meta,
               umbralAmarillo: kpi.umbralAmarillo,
             },
           });
-
           detallesCreados.push(detalle);
         }
 
-        // Crear detalles "no_aplica" para KPIs division+aplicaOrdenTrabajo sin órdenes
-        // pero con respaldo de gracia aprobado.
-        for (const [kpiId, kpiInfo] of noAplicaPorKpi.entries()) {
-          const detalle = await this.prisma.evaluacionDetalle.create({
-            data: {
-              evaluacionId: evaluacion.id,
-              kpiId,
-              ordenTrabajoId: null,
-              resultadoNumerico: 0,
-              resultadoPorcentaje: null,
-              brechaVsMeta: null,
-              estado: 'no_aplica',
-              formulaUtilizada: JSON.stringify({
-                tipoCalculo: kpiInfo.tipoCalculo,
-                motivo: 'sin_ordenes_respaldo_aprobado',
-              }),
-              meta: kpiInfo.meta,
-              umbralAmarillo: kpiInfo.umbralAmarillo,
-            },
-          });
-          detallesCreados.push(detalle);
-        }
-
-        // Calcular promedio y KPIs rojos (excluyendo porcentaje_kpis_equipo diferidos
-        // y los "no_aplica" que no entran al promedio del empleado).
-        // Si todos los KPIs del empleado son porcentaje_kpis_equipo, detallesCreados estará
-        // vacío aquí; la segunda pasada actualizará el promedio una vez que tenga los datos.
-        const detallesValidos = detallesCreados.filter((d) => d.estado !== 'no_aplica');
+        // Promedio y KPIs rojos (excluye porcentaje_kpis_equipo diferidos y no_aplica).
+        const detallesValidos = detallesCreados.filter(
+          (d) => d.estado !== 'no_aplica',
+        );
         let promedioGeneral = 0;
         let kpisRojos = 0;
         if (detallesValidos.length > 0) {
           promedioGeneral =
-            detallesValidos.reduce((sum, d) => sum + d.resultadoPorcentaje, 0) /
-            detallesValidos.length;
+            detallesValidos.reduce(
+              (sum, d) => sum + (d.resultadoPorcentaje ?? 0),
+              0,
+            ) / detallesValidos.length;
           kpisRojos = detallesValidos.filter((d) => d.estado === 'rojo').length;
           const porcentajeRojos = (kpisRojos / detallesValidos.length) * 100;
 
@@ -432,17 +437,26 @@ export class EvaluacionesService implements OnModuleInit {
         });
 
         const resultadoFinal = resultadoCalculo.resultado ?? 0;
+        const estadoEquipo = resultadoCalculo.estado ?? 'rojo';
         const kpi = pending.kpi;
+
+        // Mismo criterio que la primera pasada: promedio por cumplimiento.
+        const resultadoPorcentajeEquipo =
+          estadoEquipo === 'verde'
+            ? 100
+            : estadoEquipo === 'amarillo'
+              ? 50
+              : 0;
 
         await this.prisma.evaluacionDetalle.create({
           data: {
             evaluacionId: pending.evaluacionId,
             kpiId: pending.kpiId,
-            ordenTrabajoId: pending.ordenesKpi[0].id,
+            ordenTrabajoId: pending.ordenesKpi[0]?.id ?? null,
             resultadoNumerico: resultadoFinal,
-            resultadoPorcentaje: resultadoFinal,
+            resultadoPorcentaje: resultadoPorcentajeEquipo,
             brechaVsMeta: kpi.meta != null ? resultadoFinal - kpi.meta : null,
-            estado: resultadoCalculo.estado,
+            estado: estadoEquipo,
             formulaUtilizada: JSON.stringify({ tipoCalculo: kpi.tipoCalculo, valores }),
             meta: kpi.meta,
             umbralAmarillo: kpi.umbralAmarillo,
@@ -507,6 +521,40 @@ export class EvaluacionesService implements OnModuleInit {
     }
 
     return grupos;
+  }
+
+  // ============================================
+  // PERIODOS DE EVIDENCIA QUE CUBRE EL CIERRE
+  // ============================================
+  // EvidenciaKPI.periodo se guarda como "YYYY-MM". Un cierre mensual cubre 1 mes;
+  // uno trimestral/semestral/anual cubre los meses del rango.
+  private periodosEvidencia(periodo: string, anio: number): string[] {
+    const MESES = [
+      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+    ];
+    const ym = (m0: number) => `${anio}-${String(m0 + 1).padStart(2, '0')}`;
+
+    const idxMes = MESES.indexOf(periodo);
+    if (idxMes >= 0) return [ym(idxMes)];
+
+    const tri = /^trimestre_([1-4])$/.exec(periodo);
+    if (tri) {
+      const start = (parseInt(tri[1], 10) - 1) * 3;
+      return [ym(start), ym(start + 1), ym(start + 2)];
+    }
+
+    const sem = /^semestre_([12])$/.exec(periodo);
+    if (sem) {
+      const start = sem[1] === '1' ? 0 : 6;
+      return Array.from({ length: 6 }, (_, i) => ym(start + i));
+    }
+
+    if (periodo === 'anual') {
+      return Array.from({ length: 12 }, (_, i) => ym(i));
+    }
+
+    return [];
   }
 
   // ============================================

@@ -679,6 +679,52 @@ export class KpisService {
     }
   }
 
+  // ============================================
+  // EVALUAR KPI POR EVIDENCIA (valor declarado por el empleado)
+  // ============================================
+  // Refleja la lógica del frontend (evaluarCumplimiento): el valorNumerico de la
+  // evidencia es el valor MEDIDO que se compara directamente contra la meta.
+  //  - binario / dashboard_presentado: 0/1 → 0/100 (cumplió o no)
+  //  - resto (division, conteo, precision, ...): el valor ya es la métrica a comparar
+  // Sin valor (no subió evidencia) → 0 / rojo.
+  evaluarKpiPorValor(
+    kpi: {
+      tipoCalculo: string;
+      meta: number | null;
+      operadorMeta: string | null;
+      sentido: string | null;
+      umbralAmarillo: number | null;
+    },
+    valor: number | null,
+  ): { resultado: number; estado: 'verde' | 'amarillo' | 'rojo' } {
+    if (valor === null || valor === undefined) {
+      return { resultado: 0, estado: 'rojo' };
+    }
+
+    const esBooleano =
+      kpi.tipoCalculo === 'binario' || kpi.tipoCalculo === 'dashboard_presentado';
+    const resultado = esBooleano ? (valor > 0 ? 100 : 0) : valor;
+
+    if (kpi.meta === null || kpi.meta === undefined) {
+      return { resultado, estado: resultado > 0 ? 'verde' : 'rojo' };
+    }
+
+    const operador = kpi.operadorMeta ?? '>=';
+    if (this.evaluarMeta(resultado, kpi.meta, operador, kpi.sentido)) {
+      return { resultado, estado: 'verde' };
+    }
+    if (kpi.umbralAmarillo !== null && kpi.umbralAmarillo !== undefined) {
+      const amarillo = this.evaluarMeta(
+        resultado,
+        kpi.umbralAmarillo,
+        operador,
+        kpi.sentido,
+      );
+      return { resultado, estado: amarillo ? 'amarillo' : 'rojo' };
+    }
+    return { resultado, estado: 'rojo' };
+  }
+
   async subirEvidenciaKPI(dto: {
     kpiId: string;
     empleadoId: string;
