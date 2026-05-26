@@ -99,6 +99,10 @@ export class StorageController {
   ) {
     if (!archivo) throw new BadRequestException('No se recibio archivo');
     const userId = req.user.userId;
+    // "No aplica": el empleado justifica por escrito por qué el KPI no aplica.
+    // El .txt generado en el cliente es la evidencia; se auto-aprueba y NO altera
+    // el cálculo del KPI (no es respaldo de gracia ni valor).
+    const esNoAplica = body.noAplica === 'true' || body.noAplica === true;
     const empleado = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { area: true },
@@ -146,7 +150,7 @@ export class StorageController {
       select: { aplicaOrdenTrabajo: true },
     });
     let esRespaldoGracia = false;
-    if (kpi?.aplicaOrdenTrabajo) {
+    if (kpi?.aplicaOrdenTrabajo && !esNoAplica) {
       const subiendoAlMesAnterior = body.periodo === periodoAnteriorSrv;
       // Re-consultar si el mes que se está subiendo está cerrado
       const mesesEs2 = [
@@ -198,12 +202,13 @@ export class StorageController {
         tipo: archivo.mimetype,
         nombre: archivo.originalname,
         tamanio: archivo.size,
-        valorNumerico: body.valorNumerico
-          ? parseFloat(body.valorNumerico)
-          : null,
+        valorNumerico:
+          !esNoAplica && body.valorNumerico
+            ? parseFloat(body.valorNumerico)
+            : null,
         nota: body.nota || null,
         intento: intentoPrevio + 1,
-        status: 'pendiente_revision',
+        status: esNoAplica ? 'aprobada' : 'pendiente_revision',
         esFueraDeTiempo: false,
         esRespaldoGracia,
       },
@@ -219,6 +224,7 @@ export class StorageController {
     @Request() req,
   ) {
     if (!archivo) throw new BadRequestException('No se recibio archivo');
+    const esNoAplica = body.noAplica === 'true' || body.noAplica === true;
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: body.tareaId },
       include: {
@@ -252,9 +258,10 @@ export class StorageController {
     const intentoPrevio = await this.prisma.evidencia.count({
       where: { tareaId: body.tareaId },
     });
-    const esFueraDeTiempo = orden.fechaLimite
-      ? new Date() > new Date(orden.fechaLimite)
-      : false;
+    const esFueraDeTiempo =
+      !esNoAplica && orden.fechaLimite
+        ? new Date() > new Date(orden.fechaLimite)
+        : false;
 
     const evidencia = await this.prisma.evidencia.create({
       data: {
@@ -264,7 +271,7 @@ export class StorageController {
         nombre: archivo.originalname,
         tamanio: archivo.size,
         intento: intentoPrevio + 1,
-        status: 'pendiente_revision',
+        status: esNoAplica ? 'aprobada' : 'pendiente_revision',
         esFueraDeTiempo,
       },
     });

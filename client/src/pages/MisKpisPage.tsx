@@ -305,6 +305,8 @@ export default function MisKPIsPage() {
     const [mostrarFormSubida, setMostrarFormSubida] = useState<string | null>(null);
     const [valorEsperado, setValorEsperado] = useState<string>('');
     const [valorObtenido, setValorObtenido] = useState<string>('');
+    const [modoNoAplica, setModoNoAplica] = useState(false);
+    const [justificacionNoAplica, setJustificacionNoAplica] = useState<string>('');
 
     const [resultadosAuto, setResultadosAuto] = useState<Record<string, ResultadoAuto>>({});
 
@@ -401,6 +403,7 @@ export default function MisKPIsPage() {
         setMostrarFormSubida(kpiId);
         setValorNumerico(''); setNotaEvidencia('');
         setConfirmadoBinario(false); setValorEsperado(''); setValorObtenido('');
+        setModoNoAplica(false); setJustificacionNoAplica('');
     };
 
     const handleSeleccionarArchivo = (kpiId: string) => {
@@ -417,12 +420,13 @@ export default function MisKPIsPage() {
         fileInputRef.current?.click();
     };
 
-    const handleArchivoSeleccionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !kpiSeleccionado) return;
-        const kpi = kpis.find((k) => k.id === kpiSeleccionado);
-        if (!kpi) return;
-
+    // Sube un archivo de evidencia para un KPI. Reutilizado por la subida normal
+    // (archivo elegido por el usuario) y por "No aplica" (.txt generado en el cliente).
+    const subirArchivoEvidencia = async (
+        file: File,
+        kpi: KPIConEvidencias,
+        opts: { noAplica?: boolean; justificacion?: string } = {},
+    ) => {
         // Pre-flight: si el servidor publicó una versión más reciente, recargar
         // antes de subir. Evita que código viejo cacheado mande el periodo mal.
         const ok = await preflightVersion(
@@ -442,25 +446,31 @@ export default function MisKPIsPage() {
         const anioSubida = parseInt(periodoSubida.split('-')[0]);
         const formData = new FormData();
         formData.append('archivo', file);
-        formData.append('kpiId', kpiSeleccionado);
+        formData.append('kpiId', kpi.id);
         formData.append('kpiKey', kpi.key);
         formData.append('periodo', periodoSubida);
         formData.append('anio', String(anioSubida));
 
-        // KPIs aplicaOrdenTrabajo: solo nota + archivo (respaldo libre), no valor numérico
-        if (!kpi.aplicaOrdenTrabajo) {
-            if (necesitaValorNumerico(kpi) && valorNumerico) formData.append('valorNumerico', valorNumerico);
-            if (kpi.tipoCalculo === 'binario') formData.append('valorNumerico', '1');
-            if (kpi.tipoCalculo === 'precision' && valorObtenido) {
-                const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
-                const { precision } = calcularPrecision(formula, valorObtenido, kpi.meta, kpi.operadorMeta);
-                if (precision !== null) formData.append('valorNumerico', fmtNum(precision));
-                formData.append('valorObtenido', valorObtenido);
+        if (opts.noAplica) {
+            // "No aplica": no envía valor; el .txt es la justificación.
+            formData.append('noAplica', 'true');
+            if (opts.justificacion) formData.append('nota', opts.justificacion);
+        } else {
+            // KPIs aplicaOrdenTrabajo: solo nota + archivo (respaldo libre), no valor numérico
+            if (!kpi.aplicaOrdenTrabajo) {
+                if (necesitaValorNumerico(kpi) && valorNumerico) formData.append('valorNumerico', valorNumerico);
+                if (kpi.tipoCalculo === 'binario') formData.append('valorNumerico', '1');
+                if (kpi.tipoCalculo === 'precision' && valorObtenido) {
+                    const formula: FormulaCalculo = JSON.parse(kpi.formulaCalculo);
+                    const { precision } = calcularPrecision(formula, valorObtenido, kpi.meta, kpi.operadorMeta);
+                    if (precision !== null) formData.append('valorNumerico', fmtNum(precision));
+                    formData.append('valorObtenido', valorObtenido);
+                }
             }
+            if (notaEvidencia) formData.append('nota', notaEvidencia);
         }
-        if (notaEvidencia) formData.append('nota', notaEvidencia);
 
-        setSubiendoEvidencia(kpiSeleccionado);
+        setSubiendoEvidencia(kpi.id);
         setUploadProgress(0);
 
         const xhr = new XMLHttpRequest();
@@ -475,6 +485,7 @@ export default function MisKPIsPage() {
             if (xhr.status >= 200 && xhr.status < 300) {
                 setMostrarFormSubida(null);
                 setValorNumerico(''); setNotaEvidencia(''); setConfirmadoBinario(false); setValorObtenido('');
+                setModoNoAplica(false); setJustificacionNoAplica('');
                 setUploadProgress(0);
                 await cargarKPIs();
             } else {
@@ -498,6 +509,23 @@ export default function MisKPIsPage() {
         xhr.open('POST', '/api/storage/evidencia-kpi');
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.send(formData);
+    };
+
+    const handleArchivoSeleccionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !kpiSeleccionado) return;
+        const kpi = kpis.find((k) => k.id === kpiSeleccionado);
+        if (!kpi) return;
+        await subirArchivoEvidencia(file, kpi);
+    };
+
+    // "No aplica": el empleado justifica por escrito por qué el KPI no aplica este
+    // período. Se sube como un .txt con la justificación en texto plano.
+    const handleEnviarNoAplica = async (kpi: KPIConEvidencias) => {
+        const texto = justificacionNoAplica.trim();
+        if (!texto) { alert('Debes escribir por qué el KPI no aplica.'); return; }
+        const file = new File([texto], 'no_aplica.txt', { type: 'text/plain' });
+        await subirArchivoEvidencia(file, kpi, { noAplica: true, justificacion: texto });
     };
 
     const handleGuardarNota = async (kpiId: string) => {
@@ -1345,17 +1373,47 @@ export default function MisKPIsPage() {
                                                                 Formatos: imágenes, video, PDF, Word, Excel · Máximo <span className="font-medium">30 MB</span> por archivo
                                                             </p>
 
-                                                            <div className="flex gap-2">
-                                                                <button onClick={() => handleSeleccionarArchivo(kpi.id)}
-                                                                    disabled={cargando || (esBinario && !confirmadoBinario) || (necesitaValor && !valorNumerico) || (esPrecision && !valorObtenido)}
-                                                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
-                                                                    {cargando ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
-                                                                    {cargando ? 'Subiendo...' : 'Seleccionar archivo'}
-                                                                </button>
+                                                            {/* No aplica: justificación en texto plano (.txt) */}
+                                                            {modoNoAplica && (
+                                                                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+                                                                    <label className="text-xs font-medium text-amber-800 block">
+                                                                        ¿Por qué no aplica este KPI este período? <span className="text-red-500">*</span>
+                                                                    </label>
+                                                                    <textarea value={justificacionNoAplica} onChange={(e) => setJustificacionNoAplica(e.target.value)}
+                                                                        placeholder="Explica por qué este KPI no aplica en este período..." rows={3} spellCheck={false}
+                                                                        className="w-full px-3 py-2 text-sm border border-amber-300 rounded-lg resize-none focus:ring-2 focus:ring-amber-500" />
+                                                                    <p className="text-xs text-amber-600">Se guardará como un archivo de texto con tu justificación. No modifica el resultado del KPI.</p>
+                                                                </div>
+                                                            )}
+
+                                                            <div className="flex gap-2 flex-wrap">
+                                                                {!modoNoAplica ? (
+                                                                    <>
+                                                                        <button onClick={() => handleSeleccionarArchivo(kpi.id)}
+                                                                            disabled={cargando || (esBinario && !confirmadoBinario) || (necesitaValor && !valorNumerico) || (esPrecision && !valorObtenido)}
+                                                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
+                                                                            {cargando ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
+                                                                            {cargando ? 'Subiendo...' : 'Seleccionar archivo'}
+                                                                        </button>
+                                                                        {!cargando && (
+                                                                            <button onClick={() => setModoNoAplica(true)}
+                                                                                className="px-4 py-2 bg-amber-100 text-amber-800 rounded-lg text-sm font-medium hover:bg-amber-200 transition-colors">
+                                                                                No aplica
+                                                                            </button>
+                                                                        )}
+                                                                    </>
+                                                                ) : (
+                                                                    <button onClick={() => handleEnviarNoAplica(kpi)}
+                                                                        disabled={cargando || !justificacionNoAplica.trim()}
+                                                                        className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50">
+                                                                        {cargando ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-4 h-4" />}
+                                                                        {cargando ? 'Enviando...' : 'Enviar No aplica'}
+                                                                    </button>
+                                                                )}
                                                                 {!cargando && (
-                                                                    <button onClick={() => setMostrarFormSubida(null)}
+                                                                    <button onClick={() => { if (modoNoAplica) { setModoNoAplica(false); setJustificacionNoAplica(''); } else { setMostrarFormSubida(null); } }}
                                                                         className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">
-                                                                        Cancelar
+                                                                        {modoNoAplica ? 'Volver' : 'Cancelar'}
                                                                     </button>
                                                                 )}
                                                             </div>

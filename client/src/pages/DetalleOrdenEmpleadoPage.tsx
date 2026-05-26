@@ -92,6 +92,8 @@ export default function DetalleOrdenEmpleadoPage() {
 
     const [apelandoEvidencia, setApelandoEvidencia] = useState<string | null>(null);
     const [textoApelacion, setTextoApelacion] = useState('');
+    const [noAplicaTareaId, setNoAplicaTareaId] = useState<string | null>(null);
+    const [justifNoAplicaOrden, setJustifNoAplicaOrden] = useState('');
     const [eliminandoEvidencia, setEliminandoEvidencia] = useState<string | null>(null);
 
     const [showSolicitarTarea, setShowSolicitarTarea] = useState(false);
@@ -137,17 +139,21 @@ export default function DetalleOrdenEmpleadoPage() {
         fileInputRef.current?.click();
     };
 
-    const handleArchivoSeleccionado = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !tareaSeleccionada) return;
-
+    // Sube evidencia de una tarea. Reutilizado por la subida normal (archivo) y por
+    // "No aplica" (.txt generado en el cliente con la justificación).
+    const subirEvidenciaOrden = (
+        file: File,
+        tareaId: string,
+        opts: { noAplica?: boolean } = {},
+    ) => {
         const token = localStorage.getItem('accessToken');
         const formData = new FormData();
         formData.append('archivo', file);
-        formData.append('tareaId', tareaSeleccionada);
+        formData.append('tareaId', tareaId);
         formData.append('ordenTitulo', orden?.titulo ?? '');
+        if (opts.noAplica) formData.append('noAplica', 'true');
 
-        setSubiendoEvidencia(tareaSeleccionada);
+        setSubiendoEvidencia(tareaId);
         setUploadProgress(0);
 
         const xhr = new XMLHttpRequest();
@@ -161,6 +167,8 @@ export default function DetalleOrdenEmpleadoPage() {
         xhr.onload = async () => {
             if (xhr.status >= 200 && xhr.status < 300) {
                 setUploadProgress(0);
+                setNoAplicaTareaId(null);
+                setJustifNoAplicaOrden('');
                 await cargarOrden();
             } else {
                 let msg = 'Error al subir evidencia';
@@ -183,6 +191,21 @@ export default function DetalleOrdenEmpleadoPage() {
         xhr.open('POST', '/api/storage/evidencia-orden');
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.send(formData);
+    };
+
+    const handleArchivoSeleccionado = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !tareaSeleccionada) return;
+        subirEvidenciaOrden(file, tareaSeleccionada);
+    };
+
+    // "No aplica": justificación por escrito de por qué la tarea/KPI no aplica.
+    // Se sube como un .txt en texto plano; se auto-aprueba y no afecta el cálculo.
+    const handleEnviarNoAplicaOrden = (tareaId: string) => {
+        const texto = justifNoAplicaOrden.trim();
+        if (!texto) { alert('Debes escribir por qué no aplica.'); return; }
+        const file = new File([texto], 'no_aplica.txt', { type: 'text/plain' });
+        subirEvidenciaOrden(file, tareaId, { noAplica: true });
     };
 
     const handleEliminarEvidencia = async (evidenciaId: string) => {
@@ -496,6 +519,38 @@ export default function DetalleOrdenEmpleadoPage() {
                                             <p className="text-xs text-gray-400 mb-3">
                                                 Formatos: imágenes, video, PDF, Word, Excel · Máximo <span className="font-medium">30 MB</span> por archivo
                                             </p>
+                                        )}
+                                        {puedeSubir && !ordenCerrada && (
+                                            noAplicaTareaId === tarea.id ? (
+                                                <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+                                                    <label className="text-xs font-medium text-amber-800 block">
+                                                        ¿Por qué no aplica esta tarea? <span className="text-red-500">*</span>
+                                                    </label>
+                                                    <textarea value={justifNoAplicaOrden} onChange={(e) => setJustifNoAplicaOrden(e.target.value)}
+                                                        placeholder="Explica por qué no aplica..." rows={3} spellCheck={false}
+                                                        className="w-full px-3 py-2 text-sm border border-amber-300 rounded-lg resize-none focus:ring-2 focus:ring-amber-500" />
+                                                    <p className="text-xs text-amber-600">Se guardará como un archivo de texto con tu justificación.</p>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => handleEnviarNoAplicaOrden(tarea.id)}
+                                                            disabled={cargando || !justifNoAplicaOrden.trim()}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700 transition-colors disabled:opacity-50">
+                                                            {cargando ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> : <Upload className="w-3 h-3" />}
+                                                            {cargando ? 'Enviando...' : 'Enviar No aplica'}
+                                                        </button>
+                                                        {!cargando && (
+                                                            <button onClick={() => { setNoAplicaTareaId(null); setJustifNoAplicaOrden(''); }}
+                                                                className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors">
+                                                                Cancelar
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <button onClick={() => { setNoAplicaTareaId(tarea.id); setJustifNoAplicaOrden(''); }}
+                                                    className="mb-3 px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-xs font-medium hover:bg-amber-200 transition-colors">
+                                                    No aplica
+                                                </button>
+                                            )
                                         )}
                                         {tarea.evidencias?.length > 0 ? (
                                             <div className="space-y-3">
