@@ -724,10 +724,12 @@ export default function MisKPIsPage() {
                             const requeridas = kpi.evidenciasRequeridas;
                             const enRevision = kpi.evidencias.filter((e) => e.status === 'pendiente_revision').length;
                             const falta = Math.max(0, requeridas - aprobadas - enRevision);
-                            // OT: solo se sube respaldo durante la ventana de gracia (mes cerrado).
-                            // Resto: durante el periodo activo (cerrado en gracia, actual fuera).
+                            // OT: se sube respaldo durante la ventana de gracia (mes cerrado) 
+                            // O a partir del día 25 del mes actual.
+                            const hoy = new Date();
+                            const esDia25oMas = hoy.getDate() >= 25;
                             const puedeSubir = aplicaOT
-                                ? enGracia
+                                ? (enGracia || esDia25oMas)
                                 : kpi.statusKPI !== 'aprobado';
 
                             const ultimaEvidenciaConValor = kpi.evidencias
