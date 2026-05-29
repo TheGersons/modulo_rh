@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
     Target, CheckCircle, AlertCircle, Clock, Upload, ChevronDown, ChevronUp,
-    Plus, FileText, Image, Film, File, Info, TrendingUp, Hash, Timer,
+    Plus, FileText, Image, Film, File as FileIcon, Info, TrendingUp, Hash, Timer,
     Calculator, ToggleLeft, Eye, Download, StickyNote, ArrowUp, ArrowDown,
     Minus, Crosshair, Trash2,
 } from 'lucide-react';
@@ -110,7 +110,7 @@ const TIPO_LABEL: Record<string, string> = {
 };
 
 const ARCHIVO_ICON: Record<string, any> = {
-    imagen: Image, video: Film, pdf: FileText, documento: File,
+    imagen: Image, video: Film, pdf: FileText, documento: FileIcon,
 };
 
 const EVIDENCIA_STATUS: Record<string, { label: string; color: string; bg: string }> = {
@@ -1217,7 +1217,7 @@ export default function MisKPIsPage() {
                                                     <div className="space-y-2">
                                                         {kpi.evidencias.slice(requeridas).map((ev) => {
                                                             const evCfg = EVIDENCIA_STATUS[ev.status];
-                                                            const EvIcon = ARCHIVO_ICON[ev.tipo] ?? File;
+                                                            const EvIcon = ARCHIVO_ICON[ev.tipo] ?? FileIcon;
                                                             return (
                                                                 <div key={ev.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
                                                                     <EvIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />

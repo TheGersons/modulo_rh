@@ -30,7 +30,7 @@ interface Evaluacion {
   empleado: {
     nombre: string;
     apellido: string;
-    puesto?: string;
+    puesto?: { nombre: string } | null;
     area?: {
       nombre: string;
     };
@@ -214,9 +214,9 @@ export default function DetalleEvaluacionPage() {
                 </div>
               </div>
               <div className="space-y-2 text-sm">
-                {evaluacion.empleado.puesto && (
+                {evaluacion.empleado.puesto?.nombre && (
                   <p className="text-blue-100">
-                    <strong>Puesto:</strong> {evaluacion.empleado.puesto}
+                    <strong>Puesto:</strong> {evaluacion.empleado.puesto.nombre}
                   </p>
                 )}
                 {evaluacion.empleado.area && (
