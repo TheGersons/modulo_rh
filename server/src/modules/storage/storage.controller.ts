@@ -15,7 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from 'src/common/database/prisma.service';
 import { AlertasService } from '../alertas/alertas.service';
 import { ConfiguracionService } from 'src/common/configuracion/configuracion.service';
-import { enVentanaGracia, getVentanaGracia, formatPeriodo } from 'src/common/utils/grace-period.util';
+import { enVentanaGracia, getVentanaGracia, formatPeriodo, DIA_INICIO_SUBIDA } from 'src/common/utils/grace-period.util';
 
 const TIPOS_PERMITIDOS = [
   // Imágenes
@@ -153,6 +153,8 @@ export class StorageController {
     let esRespaldoGracia = false;
     if (kpi?.aplicaOrdenTrabajo) {
       const subiendoAlMesAnterior = body.periodo === periodoAnteriorSrv;
+      const subiendoAlMesActual = body.periodo === periodoActualSrv;
+      const esDia25oMas = ahora.getDate() >= DIA_INICIO_SUBIDA;
       // Re-consultar si el mes que se está subiendo está cerrado
       const mesesEs2 = [
         'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -165,11 +167,20 @@ export class StorageController {
       });
       const periodoAbierto = !evalDelPeriodo;
 
-      if (!subiendoAlMesAnterior || !periodoAbierto) {
+      // Dos ventanas válidas para respaldo de KPIs de orden de trabajo:
+      //  1) Gracia clásica: subir al mes anterior mientras siga abierto
+      //     (días 1..DIAS_GRACIA del mes siguiente, o gracia extendida si el cron tardó).
+      //  2) Anticipada: subir al mes EN CURSO desde el día 25, antes de que cierre.
+      const ventanaGraciaPrevio = subiendoAlMesAnterior && periodoAbierto;
+      const ventanaAnticipada =
+        subiendoAlMesActual && esDia25oMas && periodoAbierto;
+
+      if (!ventanaGraciaPrevio && !ventanaAnticipada) {
         const { inicio, fin } = getVentanaGracia(body.periodo, diasGracia);
         throw new BadRequestException(
-          `Solo puedes subir respaldo de este KPI mientras el período del mes anterior siga abierto ` +
-            `(ventana original ${inicio.toLocaleDateString('es-MX')} – ${fin.toLocaleDateString('es-MX')}).`,
+          `Solo puedes subir respaldo de este KPI desde el día ${DIA_INICIO_SUBIDA} del mes ` +
+            `o mientras el período del mes anterior siga abierto ` +
+            `(ventana de gracia ${inicio.toLocaleDateString('es-MX')} – ${fin.toLocaleDateString('es-MX')}).`,
         );
       }
       esRespaldoGracia = true;

@@ -8,7 +8,12 @@
  *     aplicaOrdenTrabajo=true.
  *   - El cron de cierre corre el día (DIAS_GRACIA + 1) del mes siguiente,
  *     a las 23:50, y cierra el periodo del mes anterior.
+ *   - Adicionalmente, desde el día DIA_INICIO_SUBIDA del propio mes se permite
+ *     subir respaldos anticipados al periodo en curso (antes de que cierre).
  */
+
+/** Día del mes a partir del cual se admite subir respaldo del mes en curso. */
+export const DIA_INICIO_SUBIDA = 25;
 
 export interface VentanaGracia {
   inicio: Date; // primer día del mes siguiente, 00:00:00
