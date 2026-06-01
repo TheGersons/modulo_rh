@@ -339,6 +339,7 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
                             <div className="flex items-center gap-2 flex-wrap mb-1">
                                 <span className="text-xs font-mono text-gray-400">{evidencia.kpi?.key}</span>
                                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${criticidadCfg.bg} ${criticidadCfg.text}`}>{criticidadCfg.label}</span>
+                                {evidencia.nombre === 'no_aplica.txt' && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-200 text-slate-700">No aplica</span>}
                                 {evidencia.esFueraDeTiempo && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Fuera de tiempo</span>}
                                 {evidencia.intento > 1 && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Intento #{evidencia.intento}</span>}
                                 {evidencia.apelacion && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 flex items-center gap-1"><MessageSquare className="w-3 h-3" />Apelación</span>}
@@ -557,6 +558,7 @@ function TarjetaEvidenciaOrden({ evidencia, onRevisar }: {
                             <div className="flex items-center gap-2 flex-wrap mb-1">
                                 <span className="text-xs font-mono text-gray-400">{evidencia.tarea.ordenTrabajo.kpi?.key ?? 'Personalizado'}</span>
                                 <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">Tarea {evidencia.tarea.orden}</span>
+                                {evidencia.nombre === 'no_aplica.txt' && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-200 text-slate-700">No aplica</span>}
                                 {evidencia.esFueraDeTiempo && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Fuera de tiempo</span>}
                                 {evidencia.intento > 1 && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Intento #{evidencia.intento}</span>}
                                 {evidencia.apelacion && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 flex items-center gap-1"><MessageSquare className="w-3 h-3" />Apelación</span>}
@@ -697,6 +699,7 @@ function TarjetaEvidenciaRevisada({ evidencia, onCambiar }: {
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${aprobada ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                 {aprobada ? '✓ Aprobada' : '✗ Rechazada'}
                             </span>
+                            {evidencia.nombre === 'no_aplica.txt' && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-200 text-slate-700">No aplica</span>}
                             {evidencia.intento > 1 && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Intento #{evidencia.intento}</span>}
                         </div>
                         <p className="text-sm font-semibold text-gray-900 truncate">{evidencia.kpi?.indicador}</p>

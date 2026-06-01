@@ -102,8 +102,9 @@ export class StorageController {
     // "No aplica": el empleado completa el KPI normalmente (valor numérico,
     // confirmación binaria, etc.) pero no tiene un archivo físico que adjuntar;
     // sube un .txt con su justificación como evidencia. El KPI conserva todos
-    // sus datos; solo el archivo es texto plano y la evidencia se auto-aprueba.
-    const esNoAplica = body.noAplica === 'true' || body.noAplica === true;
+    // sus datos; el archivo es texto plano y la evidencia entra a revisión del
+    // jefe como cualquier otra (puede aprobarla o regresarla). Si nadie la
+    // revisa, se auto-aprueba al cierre del período.
     const empleado = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { area: true },
@@ -219,7 +220,7 @@ export class StorageController {
           : null,
         nota: body.nota || null,
         intento: intentoPrevio + 1,
-        status: esNoAplica ? 'aprobada' : 'pendiente_revision',
+        status: 'pendiente_revision',
         esFueraDeTiempo: false,
         esRespaldoGracia,
       },
@@ -235,7 +236,6 @@ export class StorageController {
     @Request() req,
   ) {
     if (!archivo) throw new BadRequestException('No se recibio archivo');
-    const esNoAplica = body.noAplica === 'true' || body.noAplica === true;
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: body.tareaId },
       include: {
@@ -281,7 +281,7 @@ export class StorageController {
         nombre: archivo.originalname,
         tamanio: archivo.size,
         intento: intentoPrevio + 1,
-        status: esNoAplica ? 'aprobada' : 'pendiente_revision',
+        status: 'pendiente_revision',
         esFueraDeTiempo,
       },
     });
