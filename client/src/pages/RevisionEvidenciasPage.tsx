@@ -299,6 +299,7 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
     onResponderApelacion: (id: string, respuesta: string, confirmaRechazo: boolean) => Promise<void>;
 }) {
     const [expandida, setExpandida] = useState(false);
+    const [mostrarAprobar, setMostrarAprobar] = useState(false);
     const [mostrarRechazo, setMostrarRechazo] = useState(false);
     const [motivoRechazo, setMotivoRechazo] = useState('');
     const [mostrarApelacion, setMostrarApelacion] = useState(false);
@@ -308,7 +309,7 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
     const IconoArchivo = getIconoArchivo(evidencia.tipo);
     const criticidadCfg = CRITICIDAD_CFG[evidencia.kpi.tipoCriticidad] ?? CRITICIDAD_CFG.no_critico;
 
-    const handleAprobar = async () => { setProcesando(true); await onRevisar(evidencia.id, 'aprobada'); setProcesando(false); };
+    const handleAprobar = async () => { setProcesando(true); await onRevisar(evidencia.id, 'aprobada'); setProcesando(false); setMostrarAprobar(false); };
     const handleRechazar = async () => {
         if (!motivoRechazo.trim()) return;
         setProcesando(true);
@@ -355,16 +356,33 @@ function TarjetaEvidenciaKPI({ evidencia, onRevisar, onResponderApelacion }: {
                         <button onClick={() => setExpandida(!expandida)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                             {expandida ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </button>
-                        <button onClick={handleAprobar} disabled={procesando}
+                        <button onClick={() => { setMostrarAprobar((v) => !v); setMostrarRechazo(false); }} disabled={procesando}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50">
                             <CheckCircle className="w-4 h-4" />Aprobar
                         </button>
-                        <button onClick={() => setMostrarRechazo(!mostrarRechazo)} disabled={procesando}
+                        <button onClick={() => { setMostrarRechazo((v) => !v); setMostrarAprobar(false); }} disabled={procesando}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50">
                             <XCircle className="w-4 h-4" />Rechazar
                         </button>
                     </div>
                 </div>
+
+                {mostrarAprobar && (
+                    <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                        <p className="text-sm font-medium text-green-800 mb-3 flex items-center gap-1.5">
+                            <CheckCircle className="w-4 h-4" />
+                            ¿Aprobar esta evidencia? El empleado verá este KPI como cumplido.
+                        </p>
+                        <div className="flex gap-2">
+                            <button onClick={() => setMostrarAprobar(false)}
+                                className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                            <button onClick={handleAprobar} disabled={procesando}
+                                className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+                                {procesando ? 'Aprobando...' : 'Sí, aprobar'}
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {mostrarRechazo && (
                     <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
@@ -505,12 +523,13 @@ function TarjetaEvidenciaOrden({ evidencia, onRevisar }: {
     onRevisar: (id: string, status: 'aprobada' | 'rechazada', motivo?: string) => Promise<void>;
 }) {
     const [expandida, setExpandida] = useState(false);
+    const [mostrarAprobar, setMostrarAprobar] = useState(false);
     const [mostrarRechazo, setMostrarRechazo] = useState(false);
     const [motivoRechazo, setMotivoRechazo] = useState('');
     const [procesando, setProcesando] = useState(false);
     const IconoArchivo = getIconoArchivo(evidencia.tipo);
 
-    const handleAprobar = async () => { setProcesando(true); await onRevisar(evidencia.id, 'aprobada'); setProcesando(false); };
+    const handleAprobar = async () => { setProcesando(true); await onRevisar(evidencia.id, 'aprobada'); setProcesando(false); setMostrarAprobar(false); };
     const handleRechazar = async () => {
         if (!motivoRechazo.trim()) return;
         setProcesando(true);
@@ -553,16 +572,33 @@ function TarjetaEvidenciaOrden({ evidencia, onRevisar }: {
                         <button onClick={() => setExpandida(!expandida)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
                             {expandida ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </button>
-                        <button onClick={handleAprobar} disabled={procesando}
+                        <button onClick={() => { setMostrarAprobar((v) => !v); setMostrarRechazo(false); }} disabled={procesando}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                             <CheckCircle className="w-4 h-4" />Aprobar
                         </button>
-                        <button onClick={() => setMostrarRechazo(!mostrarRechazo)} disabled={procesando}
+                        <button onClick={() => { setMostrarRechazo((v) => !v); setMostrarAprobar(false); }} disabled={procesando}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50">
                             <XCircle className="w-4 h-4" />Rechazar
                         </button>
                     </div>
                 </div>
+
+                {mostrarAprobar && (
+                    <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                        <p className="text-sm font-medium text-green-800 mb-3 flex items-center gap-1.5">
+                            <CheckCircle className="w-4 h-4" />
+                            ¿Aprobar esta evidencia de la tarea?
+                        </p>
+                        <div className="flex gap-2">
+                            <button onClick={() => setMostrarAprobar(false)}
+                                className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                            <button onClick={handleAprobar} disabled={procesando}
+                                className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+                                {procesando ? 'Aprobando...' : 'Sí, aprobar'}
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {mostrarRechazo && (
                     <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
