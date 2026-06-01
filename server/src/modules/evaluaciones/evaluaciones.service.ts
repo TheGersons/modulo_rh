@@ -771,6 +771,220 @@ export class EvaluacionesService implements OnModuleInit {
   }
 
   // ============================================
+  // AVANCE EN CURSO (PRELIMINAR) — solo lectura
+  // ============================================
+  // Para empleados con KPIs trimestrales/semestrales/anuales, que entre cierres
+  // no tienen ninguna evaluación que ver. Calcula EN VIVO, sin escribir en BD,
+  // cómo va respecto al "ritmo esperado a la fecha" del período en curso.
+  // El esperado-a-la-fecha sale de la propia fórmula del KPI:
+  //  - acumulado_trimestral → curva por trimestre (metas/porcentajes)
+  //  - resto → la meta del KPI (un ratio no se prorratea en el tiempo)
+  async getProgresoEnCurso(empleadoId: string) {
+    const empleado = await this.prisma.user.findUnique({
+      where: { id: empleadoId },
+      select: { id: true, nombre: true, apellido: true, areaId: true },
+    });
+    if (!empleado) {
+      throw new NotFoundException('Empleado no encontrado');
+    }
+
+    const PERIODICIDADES_LARGAS = ['trimestral', 'semestral', 'anual'];
+    const kpisAsignados = await this.kpisService.getKpisPorEmpleado(empleadoId);
+    const kpis = kpisAsignados.filter((k) =>
+      PERIODICIDADES_LARGAS.includes(k.periodicidad),
+    );
+
+    const hoy = new Date();
+    const anio = hoy.getFullYear();
+    const mes0 = hoy.getMonth(); // 0..11
+    const trimestre = Math.floor(mes0 / 3) + 1; // 1..4
+    const semestre = mes0 < 6 ? 1 : 2;
+
+    // Período "en curso" según la periodicidad del KPI
+    const periodoEnCurso = (periodicidad: string): string => {
+      if (periodicidad === 'anual') return 'anual';
+      if (periodicidad === 'semestral') return `semestre_${semestre}`;
+      return `trimestre_${trimestre}`;
+    };
+
+    // Etiqueta + cuánto del período ha transcurrido
+    const tiempoTranscurrido = (periodicidad: string) => {
+      if (periodicidad === 'anual') {
+        return {
+          periodoLabel: `Año ${anio}`,
+          transcurrido: `Trimestre ${trimestre} de 4`,
+          fraccion: (mes0 + 1) / 12,
+        };
+      }
+      if (periodicidad === 'semestral') {
+        const mesEnSem = semestre === 1 ? mes0 + 1 : mes0 - 5; // 1..6
+        return {
+          periodoLabel: `Semestre ${semestre} · ${anio}`,
+          transcurrido: `Mes ${mesEnSem} de 6`,
+          fraccion: mesEnSem / 6,
+        };
+      }
+      const mesEnTri = (mes0 % 3) + 1; // 1..3
+      return {
+        periodoLabel: `Trimestre ${trimestre} · ${anio}`,
+        transcurrido: `Mes ${mesEnTri} de 3`,
+        fraccion: mesEnTri / 3,
+      };
+    };
+
+    const detalles = await Promise.all(
+      kpis.map(async (kpi) => {
+        const periodo = periodoEnCurso(kpi.periodicidad);
+        const mesesEvid = this.periodosEvidencia(periodo, anio);
+
+        // Última evidencia con valor numérico del período en curso.
+        // Se incluyen pendientes (al cierre se auto-aprueban); se excluyen rechazadas.
+        const ultimaEvid = await this.prisma.evidenciaKPI.findFirst({
+          where: {
+            empleadoId,
+            kpiId: kpi.id,
+            periodo: { in: mesesEvid },
+            tipo: { not: 'nota_kpi' },
+            esRespaldoGracia: false,
+            status: { not: 'rechazada' },
+            valorNumerico: { not: null },
+          },
+          orderBy: { fechaSubida: 'desc' },
+          select: { valorNumerico: true, fechaSubida: true, status: true },
+        });
+
+        const valorReportado = ultimaEvid?.valorNumerico ?? null;
+
+        // Esperado a la fecha + estado de ritmo
+        let esperadoALaFecha: number | null = null;
+        let estadoRitmo: 'verde' | 'amarillo' | 'rojo' | 'sin_datos' = 'sin_datos';
+        let ritmoPorcentaje: number | null = null;
+
+        if (kpi.tipoCalculo === 'acumulado_trimestral') {
+          let formula: any = {};
+          try {
+            formula = JSON.parse(kpi.formulaCalculo);
+          } catch {
+            formula = {};
+          }
+          esperadoALaFecha = this.esperadoAcumuladoTrimestral(
+            formula,
+            trimestre,
+          );
+          if (valorReportado != null && esperadoALaFecha != null) {
+            ritmoPorcentaje =
+              esperadoALaFecha > 0
+                ? (valorReportado / esperadoALaFecha) * 100
+                : valorReportado > 0
+                  ? 100
+                  : 0;
+            const menorEsMejor = kpi.sentido === 'Menor es mejor';
+            if (menorEsMejor) {
+              estadoRitmo =
+                valorReportado <= esperadoALaFecha
+                  ? 'verde'
+                  : valorReportado <= esperadoALaFecha * 1.2
+                    ? 'amarillo'
+                    : 'rojo';
+            } else {
+              estadoRitmo =
+                ritmoPorcentaje >= 100
+                  ? 'verde'
+                  : ritmoPorcentaje >= 80
+                    ? 'amarillo'
+                    : 'rojo';
+            }
+          }
+        } else {
+          // KPIs sin curva (ej. division trimestral): se compara contra la meta
+          // del KPI directamente, usando sus propios umbrales.
+          esperadoALaFecha = kpi.meta ?? null;
+          if (valorReportado != null) {
+            const ev = this.kpisService.evaluarKpiPorValor(
+              kpi,
+              valorReportado,
+            );
+            estadoRitmo = ev.estado;
+            ritmoPorcentaje =
+              kpi.meta != null && kpi.meta > 0
+                ? (valorReportado / kpi.meta) * 100
+                : null;
+          }
+        }
+
+        return {
+          kpiId: kpi.id,
+          key: kpi.key,
+          indicador: kpi.indicador,
+          unidad: kpi.unidad,
+          periodicidad: kpi.periodicidad,
+          tipoCalculo: kpi.tipoCalculo,
+          metaPeriodo: kpi.meta,
+          valorReportado,
+          esperadoALaFecha:
+            esperadoALaFecha != null
+              ? Math.round(esperadoALaFecha * 100) / 100
+              : null,
+          ritmoPorcentaje:
+            ritmoPorcentaje != null
+              ? Math.round(ritmoPorcentaje * 100) / 100
+              : null,
+          estadoRitmo,
+          tieneEvidencia: valorReportado != null,
+        };
+      }),
+    );
+
+    // Agrupar por periodicidad (orden: trimestral, semestral, anual)
+    const ordenPeriodicidad = ['trimestral', 'semestral', 'anual'];
+    const grupos = ordenPeriodicidad
+      .map((periodicidad) => {
+        const kpisGrupo = detalles.filter(
+          (d) => d.periodicidad === periodicidad,
+        );
+        if (kpisGrupo.length === 0) return null;
+        const t = tiempoTranscurrido(periodicidad);
+        return {
+          periodicidad,
+          periodoLabel: t.periodoLabel,
+          tiempoTranscurrido: t.transcurrido,
+          fraccionTranscurrida: Math.round(t.fraccion * 100) / 100,
+          kpis: kpisGrupo,
+        };
+      })
+      .filter((g): g is NonNullable<typeof g> => g !== null);
+
+    return {
+      empleadoId: empleado.id,
+      empleado: `${empleado.nombre} ${empleado.apellido}`,
+      generadoEn: hoy.toISOString(),
+      grupos,
+    };
+  }
+
+  // % esperado a la fecha para un KPI acumulado_trimestral, según el trimestre
+  // en curso. Variante A: metas{Q1..Q4} → metas[Q]/metas[Q4]*100.
+  // Variante B: metaAnual + porcentajes{Q1..Q4} → porcentajes[Q]*100.
+  private esperadoAcumuladoTrimestral(
+    formula: any,
+    quarter: number,
+  ): number | null {
+    const qKey = `Q${quarter}`;
+    if (formula?.porcentajes && formula.porcentajes[qKey] != null) {
+      return Number(formula.porcentajes[qKey]) * 100;
+    }
+    if (
+      formula?.metas &&
+      formula.metas[qKey] != null &&
+      formula.metas['Q4'] != null
+    ) {
+      const q4 = Number(formula.metas['Q4']);
+      if (q4 > 0) return (Number(formula.metas[qKey]) / q4) * 100;
+    }
+    return null;
+  }
+
+  // ============================================
   // LISTAR EVALUACIONES
   // ============================================
   async findAll(filters?: {

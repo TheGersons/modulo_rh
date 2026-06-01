@@ -78,4 +78,11 @@ export const evaluacionesService = {
     const response = await apiClient.post(`/evaluaciones/${id}/recalcular`);
     return response.data;
   },
+
+  getProgreso: async (empleadoId: string): Promise<any> => {
+    const response = await apiClient.get(
+      `/evaluaciones/progreso?empleadoId=${empleadoId}`,
+    );
+    return response.data;
+  },
 };

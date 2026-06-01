@@ -37,6 +37,11 @@ export class EvaluacionesController {
     });
   }
 
+  @Get('progreso')
+  getProgreso(@Query('empleadoId') empleadoId: string) {
+    return this.evaluacionesService.getProgresoEnCurso(empleadoId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.evaluacionesService.findOne(id);

@@ -9,6 +9,8 @@ import {
   CheckCircle,
   Eye,
   Filter,
+  Clock,
+  Gauge,
 } from 'lucide-react';
 import { evaluacionesService } from '../services/evaluaciones.service';
 import { useAuth } from '../contexts/AuthContext';
@@ -39,11 +41,35 @@ interface Evaluacion {
   }>;
 }
 
+interface ProgresoKpi {
+  kpiId: string;
+  key: string;
+  indicador: string;
+  unidad: string | null;
+  periodicidad: string;
+  tipoCalculo: string;
+  metaPeriodo: number | null;
+  valorReportado: number | null;
+  esperadoALaFecha: number | null;
+  ritmoPorcentaje: number | null;
+  estadoRitmo: 'verde' | 'amarillo' | 'rojo' | 'sin_datos';
+  tieneEvidencia: boolean;
+}
+
+interface ProgresoGrupo {
+  periodicidad: string;
+  periodoLabel: string;
+  tiempoTranscurrido: string;
+  fraccionTranscurrida: number;
+  kpis: ProgresoKpi[];
+}
+
 export default function MisEvaluacionesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [evaluaciones, setEvaluaciones] = useState<Evaluacion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [progresoGrupos, setProgresoGrupos] = useState<ProgresoGrupo[]>([]);
 
   // Filtros
   const [filtroPeriodo, setFiltroPeriodo] = useState<string>('todos');
@@ -56,7 +82,18 @@ export default function MisEvaluacionesPage() {
 
   useEffect(() => {
     cargarEvaluaciones();
+    cargarProgreso();
   }, []);
+
+  const cargarProgreso = async () => {
+    if (!user?.id) return;
+    try {
+      const data = await evaluacionesService.getProgreso(user.id);
+      setProgresoGrupos(data?.grupos ?? []);
+    } catch (error) {
+      console.error('Error al cargar avance en curso:', error);
+    }
+  };
 
   useEffect(() => {
     setPaginaActual(1);
@@ -140,6 +177,19 @@ export default function MisEvaluacionesPage() {
       year: 'numeric',
     });
   };
+
+  const ritmoStyle = (estado: ProgresoKpi['estadoRitmo']) => {
+    const map = {
+      verde: { barra: 'bg-green-500', texto: 'text-green-700', chip: 'bg-green-100 text-green-700', label: 'En ritmo' },
+      amarillo: { barra: 'bg-yellow-500', texto: 'text-yellow-700', chip: 'bg-yellow-100 text-yellow-700', label: 'Algo por debajo' },
+      rojo: { barra: 'bg-red-500', texto: 'text-red-700', chip: 'bg-red-100 text-red-700', label: 'Atrasado' },
+      sin_datos: { barra: 'bg-gray-300', texto: 'text-gray-500', chip: 'bg-gray-100 text-gray-600', label: 'Sin evidencia' },
+    } as const;
+    return map[estado] ?? map.sin_datos;
+  };
+
+  const fmtValor = (v: number | null, unidad: string | null) =>
+    v == null ? '—' : `${fmtNum(v)}${unidad === '%' ? '%' : unidad ? ` ${unidad}` : ''}`;
 
   // Filtrado
   const evaluacionesFiltradas = evaluaciones.filter((ev) => {
@@ -243,6 +293,96 @@ export default function MisEvaluacionesPage() {
             </div>
           </div>
         </div>
+
+        {/* Avance en curso (preliminar) */}
+        {progresoGrupos.length > 0 && (
+          <div className="bg-gradient-to-br from-indigo-50 to-white rounded-xl p-6 shadow-sm border-2 border-indigo-200">
+            <div className="flex items-start justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Gauge className="w-5 h-5 text-indigo-600" />
+                <h2 className="text-lg font-bold text-gray-900">Avance en curso</h2>
+              </div>
+              <span className="text-xs px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 font-medium">
+                Preliminar
+              </span>
+            </div>
+            <p className="text-sm text-gray-600 mb-5">
+              Tu progreso vs. el ritmo esperado a la fecha en KPIs de período largo.
+              Se confirma al cierre del período.
+            </p>
+
+            <div className="space-y-6">
+              {progresoGrupos.map((grupo) => (
+                <div key={grupo.periodicidad}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <h3 className="font-semibold text-gray-800">{grupo.periodoLabel}</h3>
+                    <span className="flex items-center gap-1 text-xs text-gray-500">
+                      <Clock className="w-3 h-3" />
+                      {grupo.tiempoTranscurrido}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    {grupo.kpis.map((kpi) => {
+                      const st = ritmoStyle(kpi.estadoRitmo);
+                      const anchoBarra =
+                        kpi.ritmoPorcentaje != null
+                          ? Math.min(Math.max(kpi.ritmoPorcentaje, 0), 100)
+                          : 0;
+                      return (
+                        <div
+                          key={kpi.kpiId}
+                          className="bg-white rounded-lg p-4 border border-gray-200"
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <p className="font-medium text-gray-900 text-sm leading-tight">
+                              {kpi.indicador}
+                            </p>
+                            <span
+                              className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${st.chip}`}
+                            >
+                              {st.label}
+                            </span>
+                          </div>
+
+                          {/* Barra de ritmo (reportado vs esperado) */}
+                          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
+                            <div
+                              className={`h-full rounded-full ${st.barra} transition-all`}
+                              style={{ width: `${anchoBarra}%` }}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-600">
+                              Tú vas:{' '}
+                              <span className={`font-semibold ${st.texto}`}>
+                                {fmtValor(kpi.valorReportado, kpi.unidad)}
+                              </span>
+                            </span>
+                            <span className="text-gray-600">
+                              Esperado:{' '}
+                              <span className="font-semibold text-gray-800">
+                                {fmtValor(kpi.esperadoALaFecha, kpi.unidad)}
+                              </span>
+                            </span>
+                          </div>
+
+                          {!kpi.tieneEvidencia && (
+                            <p className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" />
+                              Aún no has subido evidencia este período
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Filtros */}
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
