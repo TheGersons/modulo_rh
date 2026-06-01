@@ -125,6 +125,13 @@ export const kpisService = {
     return response.data;
   },
 
+  getEvidenciasRevisadas: async () => {
+    const response = await apiClient.get(
+      `${API_ENDPOINTS.kpis}/evidencias-revisadas`,
+    );
+    return response.data;
+  },
+
   eliminarEvidencia: async (id: string) => {
     const response = await apiClient.delete(
       `${API_ENDPOINTS.kpis}/evidencias/${id}`,

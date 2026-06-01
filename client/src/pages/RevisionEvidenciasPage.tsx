@@ -75,7 +75,13 @@ interface EvidenciaOrden {
     };
 }
 
-type TipoVista = 'kpis' | 'ordenes';
+interface EvidenciaKPIRevisada extends EvidenciaKPI {
+    editable: boolean;
+    fechaRevision?: string;
+    revisor?: { nombre: string; apellido: string } | null;
+}
+
+type TipoVista = 'kpis' | 'ordenes' | 'revisadas';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -654,12 +660,122 @@ function TarjetaEvidenciaOrden({ evidencia, onRevisar }: {
     );
 }
 
+// ─── Tarjeta Evidencia Revisada (cambiar decisión) ────────────────────────────
+
+function TarjetaEvidenciaRevisada({ evidencia, onCambiar }: {
+    evidencia: EvidenciaKPIRevisada;
+    onCambiar: (id: string, status: 'aprobada' | 'rechazada', motivo?: string) => Promise<void>;
+}) {
+    const [mostrarCambio, setMostrarCambio] = useState(false);
+    const [motivoRechazo, setMotivoRechazo] = useState('');
+    const [procesando, setProcesando] = useState(false);
+
+    const aprobada = evidencia.status === 'aprobada';
+    const criticidadCfg = CRITICIDAD_CFG[evidencia.kpi.tipoCriticidad] ?? CRITICIDAD_CFG.no_critico;
+
+    const handleAprobar = async () => {
+        setProcesando(true);
+        await onCambiar(evidencia.id, 'aprobada');
+        setProcesando(false); setMostrarCambio(false);
+    };
+    const handleRechazar = async () => {
+        if (!motivoRechazo.trim()) return;
+        setProcesando(true);
+        await onCambiar(evidencia.id, 'rechazada', motivoRechazo);
+        setProcesando(false); setMostrarCambio(false); setMotivoRechazo('');
+    };
+
+    return (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className="p-2 bg-blue-50 rounded-lg shrink-0"><Target className="w-5 h-5 text-blue-600" /></div>
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="text-xs font-mono text-gray-400">{evidencia.kpi?.key}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${criticidadCfg.bg} ${criticidadCfg.text}`}>{criticidadCfg.label}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${aprobada ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                {aprobada ? '✓ Aprobada' : '✗ Rechazada'}
+                            </span>
+                            {evidencia.intento > 1 && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">Intento #{evidencia.intento}</span>}
+                        </div>
+                        <p className="text-sm font-semibold text-gray-900 truncate">{evidencia.kpi?.indicador}</p>
+                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                            <span className="flex items-center gap-1"><User className="w-3 h-3" />{evidencia.empleado.nombre} {evidencia.empleado.apellido}</span>
+                            <span>Período: {evidencia.periodo}</span>
+                            {evidencia.fechaRevision && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />Revisada {formatFecha(evidencia.fechaRevision)}</span>}
+                            {evidencia.revisor && <span>por {evidencia.revisor.nombre} {evidencia.revisor.apellido}</span>}
+                        </div>
+                        {evidencia.valorNumerico !== undefined && evidencia.valorNumerico !== null && (
+                            <p className="text-xs text-gray-600 mt-1">Valor reportado: <span className="font-semibold">{fmtConUnidad(evidencia.valorNumerico, evidencia.kpi.unidad)}</span></p>
+                        )}
+                        {!aprobada && evidencia.motivoRechazo && (
+                            <p className="text-xs text-red-600 mt-1">Motivo de rechazo: {evidencia.motivoRechazo}</p>
+                        )}
+                        <a href={evidencia.archivoUrl} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 mt-1.5 text-xs text-blue-600 hover:underline">
+                            <Eye className="w-3 h-3" />Ver evidencia
+                        </a>
+                    </div>
+                </div>
+                <div className="shrink-0">
+                    {evidencia.editable ? (
+                        <button onClick={() => setMostrarCambio((v) => !v)} disabled={procesando}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50">
+                            <RefreshCw className="w-4 h-4" />Cambiar decisión
+                        </button>
+                    ) : (
+                        <span className="text-xs text-gray-400 flex items-center gap-1" title="El período ya fue cerrado">
+                            <AlertCircle className="w-3.5 h-3.5" />Período cerrado
+                        </span>
+                    )}
+                </div>
+            </div>
+
+            {mostrarCambio && evidencia.editable && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
+                    <p className="text-sm font-medium text-gray-700">
+                        Cambiar a <strong>{aprobada ? 'rechazada' : 'aprobada'}</strong>:
+                    </p>
+                    {aprobada ? (
+                        // Estaba aprobada → cambiar a rechazada (requiere motivo)
+                        <>
+                            <textarea value={motivoRechazo} onChange={(e) => setMotivoRechazo(e.target.value)}
+                                placeholder="Motivo del rechazo (el empleado podrá corregir y reenviar)..."
+                                className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:ring-2 focus:ring-red-400 resize-none" rows={3} />
+                            <div className="flex gap-2">
+                                <button onClick={() => { setMostrarCambio(false); setMotivoRechazo(''); }}
+                                    className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                                <button onClick={handleRechazar} disabled={!motivoRechazo.trim() || procesando}
+                                    className="px-4 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">
+                                    {procesando ? 'Guardando...' : 'Cambiar a rechazada'}
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        // Estaba rechazada → cambiar a aprobada (confirmación)
+                        <div className="flex gap-2">
+                            <button onClick={() => setMostrarCambio(false)}
+                                className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                            <button onClick={handleAprobar} disabled={procesando}
+                                className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+                                {procesando ? 'Guardando...' : 'Cambiar a aprobada'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function RevisionEvidenciasPage() {
     const [tipoVista, setTipoVista] = useState<TipoVista>('kpis');
     const [evidenciasKPI, setEvidenciasKPI] = useState<EvidenciaKPI[]>([]);
     const [evidenciasOrden, setEvidenciasOrden] = useState<EvidenciaOrden[]>([]);
+    const [evidenciasRevisadas, setEvidenciasRevisadas] = useState<EvidenciaKPIRevisada[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [resultadosAuto, setResultadosAuto] = useState<any[]>([]);
@@ -673,11 +789,13 @@ export default function RevisionEvidenciasPage() {
     // Paginación
     const [paginaKPI, setPaginaKPI] = useState(1);
     const [paginaOrden, setPaginaOrden] = useState(1);
+    const [paginaRevisada, setPaginaRevisada] = useState(1);
 
     useEffect(() => { cargarEvidencias(); }, [tipoVista]);
     useEffect(() => { cargarResultadosAuto(); }, []);
     useEffect(() => { setPaginaKPI(1); }, [busqueda, filtroCriticidad, filtroFueraDeTiempo, filtroConApelacion]);
     useEffect(() => { setPaginaOrden(1); }, [busqueda]);
+    useEffect(() => { setPaginaRevisada(1); }, [busqueda]);
 
     const getPeriodoActual = () => {
         const now = new Date();
@@ -698,6 +816,9 @@ export default function RevisionEvidenciasPage() {
             if (tipoVista === 'kpis') {
                 const data = await kpisService.getEvidenciasPendientes();
                 setEvidenciasKPI(data);
+            } else if (tipoVista === 'revisadas') {
+                const data = await kpisService.getEvidenciasRevisadas();
+                setEvidenciasRevisadas(data);
             } else {
                 const res = await apiClient.get('/ordenes-trabajo/evidencias-pendientes');
                 setEvidenciasOrden(res.data);
@@ -731,6 +852,15 @@ export default function RevisionEvidenciasPage() {
         } catch (error) { console.error(error); }
     };
 
+    const handleCambiarDecisionKPI = async (id: string, status: 'aprobada' | 'rechazada', motivo?: string) => {
+        try {
+            await kpisService.revisarEvidencia(id, { status, motivoRechazo: motivo });
+            await cargarEvidencias(true);
+        } catch (error: any) {
+            alert(error?.response?.data?.message ?? 'No se pudo cambiar la decisión');
+        }
+    };
+
     // Filtrado
     const kpisFiltrados = evidenciasKPI.filter((e) => {
         const nombre = `${e.empleado.nombre} ${e.empleado.apellido}`.toLowerCase();
@@ -747,20 +877,30 @@ export default function RevisionEvidenciasPage() {
         return nombre.includes(busqueda.toLowerCase()) || e.tarea.ordenTrabajo.titulo.toLowerCase().includes(busqueda.toLowerCase());
     });
 
+    const revisadasFiltradas = evidenciasRevisadas.filter((e) => {
+        const nombre = `${e.empleado.nombre} ${e.empleado.apellido}`.toLowerCase();
+        const kpi = (e.kpi?.indicador ?? '').toLowerCase();
+        return (!busqueda || nombre.includes(busqueda.toLowerCase()) || kpi.includes(busqueda.toLowerCase()))
+            && (filtroCriticidad === 'todas' || e.kpi.tipoCriticidad === filtroCriticidad);
+    });
+
     // Paginación
     const totalKPIs = kpisFiltrados.length;
     const totalOrdenes = ordenesFiltradas.length;
+    const totalRevisadas = revisadasFiltradas.length;
     const totalPaginasKPI = Math.max(1, Math.ceil(totalKPIs / POR_PAGINA));
     const totalPaginasOrden = Math.max(1, Math.ceil(totalOrdenes / POR_PAGINA));
+    const totalPaginasRevisada = Math.max(1, Math.ceil(totalRevisadas / POR_PAGINA));
     const kpisPaginados = kpisFiltrados.slice((paginaKPI - 1) * POR_PAGINA, paginaKPI * POR_PAGINA);
     const ordenesPaginadas = ordenesFiltradas.slice((paginaOrden - 1) * POR_PAGINA, paginaOrden * POR_PAGINA);
+    const revisadasPaginadas = revisadasFiltradas.slice((paginaRevisada - 1) * POR_PAGINA, paginaRevisada * POR_PAGINA);
     const hayFiltros = busqueda || filtroCriticidad !== 'todas' || filtroFueraDeTiempo || filtroConApelacion;
 
-    const paginaActual = tipoVista === 'kpis' ? paginaKPI : paginaOrden;
-    const setPagina = tipoVista === 'kpis' ? setPaginaKPI : setPaginaOrden;
-    const totalPaginas = tipoVista === 'kpis' ? totalPaginasKPI : totalPaginasOrden;
-    const totalActual = tipoVista === 'kpis' ? totalKPIs : totalOrdenes;
-    const totalRaw = tipoVista === 'kpis' ? evidenciasKPI.length : evidenciasOrden.length;
+    const paginaActual = tipoVista === 'kpis' ? paginaKPI : tipoVista === 'revisadas' ? paginaRevisada : paginaOrden;
+    const setPagina = tipoVista === 'kpis' ? setPaginaKPI : tipoVista === 'revisadas' ? setPaginaRevisada : setPaginaOrden;
+    const totalPaginas = tipoVista === 'kpis' ? totalPaginasKPI : tipoVista === 'revisadas' ? totalPaginasRevisada : totalPaginasOrden;
+    const totalActual = tipoVista === 'kpis' ? totalKPIs : tipoVista === 'revisadas' ? totalRevisadas : totalOrdenes;
+    const totalRaw = tipoVista === 'kpis' ? evidenciasKPI.length : tipoVista === 'revisadas' ? evidenciasRevisadas.length : evidenciasOrden.length;
 
     return (
         <Layout>
@@ -871,6 +1011,10 @@ export default function RevisionEvidenciasPage() {
                             </span>
                         )}
                     </button>
+                    <button onClick={() => setTipoVista('revisadas')}
+                        className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-colors ${tipoVista === 'revisadas' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}>
+                        <RefreshCw className="w-4 h-4" />Revisadas
+                    </button>
                 </div>
 
                 {/* Filtros */}
@@ -933,10 +1077,14 @@ export default function RevisionEvidenciasPage() {
                             <CheckCircle className="w-10 h-10 text-green-600" />
                         </div>
                         <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                            {hayFiltros ? 'Sin resultados para los filtros aplicados' : 'Todo al día'}
+                            {hayFiltros ? 'Sin resultados para los filtros aplicados' : tipoVista === 'revisadas' ? 'Sin evidencias revisadas' : 'Todo al día'}
                         </h3>
                         <p className="text-gray-600">
-                            {hayFiltros ? 'Prueba ajustando los filtros' : `No hay evidencias de ${tipoVista === 'kpis' ? 'KPIs' : 'órdenes'} pendientes`}
+                            {hayFiltros
+                                ? 'Prueba ajustando los filtros'
+                                : tipoVista === 'revisadas'
+                                    ? 'No hay evidencias revisadas en los últimos 60 días'
+                                    : `No hay evidencias de ${tipoVista === 'kpis' ? 'KPIs' : 'órdenes'} pendientes`}
                         </p>
                         {hayFiltros && (
                             <button onClick={() => { setBusqueda(''); setFiltroCriticidad('todas'); setFiltroFueraDeTiempo(false); setFiltroConApelacion(false); }}
@@ -956,9 +1104,13 @@ export default function RevisionEvidenciasPage() {
                                     onRevisar={handleRevisarKPI}
                                     onResponderApelacion={handleResponderApelacionKPI} />
                             ))
-                            : ordenesPaginadas.map((ev) => (
-                                <TarjetaEvidenciaOrden key={ev.id} evidencia={ev} onRevisar={handleRevisarOrden} />
-                            ))
+                            : tipoVista === 'revisadas'
+                                ? revisadasPaginadas.map((ev) => (
+                                    <TarjetaEvidenciaRevisada key={ev.id} evidencia={ev} onCambiar={handleCambiarDecisionKPI} />
+                                ))
+                                : ordenesPaginadas.map((ev) => (
+                                    <TarjetaEvidenciaOrden key={ev.id} evidencia={ev} onRevisar={handleRevisarOrden} />
+                                ))
                         }
 
                         {/* Paginación */}

@@ -1029,6 +1029,13 @@ export class KpisService {
     if (!ev) throw new NotFoundException('Evidencia no encontrada');
     if (dto.status === 'rechazada' && !dto.motivoRechazo)
       throw new BadRequestException('Se requiere motivo de rechazo');
+    // No permitir revisar/cambiar la decisión si el mes del período ya fue
+    // cerrado: la evaluación ya está calculada y se desincronizaría.
+    const cerrados = await this.mesesConCierre([ev.periodo]);
+    if (cerrados.has(ev.periodo))
+      throw new BadRequestException(
+        'El período de esta evidencia ya fue cerrado; no se puede modificar la revisión.',
+      );
     return this.prisma.evidenciaKPI.update({
       where: { id: evidenciaId },
       data: {
@@ -1094,7 +1101,9 @@ export class KpisService {
     });
   }
 
-  async getEvidenciasPendientesKPI(userId: string) {
+  // Resuelve los empleados cuyas evidencias este usuario puede revisar
+  // (áreas bajo su responsabilidad + revisores asignados manualmente).
+  private async resolverEmpleadosRevisables(userId: string): Promise<string[]> {
     // ── 1. Resolver áreas bajo responsabilidad (misma lógica que MiEquipo) ──────
     const revisor = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -1162,9 +1171,11 @@ export class KpisService {
     }
 
     // ── 4. Unión de ambos grupos ────────────────────────────────────────────────
-    const todosEmpleados = [
-      ...new Set([...empleadosAsignados, ...empleadosDelArea]),
-    ];
+    return [...new Set([...empleadosAsignados, ...empleadosDelArea])];
+  }
+
+  async getEvidenciasPendientesKPI(userId: string) {
+    const todosEmpleados = await this.resolverEmpleadosRevisables(userId);
     if (todosEmpleados.length === 0) return [];
 
     return this.prisma.evidenciaKPI.findMany({
@@ -1202,5 +1213,85 @@ export class KpisService {
       },
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  // Evidencias ya revisadas (aprobadas/rechazadas) recientes, para que el revisor
+  // pueda corregir una decisión. Marca `editable: false` cuando el mes del período
+  // ya fue cerrado en una evaluación (cambiarla desincronizaría el cálculo).
+  async getEvidenciasRevisadasKPI(userId: string) {
+    const todosEmpleados = await this.resolverEmpleadosRevisables(userId);
+    if (todosEmpleados.length === 0) return [];
+
+    const desde = new Date();
+    desde.setDate(desde.getDate() - 60);
+
+    const evidencias = await this.prisma.evidenciaKPI.findMany({
+      where: {
+        status: { in: ['aprobada', 'rechazada'] },
+        tipo: { not: 'nota_kpi' },
+        empleadoId: { in: todosEmpleados },
+        fechaRevision: { gte: desde },
+      },
+      include: {
+        kpi: {
+          select: {
+            id: true,
+            key: true,
+            indicador: true,
+            descripcion: true,
+            tipoCalculo: true,
+            formulaCalculo: true,
+            meta: true,
+            operadorMeta: true,
+            sentido: true,
+            unidad: true,
+            tipoCriticidad: true,
+            area: true,
+          },
+        },
+        empleado: {
+          select: {
+            id: true,
+            nombre: true,
+            apellido: true,
+            areaId: true,
+            puesto: { select: { nombre: true } },
+          },
+        },
+        revisor: { select: { nombre: true, apellido: true } },
+      },
+      orderBy: { fechaRevision: 'desc' },
+    });
+
+    const cerrados = await this.mesesConCierre(
+      evidencias.map((e) => e.periodo),
+    );
+
+    return evidencias.map((e) => ({
+      ...e,
+      editable: !cerrados.has(e.periodo),
+    }));
+  }
+
+  // Dado un conjunto de períodos "YYYY-MM", devuelve cuáles ya tienen una
+  // evaluación mensual creada/cerrada (no se debe modificar su revisión).
+  private async mesesConCierre(periodos: string[]): Promise<Set<string>> {
+    const MESES = [
+      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+    ];
+    const unicos = [...new Set(periodos)];
+    const cerrados = new Set<string>();
+    await Promise.all(
+      unicos.map(async (p) => {
+        const [y, m] = p.split('-').map(Number);
+        if (!y || !m || m < 1 || m > 12) return;
+        const count = await this.prisma.evaluacion.count({
+          where: { periodo: MESES[m - 1], anio: y },
+        });
+        if (count > 0) cerrados.add(p);
+      }),
+    );
+    return cerrados;
   }
 }

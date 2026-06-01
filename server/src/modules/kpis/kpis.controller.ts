@@ -71,6 +71,11 @@ export class KpisController {
     return this.kpisService.getEvidenciasPendientesKPI(req.user.userId);
   }
 
+  @Get('evidencias-revisadas')
+  getEvidenciasRevisadas(@Request() req) {
+    return this.kpisService.getEvidenciasRevisadasKPI(req.user.userId);
+  }
+
   @Get('resultados-auto-equipo')
   getResultadosAutoEquipo(
     @Request() req,
