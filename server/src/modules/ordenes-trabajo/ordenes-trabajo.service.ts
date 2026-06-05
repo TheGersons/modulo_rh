@@ -554,8 +554,15 @@ export class OrdenesTrabajoService {
 
     // Si todas las tareas están completadas, cambiar status
     if (progreso === 100 && orden.status !== 'completada') {
-      await this.update(id, {
-        status: 'completada',
+      // fechaCompletada debe quedar registrada al completar (no solo al aprobar):
+      // el cierre de evaluaciones filtra las órdenes por fechaCompletada, así que
+      // una orden "completada" con fecha NULL queda invisible y el KPI sale rojo.
+      await this.prisma.ordenTrabajo.update({
+        where: { id },
+        data: {
+          status: 'completada',
+          fechaCompletada: new Date(),
+        },
       });
       await this.alertasService.alertaOrdenCompletada(orden);
     }
